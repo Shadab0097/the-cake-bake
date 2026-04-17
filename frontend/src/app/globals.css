@@ -1,0 +1,279 @@
+@import "tailwindcss";
+
+/* ======================================
+   CAKE BAKE — Design System Tokens
+   Inspired by Stitch "The Sensory Gallery"
+   ====================================== */
+
+:root {
+  /* Primary Colors */
+  --pink: #D48AA6;
+  --pink-light: #E8B8C8;
+  --pink-deep: #C94F7C;
+  --white: #FFFFFF;
+  --dark: #2B2B2B;
+
+  /* Stitch Design Tokens */
+  --surface: #FAF9F6;
+  --surface-container: #EFEEEB;
+  --surface-container-low: #F4F3F1;
+  --surface-container-lowest: #FFFFFF;
+  --surface-container-high: #E9E8E5;
+  --surface-dim: #DBDAD7;
+  --primary: #B0004A;
+  --primary-container: #D81B60;
+  --secondary: #775A19;
+  --secondary-container: #FED488;
+  --tertiary: #794A5C;
+  --outline: #8E6F74;
+  --outline-variant: #E3BDC3;
+  --on-primary: #FFFFFF;
+  --on-surface: #1A1C1A;
+  --on-surface-variant: #5A4044;
+  --error: #BA1A1A;
+  --error-container: #FFD9D6;
+
+  /* Functional */
+  --success: #2E7D32;
+  --success-light: #E8F5E9;
+  --warning: #F57F17;
+  --warning-light: #FFF8E1;
+  --info: #1565C0;
+  --info-light: #E3F2FD;
+
+  /* Background */
+  --background: var(--surface);
+  --foreground: var(--on-surface);
+
+  /* Shadows */
+  --shadow-ambient: rgba(26, 28, 26, 0.06);
+  --shadow-soft: 0px 8px 32px var(--shadow-ambient);
+  --shadow-card: 0px 2px 16px var(--shadow-ambient);
+  --shadow-float: 0px 20px 48px var(--shadow-ambient);
+
+  /* Transitions */
+  --transition-fast: 150ms cubic-bezier(0.4, 0, 0.2, 1);
+  --transition-normal: 250ms cubic-bezier(0.4, 0, 0.2, 1);
+  --transition-slow: 400ms cubic-bezier(0.4, 0, 0.2, 1);
+
+  /* Border Radius */
+  --radius-sm: 0.5rem;
+  --radius-md: 0.75rem;
+  --radius-lg: 1rem;
+  --radius-xl: 1.5rem;
+  --radius-full: 9999px;
+}
+
+/* Tailwind v4 Theme */
+@theme inline {
+  /* Colors */
+  --color-pink: var(--pink);
+  --color-pink-light: var(--pink-light);
+  --color-pink-deep: var(--pink-deep);
+  --color-dark: var(--dark);
+  --color-surface: var(--surface);
+  --color-surface-container: var(--surface-container);
+  --color-surface-container-low: var(--surface-container-low);
+  --color-surface-container-lowest: var(--surface-container-lowest);
+  --color-surface-container-high: var(--surface-container-high);
+  --color-surface-dim: var(--surface-dim);
+  --color-primary: var(--primary);
+  --color-primary-container: var(--primary-container);
+  --color-secondary: var(--secondary);
+  --color-secondary-container: var(--secondary-container);
+  --color-tertiary: var(--tertiary);
+  --color-outline: var(--outline);
+  --color-outline-variant: var(--outline-variant);
+  --color-on-primary: var(--on-primary);
+  --color-on-surface: var(--on-surface);
+  --color-on-surface-variant: var(--on-surface-variant);
+  --color-error: var(--error);
+  --color-success: var(--success);
+  --color-warning: var(--warning);
+  --color-info: var(--info);
+  --color-background: var(--background);
+  --color-foreground: var(--foreground);
+
+  /* Fonts */
+  --font-montserrat: "Montserrat", sans-serif;
+  --font-script: "Great Vibes", cursive;
+
+  /* Animations */
+  --animate-fade-in: fade-in 0.5s ease-out;
+  --animate-slide-up: slide-up 0.5s ease-out;
+  --animate-slide-down: slide-down 0.3s ease-out;
+  --animate-slide-right: slide-right 0.3s ease-out;
+  --animate-scale-in: scale-in 0.3s ease-out;
+  --animate-shimmer: shimmer 2s infinite;
+  --animate-marquee: marquee 30s linear infinite;
+  --animate-float: float 3s ease-in-out infinite;
+}
+
+/* ======================================
+   Keyframes
+   ====================================== */
+@keyframes fade-in {
+  from { opacity: 0; }
+  to { opacity: 1; }
+}
+@keyframes slide-up {
+  from { opacity: 0; transform: translateY(20px); }
+  to { opacity: 1; transform: translateY(0); }
+}
+@keyframes slide-down {
+  from { opacity: 0; transform: translateY(-10px); }
+  to { opacity: 1; transform: translateY(0); }
+}
+@keyframes slide-right {
+  from { opacity: 0; transform: translateX(-20px); }
+  to { opacity: 1; transform: translateX(0); }
+}
+@keyframes scale-in {
+  from { opacity: 0; transform: scale(0.95); }
+  to { opacity: 1; transform: scale(1); }
+}
+@keyframes shimmer {
+  0% { background-position: -200% 0; }
+  100% { background-position: 200% 0; }
+}
+@keyframes marquee {
+  from { transform: translateX(0); }
+  to { transform: translateX(-50%); }
+}
+@keyframes float {
+  0%, 100% { transform: translateY(0px); }
+  50% { transform: translateY(-6px); }
+}
+
+/* ======================================
+   Base styles
+   ====================================== */
+html {
+  scroll-behavior: smooth;
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+}
+
+body {
+  background: var(--surface);
+  color: var(--on-surface);
+  font-family: "Montserrat", sans-serif;
+  min-height: 100vh;
+  overflow-x: hidden;
+}
+
+/* Selection */
+::selection {
+  background: var(--pink-light);
+  color: var(--dark);
+}
+
+/* Custom Scrollbar */
+::-webkit-scrollbar {
+  width: 8px;
+  height: 8px;
+}
+::-webkit-scrollbar-track {
+  background: var(--surface-container-low);
+}
+::-webkit-scrollbar-thumb {
+  background: var(--outline-variant);
+  border-radius: var(--radius-full);
+}
+::-webkit-scrollbar-thumb:hover {
+  background: var(--outline);
+}
+
+/* Focus visible */
+*:focus-visible {
+  outline: 2px solid var(--pink-deep);
+  outline-offset: 2px;
+  border-radius: var(--radius-sm);
+}
+
+/* ======================================
+   Utility classes
+   ====================================== */
+
+/* Glassmorphism */
+.glass {
+  background: rgba(255, 255, 255, 0.75);
+  backdrop-filter: blur(20px);
+  -webkit-backdrop-filter: blur(20px);
+}
+
+.glass-dark {
+  background: rgba(43, 43, 43, 0.85);
+  backdrop-filter: blur(20px);
+  -webkit-backdrop-filter: blur(20px);
+}
+
+/* Signature gradient */
+.gradient-primary {
+  background: linear-gradient(135deg, var(--primary) 0%, var(--primary-container) 100%);
+}
+
+.gradient-gold {
+  background: linear-gradient(135deg, var(--secondary) 0%, var(--secondary-container) 100%);
+}
+
+.gradient-pink {
+  background: linear-gradient(135deg, var(--pink-deep) 0%, var(--pink) 100%);
+}
+
+/* Ghost border */
+.ghost-border {
+  border: 1px solid rgba(227, 189, 195, 0.15);
+}
+
+/* No-line section transitions */
+.section-shift {
+  transition: background-color var(--transition-normal);
+}
+
+/* Card hover lift */
+.card-hover {
+  transition: transform var(--transition-normal), box-shadow var(--transition-normal);
+}
+.card-hover:hover {
+  transform: translateY(-4px);
+  box-shadow: var(--shadow-float);
+}
+
+/* Ambient shadow */
+.shadow-ambient {
+  box-shadow: var(--shadow-soft);
+}
+
+.shadow-card {
+  box-shadow: var(--shadow-card);
+}
+
+/* Line clamp */
+.line-clamp-1 {
+  display: -webkit-box;
+  -webkit-line-clamp: 1;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+}
+.line-clamp-2 {
+  display: -webkit-box;
+  -webkit-line-clamp: 2;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+}
+.line-clamp-3 {
+  display: -webkit-box;
+  -webkit-line-clamp: 3;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+}
+
+/* Hide scrollbar for horizontally scrolling containers */
+.no-scrollbar::-webkit-scrollbar {
+  display: none;
+}
+.no-scrollbar {
+  -ms-overflow-style: none;
+  scrollbar-width: none;
+}
