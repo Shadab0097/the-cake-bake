@@ -7,7 +7,7 @@ import Link from 'next/link';
 import { motion } from 'framer-motion';
 import { FiMail, FiLock, FiEye, FiEyeOff } from 'react-icons/fi';
 import { login, clearError } from '@/store/slices/authSlice';
-import { clearGuestCartAndStorage } from '@/store/slices/cartSlice';
+import { mergeGuestCartToServer } from '@/store/slices/cartSlice';
 import { addToast } from '@/store/slices/toastSlice';
 
 function LoginForm() {
@@ -21,11 +21,13 @@ function LoginForm() {
   const [showPass, setShowPass] = useState(false);
 
   useEffect(() => {
-    if (isAuthenticated) {
-      dispatch(clearGuestCartAndStorage());
+    if (!isAuthenticated) return;
+    (async () => {
+      // Merge any guest cart items into the server cart, then redirect
+      await dispatch(mergeGuestCartToServer());
       const redirectTo = searchParams.get('next') || '/';
       router.push(redirectTo);
-    }
+    })();
   }, [isAuthenticated, router, searchParams, dispatch]);
 
   useEffect(() => {

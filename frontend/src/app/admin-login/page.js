@@ -2,7 +2,7 @@
 
 import { useState, useEffect } from 'react';
 import { useRouter } from 'next/navigation';
-import api from '@/lib/api';
+import adminApiClient from '@/lib/adminApiClient';
 
 export default function AdminLoginPage() {
   const [email, setEmail] = useState('');
@@ -14,10 +14,10 @@ export default function AdminLoginPage() {
 
   // Check if already logged in as admin
   useEffect(() => {
-    const token = localStorage.getItem('accessToken');
+    const token = localStorage.getItem('adminAccessToken');
     if (!token) { setChecking(false); return; }
 
-    api.get('/users/me')
+    adminApiClient.get('/users/me')
       .then((res) => {
         const user = res.data.data;
         if (user.role === 'admin' || user.role === 'superadmin') {
@@ -35,7 +35,7 @@ export default function AdminLoginPage() {
     setLoading(true);
 
     try {
-      const res = await api.post('/auth/login', { email, password });
+      const res = await adminApiClient.post('/auth/login', { email, password });
       const { accessToken, refreshToken, user } = res.data.data;
 
       if (user.role !== 'admin' && user.role !== 'superadmin') {
@@ -44,8 +44,8 @@ export default function AdminLoginPage() {
         return;
       }
 
-      localStorage.setItem('accessToken', accessToken);
-      localStorage.setItem('refreshToken', refreshToken);
+      localStorage.setItem('adminAccessToken', accessToken);
+      localStorage.setItem('adminRefreshToken', refreshToken);
       router.replace('/admin');
     } catch (err) {
       setError(err.response?.data?.message || 'Login failed. Please try again.');

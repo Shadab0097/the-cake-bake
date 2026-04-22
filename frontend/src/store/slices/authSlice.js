@@ -1,15 +1,6 @@
 import { createSlice, createAsyncThunk } from '@reduxjs/toolkit';
 import api from '@/lib/api';
 
-const GUEST_CART_KEY = 'guestCart';
-
-const clearGuestCartOnLogin = () => {
-  if (typeof window === 'undefined') return;
-  try {
-    localStorage.removeItem(GUEST_CART_KEY);
-  } catch { /* ignore */ }
-};
-
 // ─── Async Thunks ─────────────────────────────────────────────────────────────
 
 export const login = createAsyncThunk(
@@ -20,7 +11,6 @@ export const login = createAsyncThunk(
       const { accessToken, refreshToken, user } = res.data.data;
       localStorage.setItem('accessToken', accessToken);
       localStorage.setItem('refreshToken', refreshToken);
-      clearGuestCartOnLogin();
       return user;
     } catch (err) {
       return rejectWithValue(err.response?.data?.message || 'Login failed');
@@ -36,7 +26,6 @@ export const register = createAsyncThunk(
       const { accessToken, refreshToken, user } = res.data.data;
       localStorage.setItem('accessToken', accessToken);
       localStorage.setItem('refreshToken', refreshToken);
-      clearGuestCartOnLogin();
       return user;
     } catch (err) {
       return rejectWithValue(err.response?.data?.message || 'Registration failed');

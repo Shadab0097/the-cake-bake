@@ -5,7 +5,7 @@ import adminApi, { formatPrice } from '@/lib/adminApi';
 import { AdminModal, AdminToast, useAdminToast, EmptyState, LoadingSkeleton, RefreshButton } from '@/components/admin/AdminUI';
 
 const emptySlot = { label: '', startTime: '', endTime: '', maxOrders: 50, extraCharge: 0, isActive: true, cities: '', sortOrder: 0 };
-const emptyZone = { city: '', pincodes: '', deliveryCharge: '', freeDeliveryAbove: '', sameDayAvailable: false, sameDayCutoffTime: '14:00', isActive: true };
+const emptyZone = { state: '', city: '', pincodes: '', areas: '', deliveryCharge: '', freeDeliveryAbove: '', sameDayAvailable: false, sameDayCutoffTime: '14:00', isActive: true };
 
 export default function AdminDeliveryPage() {
   const [tab, setTab] = useState('slots');
@@ -36,7 +36,9 @@ export default function AdminDeliveryPage() {
       } : { ...emptySlot });
     } else {
       setForm(data ? {
-        ...data, pincodes: Array.isArray(data.pincodes) ? data.pincodes.join(', ') : (data.pincodes || ''),
+        ...data,
+        pincodes: Array.isArray(data.pincodes) ? data.pincodes.join(', ') : (data.pincodes || ''),
+        areas: Array.isArray(data.areas) ? data.areas.join(', ') : (data.areas || ''),
       } : { ...emptyZone });
     }
     setModal({ open: true, type, mode, data });
@@ -50,7 +52,13 @@ export default function AdminDeliveryPage() {
         if (modal.mode === 'create') await adminApi.delivery.createSlot(data);
         else await adminApi.delivery.updateSlot(modal.data._id, data);
       } else {
-        const data = { ...form, deliveryCharge: Number(form.deliveryCharge), freeDeliveryAbove: Number(form.freeDeliveryAbove) || 0, pincodes: form.pincodes ? form.pincodes.split(',').map(p => p.trim()).filter(Boolean) : [] };
+        const data = {
+          ...form,
+          deliveryCharge: Number(form.deliveryCharge),
+          freeDeliveryAbove: Number(form.freeDeliveryAbove) || 0,
+          pincodes: form.pincodes ? form.pincodes.split(',').map(p => p.trim()).filter(Boolean) : [],
+          areas: form.areas ? form.areas.split(',').map(a => a.trim()).filter(Boolean) : [],
+        };
         if (modal.mode === 'create') await adminApi.delivery.createZone(data);
         else await adminApi.delivery.updateZone(modal.data._id, data);
       }
@@ -113,11 +121,21 @@ export default function AdminDeliveryPage() {
           {zones.length === 0 ? <EmptyState message="No delivery zones" icon="🗺️" /> : (
             <div className="admin-table-wrap">
               <table className="admin-table">
-                <thead><tr><th>City</th><th>Delivery Charge</th><th>Free Above</th><th>Same Day</th><th>Cutoff</th><th>Active</th><th>Actions</th></tr></thead>
+                <thead><tr><th>State</th><th>City</th><th>Areas</th><th>Delivery Charge</th><th>Free Above</th><th>Same Day</th><th>Cutoff</th><th>Active</th><th>Actions</th></tr></thead>
                 <tbody>
                   {zones.map(z => (
                     <tr key={z._id}>
+                      <td style={{ color: 'var(--admin-text-secondary)', fontSize: '0.8125rem' }}>{z.state || '—'}</td>
                       <td style={{ fontWeight: 500 }}>{z.city}</td>
+                      <td style={{ color: 'var(--admin-text-secondary)', fontSize: '0.8125rem' }}>
+                        {z.areas && z.areas.length > 0 ? (
+                          <span title={z.areas.join(', ')} style={{ cursor: 'help' }}>
+                            {z.areas.length} area{z.areas.length !== 1 ? 's' : ''}
+                          </span>
+                        ) : (
+                          <span style={{ color: 'var(--admin-text-muted)' }}>—</span>
+                        )}
+                      </td>
                       <td>{formatPrice(z.deliveryCharge)}</td>
                       <td>{z.freeDeliveryAbove ? formatPrice(z.freeDeliveryAbove) : '—'}</td>
                       <td>{z.sameDayAvailable ? <span style={{ color: 'var(--admin-success)' }}>✓</span> : '—'}</td>
@@ -153,12 +171,16 @@ export default function AdminDeliveryPage() {
           </>
         ) : (
           <>
-            <div className="admin-field"><label className="admin-label">City *</label><input className="admin-input" value={form.city || ''} onChange={e => setForm(f => ({ ...f, city: e.target.value }))} placeholder="Mumbai" /></div>
+            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '1rem' }}>
+              <div className="admin-field"><label className="admin-label">State *</label><input className="admin-input" value={form.state || ''} onChange={e => setForm(f => ({ ...f, state: e.target.value }))} placeholder="Punjab" /></div>
+              <div className="admin-field"><label className="admin-label">City *</label><input className="admin-input" value={form.city || ''} onChange={e => setForm(f => ({ ...f, city: e.target.value }))} placeholder="Amritsar" /></div>
+            </div>
             <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '1rem' }}>
               <div className="admin-field"><label className="admin-label">Delivery Charge (paise)</label><input className="admin-input" type="number" value={form.deliveryCharge || ''} onChange={e => setForm(f => ({ ...f, deliveryCharge: e.target.value }))} /></div>
               <div className="admin-field"><label className="admin-label">Free Above (paise)</label><input className="admin-input" type="number" value={form.freeDeliveryAbove || ''} onChange={e => setForm(f => ({ ...f, freeDeliveryAbove: e.target.value }))} /></div>
             </div>
             <div className="admin-field"><label className="admin-label">Pincodes (comma-separated)</label><input className="admin-input" value={form.pincodes || ''} onChange={e => setForm(f => ({ ...f, pincodes: e.target.value }))} placeholder="400001, 400002" /></div>
+            <div className="admin-field"><label className="admin-label">Areas / Sectors (comma-separated)</label><input className="admin-input" value={form.areas || ''} onChange={e => setForm(f => ({ ...f, areas: e.target.value }))} placeholder="Sector 4, Sector 9, DLF Phase 1" /><p style={{ fontSize: '0.75rem', color: 'var(--admin-text-muted)', marginTop: '0.25rem' }}>These appear as dropdown options for customers at checkout</p></div>
             <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '1rem' }}>
               <label style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', fontSize: '0.875rem', color: 'var(--admin-text-secondary)', cursor: 'pointer' }}>
                 <input type="checkbox" checked={!!form.sameDayAvailable} onChange={e => setForm(f => ({ ...f, sameDayAvailable: e.target.checked }))} /> Same Day Available

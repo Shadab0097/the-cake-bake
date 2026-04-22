@@ -274,8 +274,9 @@ export default function AdminOrderDetailPage({ params }) {
                 {addr.phone && <div>📱 {addr.phone}</div>}
                 <div style={{ marginTop: '0.25rem' }}>{addr.addressLine1}</div>
                 {addr.addressLine2 && <div>{addr.addressLine2}</div>}
+                {addr.area && <div>📍 {addr.area}</div>}
                 {addr.landmark && <div style={{ color: 'var(--admin-text-muted)', fontSize: '0.8125rem' }}>Landmark: {addr.landmark}</div>}
-                <div style={{ fontWeight: 500, color: 'var(--admin-text)', marginTop: '0.25rem' }}>{addr.city}, {addr.state}</div>
+                <div style={{ fontWeight: 500, color: 'var(--admin-text)', marginTop: '0.25rem' }}>{addr.city}{addr.state ? `, ${addr.state}` : ''}</div>
                 <div>Pincode: <strong>{addr.pincode}</strong></div>
               </div>
             ) : <div style={{ color: 'var(--admin-text-muted)', fontSize: '0.875rem' }}>No address info</div>}

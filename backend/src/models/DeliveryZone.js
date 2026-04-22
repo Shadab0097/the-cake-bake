@@ -2,6 +2,12 @@ const mongoose = require('mongoose');
 
 const deliveryZoneSchema = new mongoose.Schema(
   {
+    state: {
+      type: String,
+      required: [true, 'State is required'],
+      trim: true,
+      index: true,
+    },
     city: {
       type: String,
       required: [true, 'City is required'],
@@ -9,6 +15,12 @@ const deliveryZoneSchema = new mongoose.Schema(
       index: true,
     },
     pincodes: [
+      {
+        type: String,
+        trim: true,
+      },
+    ],
+    areas: [
       {
         type: String,
         trim: true,

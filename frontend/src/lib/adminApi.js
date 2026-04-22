@@ -1,4 +1,4 @@
-import api from './api';
+import api from './adminApiClient';
 
 const adminApi = {
   // Dashboard & Analytics

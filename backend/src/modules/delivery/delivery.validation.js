@@ -20,8 +20,10 @@ const createSlot = {
 
 const createZone = {
   body: Joi.object({
+    state: Joi.string().trim().required(),
     city: Joi.string().trim().required(),
     pincodes: Joi.array().items(Joi.string().trim()).default([]),
+    areas: Joi.array().items(Joi.string().trim()).default([]),
     deliveryCharge: Joi.number().min(0).default(0),
     freeDeliveryAbove: Joi.number().min(0).default(0),
     sameDayAvailable: Joi.boolean().default(true),

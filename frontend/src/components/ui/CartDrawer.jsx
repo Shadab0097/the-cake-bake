@@ -1,5 +1,6 @@
 'use client';
 
+import { useState } from 'react';
 import { useSelector, useDispatch } from 'react-redux';
 import { motion, AnimatePresence } from 'framer-motion';
 import Image from 'next/image';
@@ -11,11 +12,13 @@ import {
   updateGuestItem, removeGuestItem,
 } from '@/store/slices/cartSlice';
 import { formatPrice, getProductImage } from '@/lib/utils';
+import AddOnModal from '@/components/ui/AddOnModal';
 
 export default function CartDrawer() {
   const dispatch = useDispatch();
   const { isDrawerOpen, items, guestItems, cart } = useSelector((s) => s.cart);
   const { isAuthenticated } = useSelector((s) => s.auth);
+  const [showAddOnModal, setShowAddOnModal] = useState(false);
 
   // Use correct cart source
   const cartItems = isAuthenticated ? items : guestItems;
@@ -41,7 +44,7 @@ export default function CartDrawer() {
     }
   };
 
-  return (
+  return (<>
     <AnimatePresence>
       {isDrawerOpen && (
         <>
@@ -185,13 +188,16 @@ export default function CartDrawer() {
                   <span className="text-lg font-bold text-dark">{formatPrice(subtotal)}</span>
                 </div>
                 <p className="text-xs text-outline">Shipping & taxes calculated at checkout</p>
-                <Link
-                  href="/checkout"
-                  onClick={() => dispatch(closeCartDrawer())}
+                <button
+                  onClick={() => {
+                    dispatch(closeCartDrawer());
+                    // Small delay so drawer closes first, then modal opens
+                    setTimeout(() => setShowAddOnModal(true), 200);
+                  }}
                   className="block w-full text-center py-3 rounded-full gradient-primary text-white font-semibold hover:opacity-90 transition-opacity"
                 >
                   Proceed to Checkout
-                </Link>
+                </button>
                 <Link
                   href="/cart"
                   onClick={() => dispatch(closeCartDrawer())}
@@ -205,5 +211,8 @@ export default function CartDrawer() {
         </>
       )}
     </AnimatePresence>
-  );
+
+    {/* Add-on Modal — outside AnimatePresence so it's truly full screen */}
+    <AddOnModal isOpen={showAddOnModal} onClose={() => setShowAddOnModal(false)} />
+  </>);
 }

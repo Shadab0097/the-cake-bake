@@ -9,12 +9,14 @@ const toastSlice = createSlice({
   },
   reducers: {
     addToast: (state, action) => {
-      const { message, type = 'info', duration = 4000 } = action.payload;
+      const { message, type = 'info', duration = 4000, link, linkLabel } = action.payload;
       state.toasts.push({
         id: ++toastId,
         message,
         type, // 'success' | 'error' | 'info' | 'warning'
         duration,
+        link,       // optional URL
+        linkLabel,  // optional label for the link
       });
     },
     removeToast: (state, action) => {

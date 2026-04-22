@@ -4,6 +4,7 @@ import { useEffect } from 'react';
 import { useSelector, useDispatch } from 'react-redux';
 import { motion, AnimatePresence } from 'framer-motion';
 import { FiX, FiCheck, FiAlertCircle, FiInfo, FiAlertTriangle } from 'react-icons/fi';
+import Link from 'next/link';
 import { removeToast } from '@/store/slices/toastSlice';
 
 const ICONS = {
@@ -52,7 +53,18 @@ function ToastItem({ toast }) {
       >
         <Icon className="w-4 h-4" />
       </div>
-      <p className="text-sm text-dark flex-1 font-medium">{toast.message}</p>
+      <div className="flex-1 min-w-0">
+        <p className="text-sm text-dark font-medium">{toast.message}</p>
+        {toast.link && toast.linkLabel && (
+          <Link
+            href={toast.link}
+            onClick={() => dispatch(removeToast(toast.id))}
+            className="text-xs font-semibold text-pink-deep underline underline-offset-2 hover:opacity-80 transition-opacity"
+          >
+            {toast.linkLabel} →
+          </Link>
+        )}
+      </div>
       <button
         onClick={() => dispatch(removeToast(toast.id))}
         className="p-1 rounded-full hover:bg-surface-container-high transition-colors shrink-0"

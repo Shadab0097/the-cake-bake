@@ -7,6 +7,7 @@ import Link from 'next/link';
 import { motion, AnimatePresence } from 'framer-motion';
 import { FiMinus, FiPlus, FiTrash2, FiShoppingBag, FiTag, FiUser, FiArrowRight } from 'react-icons/fi';
 import AppShell from '@/components/layout/AppShell';
+import AddOnModal from '@/components/ui/AddOnModal';
 import {
   fetchCart, updateCartItem, removeCartItem, applyCoupon, removeCoupon,
   updateGuestItem, removeGuestItem,
@@ -19,6 +20,7 @@ export default function CartPage() {
   const { items, guestItems, cart, isLoading } = useSelector((s) => s.cart);
   const { isAuthenticated } = useSelector((s) => s.auth);
   const [couponCode, setCouponCode] = useState('');
+  const [showAddOnModal, setShowAddOnModal] = useState(false);
 
   // Fetch server cart if authenticated
   useEffect(() => {
@@ -237,13 +239,13 @@ export default function CartPage() {
               )}
 
               {/* Proceed to Checkout */}
-              <Link
-                href="/checkout"
+              <button
+                onClick={() => setShowAddOnModal(true)}
                 className="flex items-center justify-center gap-2 w-full mt-5 py-3 rounded-xl gradient-primary text-white font-semibold hover:opacity-90 transition-opacity"
               >
                 Proceed to Checkout
                 <FiArrowRight className="w-4 h-4" />
-              </Link>
+              </button>
 
               {/* Guest prompt — soft nudge */}
               {!isAuthenticated && (
@@ -259,6 +261,9 @@ export default function CartPage() {
           </div>
         </div>
       </div>
+
+      {/* Add-on Modal */}
+      <AddOnModal isOpen={showAddOnModal} onClose={() => setShowAddOnModal(false)} />
     </AppShell>
   );
 }

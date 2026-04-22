@@ -92,7 +92,7 @@ class DeliveryService {
   async getZones() {
     return cache.getOrSet('delivery:zones', () => {
       return DeliveryZone.find({ isActive: true })
-        .select('city deliveryCharge freeDeliveryAbove sameDayAvailable')
+        .select('state city areas pincodes deliveryCharge freeDeliveryAbove sameDayAvailable')
         .sort({ city: 1 })
         .lean();
     }, 300); // Cache 5 minutes

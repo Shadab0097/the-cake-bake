@@ -39,6 +39,11 @@ const addressSchema = new mongoose.Schema(
       trim: true,
       index: true,
     },
+    area: {
+      type: String,
+      trim: true,
+      default: '',
+    },
     state: {
       type: String,
       required: [true, 'State is required'],

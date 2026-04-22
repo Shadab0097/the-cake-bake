@@ -9,7 +9,7 @@ import { FiHeart, FiShoppingBag, FiStar, FiMinus, FiPlus, FiShare2, FiCheck } fr
 import AppShell from '@/components/layout/AppShell';
 import ProductCard from '@/components/ui/ProductCard';
 import { formatPrice, getProductImage, getStarDisplay } from '@/lib/utils';
-import { addToCart, openCartDrawer } from '@/store/slices/cartSlice';
+import { addToCart, addGuestItem, openCartDrawer } from '@/store/slices/cartSlice';
 import { toggleWishlistItem } from '@/store/slices/wishlistSlice';
 import { addToast } from '@/store/slices/toastSlice';
 import api from '@/lib/api';
@@ -66,7 +66,25 @@ export default function ProductDetailPage() {
 
   const handleAddToCart = async () => {
     if (!isAuthenticated) {
-      dispatch(addToast({ message: 'Please login to add items to cart', type: 'info' }));
+      // Guest: store item in local cart with all customization options
+      const imageUrl = product.images?.[0]?.url?.startsWith('/')
+        ? `http://localhost:5000${product.images[0].url}`
+        : (product.images?.[0]?.url || '/images/placeholder-cake.svg');
+
+      dispatch(addGuestItem({
+        product: product._id,
+        productName: product.name,
+        productSlug: product.slug,
+        productImage: imageUrl,
+        variant: product.variants?.[selectedVariant]?._id || null,
+        variantWeight: product.variants?.[selectedVariant]?.weight || null,
+        price: product.variants?.[selectedVariant]?.price || product.basePrice,
+        quantity,
+        isEggless,
+        cakeMessage: cakeMessage.trim() || '',
+      }));
+      dispatch(addToast({ message: 'Added to cart! 🎂', type: 'success' }));
+      dispatch(openCartDrawer());
       return;
     }
     setAdding(true);
@@ -88,7 +106,12 @@ export default function ProductDetailPage() {
 
   const handleWishlistToggle = async () => {
     if (!isAuthenticated) {
-      dispatch(addToast({ message: 'Please login to use wishlist', type: 'info' }));
+      dispatch(addToast({
+        message: 'Sign in to save to wishlist',
+        type: 'info',
+        link: '/login',
+        linkLabel: 'Sign in',
+      }));
       return;
     }
     await dispatch(toggleWishlistItem(product._id));

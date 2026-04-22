@@ -2,6 +2,7 @@ import { createSlice, createAsyncThunk } from '@reduxjs/toolkit';
 import api from '@/lib/api';
 
 const GUEST_CART_KEY = 'guestCart';
+const PENDING_ADDONS_KEY = 'pendingAddOns';
 
 const loadGuestCartFromStorage = () => {
   if (typeof window === 'undefined') return { items: [], count: 0 };
@@ -26,6 +27,34 @@ const clearGuestCartStorage = () => {
   try {
     localStorage.removeItem(GUEST_CART_KEY);
   } catch { /* ignore storage errors */ }
+};
+
+// ─── Pending Add-ons localStorage helpers ─────────────────────────────────
+const loadPendingAddOnsFromStorage = () => {
+  if (typeof window === 'undefined') return {};
+  try {
+    const saved = localStorage.getItem(PENDING_ADDONS_KEY);
+    if (saved) return JSON.parse(saved);
+  } catch { /* ignore */ }
+  return {};
+};
+
+const syncPendingAddOnsToStorage = (pendingAddOns) => {
+  if (typeof window === 'undefined') return;
+  try {
+    if (Object.keys(pendingAddOns).length === 0) {
+      localStorage.removeItem(PENDING_ADDONS_KEY);
+    } else {
+      localStorage.setItem(PENDING_ADDONS_KEY, JSON.stringify(pendingAddOns));
+    }
+  } catch { /* ignore */ }
+};
+
+const clearPendingAddOnsStorage = () => {
+  if (typeof window === 'undefined') return;
+  try {
+    localStorage.removeItem(PENDING_ADDONS_KEY);
+  } catch { /* ignore */ }
 };
 
 // ─── API Thunks (for authenticated users) ────────────────────────────────────
@@ -124,6 +153,87 @@ export const clearCart = createAsyncThunk(
   }
 );
 
+// Reads guest items from Redux state, pushes them to the server cart one-by-one,
+// then fetches the merged result and clears the guest cart.
+// Also includes any pendingAddOns (add-on IDs) in the merge payload so the
+// server cart receives the correct add-ons during the guest→auth transition.
+export const mergeGuestCartToServer = createAsyncThunk(
+  'cart/mergeGuestCartToServer',
+  async (_, { getState, rejectWithValue }) => {
+    const { guestItems, pendingAddOns } = getState().cart;
+    try {
+      // Build a mapping so the fulfilled reducer can remap pendingAddOns keys
+      // from localId → new server _id (matched by product+variant).
+      const localIdToProductVariant = {};
+
+      if (guestItems && guestItems.length > 0) {
+        for (const item of guestItems) {
+          const productId = item.product || item.productId;
+          const variantId = item.variant || item.variantId;
+          const payload = {
+            productId,
+            variantId,
+            quantity: item.quantity || 1,
+            isEggless: item.isEggless || false,
+            cakeMessage: item.cakeMessage || '',
+          };
+
+          // Include add-ons from pendingAddOns in the merge payload
+          const itemAddOns = pendingAddOns[item.localId];
+          if (itemAddOns && itemAddOns.length > 0) {
+            payload.addOns = itemAddOns.map((a) => a._id);
+          } else if (item.addOns && item.addOns.length > 0) {
+            payload.addOns = item.addOns;
+          }
+
+          await api.post('/cart/items', payload);
+
+          // Track the mapping for key remapping
+          if (item.localId && pendingAddOns[item.localId]) {
+            localIdToProductVariant[item.localId] = {
+              product: String(productId),
+              variant: String(variantId),
+            };
+          }
+        }
+      }
+      // Always fetch the final (merged) cart state
+      const res = await api.get('/cart');
+      return { cart: res.data.data, localIdToProductVariant };
+    } catch (err) {
+      return rejectWithValue(err.response?.data?.message || 'Failed to merge cart');
+    }
+  }
+);
+
+// Pushes pendingAddOns (add-on IDs) to each server cart item before placing order.
+// The backend order service reads addOns from the cart model, so we must sync first.
+export const syncAddOnsToServerCart = createAsyncThunk(
+  'cart/syncAddOnsToServerCart',
+  async (_, { getState, rejectWithValue }) => {
+    const { pendingAddOns, items } = getState().cart;
+    try {
+      if (items && items.length > 0 && Object.keys(pendingAddOns).length > 0) {
+        for (const item of items) {
+          const itemKey = item._id;
+          const addOns = pendingAddOns[itemKey];
+          if (addOns && addOns.length > 0) {
+            // Send add-on _id list to the backend
+            await api.put(`/cart/items/${itemKey}`, {
+              addOns: addOns.map((a) => a._id),
+            });
+          }
+        }
+      }
+      // Fetch updated cart
+      const res = await api.get('/cart');
+      return res.data.data;
+    } catch (err) {
+      return rejectWithValue(err.response?.data?.message || 'Failed to sync add-ons');
+    }
+  }
+);
+
 // ─── Helpers ─────────────────────────────────────────────────────────────────
 
 const recalcCount = (items) =>
@@ -143,6 +253,8 @@ const cartSlice = createSlice({
     guestItems: [],
     guestItemCount: 0,
     _hydrated: false,
+    // Add-ons selected per item before checkout: { [itemKey]: [addonObject, ...] }
+    pendingAddOns: {},
   },
   reducers: {
     toggleCartDrawer: (state) => { state.isDrawerOpen = !state.isDrawerOpen; },
@@ -158,6 +270,7 @@ const cartSlice = createSlice({
       const { items, count } = loadGuestCartFromStorage();
       state.guestItems = items;
       state.guestItemCount = count;
+      state.pendingAddOns = loadPendingAddOnsFromStorage();
       state._hydrated = true;
     },
 
@@ -207,7 +320,24 @@ const cartSlice = createSlice({
     clearGuestCartAndStorage: (state) => {
       state.guestItems = [];
       state.guestItemCount = 0;
+      state.pendingAddOns = {};
       clearGuestCartStorage();
+      clearPendingAddOnsStorage();
+    },
+
+    // ─── Pending Add-ons (before checkout) ─────────────────────────────────
+    setItemAddOns: (state, action) => {
+      const { itemKey, addons } = action.payload;
+      if (!addons || addons.length === 0) {
+        delete state.pendingAddOns[itemKey];
+      } else {
+        state.pendingAddOns[itemKey] = addons;
+      }
+      syncPendingAddOnsToStorage(state.pendingAddOns);
+    },
+    clearPendingAddOns: (state) => {
+      state.pendingAddOns = {};
+      clearPendingAddOnsStorage();
     },
   },
   extraReducers: (builder) => {
@@ -252,6 +382,60 @@ const cartSlice = createSlice({
         state.cart = null;
         state.items = [];
         state.itemCount = 0;
+      })
+      .addCase(mergeGuestCartToServer.pending, (state) => { state.isLoading = true; })
+      .addCase(mergeGuestCartToServer.fulfilled, (state, action) => {
+        state.isLoading = false;
+        const { cart, localIdToProductVariant } = action.payload;
+        setCartState(state, cart);
+
+        // Remap pendingAddOns keys: localId → server _id
+        // After merge, the server cart items have _id values. We match them
+        // to the old guest localId keys via product+variant.
+        if (localIdToProductVariant && Object.keys(localIdToProductVariant).length > 0) {
+          const remapped = {};
+          const serverItems = state.items || [];
+
+          for (const [localId, { product, variant }] of Object.entries(localIdToProductVariant)) {
+            const addons = state.pendingAddOns[localId];
+            if (!addons) continue;
+
+            // Find the matching server cart item
+            const serverItem = serverItems.find((si) => {
+              const siProduct = String(si.product?._id || si.product);
+              const siVariant = String(si.variant?._id || si.variant);
+              return siProduct === product && siVariant === variant;
+            });
+
+            if (serverItem) {
+              remapped[serverItem._id] = addons;
+            }
+            // Remove the old localId key
+            delete state.pendingAddOns[localId];
+          }
+
+          // Merge remapped keys into pendingAddOns
+          Object.assign(state.pendingAddOns, remapped);
+          syncPendingAddOnsToStorage(state.pendingAddOns);
+        }
+
+        // Clear the guest cart from state and localStorage
+        state.guestItems = [];
+        state.guestItemCount = 0;
+        clearGuestCartStorage();
+      })
+      .addCase(mergeGuestCartToServer.rejected, (state) => {
+        // Even on failure, clear guest cart so we don't merge stale items repeatedly
+        state.isLoading = false;
+        state.guestItems = [];
+        state.guestItemCount = 0;
+        clearGuestCartStorage();
+      })
+      .addCase(syncAddOnsToServerCart.fulfilled, (state, action) => {
+        setCartState(state, action.payload);
+      })
+      .addCase(syncAddOnsToServerCart.rejected, () => {
+        // Proceed even if sync fails — the order will be placed without add-ons
       });
   },
 });
@@ -260,6 +444,7 @@ export const {
   toggleCartDrawer, openCartDrawer, closeCartDrawer, resetCart,
   addGuestItem, updateGuestItem, removeGuestItem, clearGuestCart,
   hydrateGuestCart, clearGuestCartAndStorage,
+  setItemAddOns, clearPendingAddOns,
 } = cartSlice.actions;
 
 export default cartSlice.reducer;

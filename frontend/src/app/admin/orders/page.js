@@ -51,13 +51,14 @@ function AddressModal({ order, onClose }) {
             {addr.phone && <div>📱 {addr.phone}</div>}
             <div style={{ marginTop: '0.25rem' }}>{addr.addressLine1}</div>
             {addr.addressLine2 && <div>{addr.addressLine2}</div>}
+            {addr.area && <div>📍 {addr.area}</div>}
             {addr.landmark && (
               <div style={{ color: 'var(--admin-text-muted)', fontSize: '0.8rem', marginTop: '0.125rem' }}>
                 📌 Landmark: {addr.landmark}
               </div>
             )}
             <div style={{ fontWeight: 600, color: 'var(--admin-text)', marginTop: '0.375rem' }}>
-              {addr.city}, {addr.state} — {addr.pincode}
+              {addr.city}{addr.state ? `, ${addr.state}` : ''} — {addr.pincode}
             </div>
           </div>
         ) : (

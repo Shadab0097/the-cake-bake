@@ -7,8 +7,8 @@ export default function AdminTopbar({ user, onMenuToggle }) {
   const router = useRouter();
 
   const handleLogout = () => {
-    localStorage.removeItem('accessToken');
-    localStorage.removeItem('refreshToken');
+    localStorage.removeItem('adminAccessToken');
+    localStorage.removeItem('adminRefreshToken');
     router.replace('/admin-login');
   };
 

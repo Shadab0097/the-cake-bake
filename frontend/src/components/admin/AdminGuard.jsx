@@ -2,20 +2,20 @@
 
 import { useEffect, useState } from 'react';
 import { useRouter } from 'next/navigation';
-import api from '@/lib/api';
+import adminApiClient from '@/lib/adminApiClient';
 
 export default function AdminGuard({ children }) {
   const [state, setState] = useState({ loading: true, user: null });
   const router = useRouter();
 
   useEffect(() => {
-    const token = localStorage.getItem('accessToken');
+    const token = localStorage.getItem('adminAccessToken');
     if (!token) {
       router.replace('/admin-login');
       return;
     }
 
-    api.get('/users/me')
+    adminApiClient.get('/users/me')
       .then((res) => {
         const user = res.data.data;
         if (user.role !== 'admin' && user.role !== 'superadmin') {
@@ -25,8 +25,8 @@ export default function AdminGuard({ children }) {
         setState({ loading: false, user });
       })
       .catch(() => {
-        localStorage.removeItem('accessToken');
-        localStorage.removeItem('refreshToken');
+        localStorage.removeItem('adminAccessToken');
+        localStorage.removeItem('adminRefreshToken');
         router.replace('/admin-login');
       });
   }, [router]);

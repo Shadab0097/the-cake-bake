@@ -5,22 +5,31 @@ import { useSelector, useDispatch } from 'react-redux';
 import Link from 'next/link';
 import { usePathname } from 'next/navigation';
 import { motion, AnimatePresence } from 'framer-motion';
-import { FiSearch, FiHeart, FiShoppingBag, FiUser, FiMenu, FiX, FiChevronDown } from 'react-icons/fi';
+import {
+  FiSearch, FiHeart, FiShoppingBag, FiUser, FiMenu, FiX, FiChevronDown,
+} from 'react-icons/fi';
 import { toggleSearch, toggleMobileMenu, closeMobileMenu } from '@/store/slices/uiSlice';
 import { openCartDrawer } from '@/store/slices/cartSlice';
 import { formatOccasion, OCCASIONS } from '@/lib/utils';
+import api from '@/lib/api';
 
-const NAV_LINKS = [
+/* ─── Static nav links (categories injected dynamically) ─────────────────── */
+const STATIC_LINKS = [
   { label: 'Home', href: '/' },
   {
     label: 'Shop',
     href: '/products',
     children: [
       { label: 'All Products', href: '/products' },
-      { label: 'Featured', href: '/products?tag=featured' },
-      { label: 'Bestsellers', href: '/products?sort=popularity' },
+      { label: 'Featured',     href: '/products?tag=featured' },
+      { label: 'Bestsellers',  href: '/products?sort=popularity' },
       { label: 'New Arrivals', href: '/products?sort=newest' },
     ],
+  },
+  {
+    label: 'Categories',
+    href: '/categories',
+    key: 'categories',
   },
   {
     label: 'Occasions',
@@ -31,32 +40,34 @@ const NAV_LINKS = [
     })),
   },
   { label: 'Custom Cake', href: '/custom-cake' },
-  { label: 'Corporate', href: '/corporate' },
-  { label: 'Our Story', href: '/about' },
-  { label: 'Contact', href: '/contact' },
+  { label: 'Corporate',   href: '/corporate' },
+  { label: 'Our Story',   href: '/about' },
 ];
 
 export default function Navbar() {
-  const dispatch = useDispatch();
-  const pathname = usePathname();
+  const dispatch    = useDispatch();
+  const pathname    = usePathname();
   const { isAuthenticated, user } = useSelector((s) => s.auth);
   const { itemCount, guestItemCount } = useSelector((s) => s.cart);
   const totalCartCount = isAuthenticated ? itemCount : guestItemCount;
-  const wishlistCount = useSelector((s) => s.wishlist.count);
+  const wishlistCount  = useSelector((s) => s.wishlist.count);
   const { isMobileMenuOpen } = useSelector((s) => s.ui);
 
-  const [scrolled, setScrolled] = useState(false);
-  const [activeDropdown, setActiveDropdown] = useState(null);
+  const [scrolled,       setScrolled]       = useState(false);
+  const [activeDropdown, setActiveDropdown]  = useState(null);
+  const [categories,     setCategories]      = useState([]);
   const dropdownRef = useRef(null);
 
   const isHeroPage = pathname === '/';
 
+  /* ── Scroll ──────────────────────────────────────────────────────────── */
   useEffect(() => {
     const handleScroll = () => setScrolled(window.scrollY > 50);
     window.addEventListener('scroll', handleScroll, { passive: true });
     return () => window.removeEventListener('scroll', handleScroll);
   }, []);
 
+  /* ── Close dropdown on outside click ─────────────────────────────────── */
   useEffect(() => {
     const handleClickOutside = (e) => {
       if (dropdownRef.current && !dropdownRef.current.contains(e.target)) {
@@ -67,13 +78,42 @@ export default function Navbar() {
     return () => document.removeEventListener('mousedown', handleClickOutside);
   }, []);
 
+  /* ── Close everything on route change ────────────────────────────────── */
   useEffect(() => {
     dispatch(closeMobileMenu());
     setActiveDropdown(null);
   }, [pathname, dispatch]);
 
+  /* ── Fetch categories ────────────────────────────────────────────────── */
+  useEffect(() => {
+    api.get('/categories')
+      .then((res) => {
+        const list = res.data?.data || [];
+        const cats = Array.isArray(list) ? list : (list.docs || list.items || []);
+        setCategories(cats.filter((c) => c.isActive !== false));
+      })
+      .catch(() => {});
+  }, []);
+
+  /* ── Build nav links with dynamic categories ────────────────────────── */
+  const navLinks = STATIC_LINKS.map((link) => {
+    if (link.key === 'categories' && categories.length > 0) {
+      return {
+        ...link,
+        children: [
+          ...categories.slice(0, 8).map((cat) => ({
+            label: cat.name,
+            href:  `/categories/${cat.slug}`,
+          })),
+          { label: 'View All Categories', href: '/categories', divider: true },
+        ],
+      };
+    }
+    return link;
+  });
+
   const navBg = scrolled || !isHeroPage
-    ? 'bg-white/85 backdrop-blur-xl shadow-sm'
+    ? 'bg-white/90 backdrop-blur-xl shadow-sm border-b border-outline-variant/10'
     : 'bg-transparent';
 
   return (
@@ -92,6 +132,7 @@ export default function Navbar() {
       >
         <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
           <div className="flex items-center justify-between h-16 lg:h-20">
+
             {/* Logo */}
             <Link href="/" className="flex items-center gap-2 shrink-0">
               <span className="text-2xl lg:text-3xl font-script text-pink-deep">
@@ -99,19 +140,19 @@ export default function Navbar() {
               </span>
             </Link>
 
-            {/* Desktop Nav */}
+            {/* ── Desktop Nav ─────────────────────────────────────────── */}
             <nav className="hidden lg:flex items-center gap-1">
-              {NAV_LINKS.map((link) => (
+              {navLinks.map((link) => (
                 <div key={link.label} className="relative">
                   {link.children ? (
                     <div className="flex items-center">
                       <Link
                         href={link.href}
-                        className={`px-3 py-2 text-sm font-medium rounded-l-lg transition-colors
-                          ${pathname.startsWith(link.href)
+                        className={`px-3 py-2 text-sm font-medium rounded-l-lg transition-colors ${
+                          pathname.startsWith(link.href) && link.href !== '/'
                             ? 'text-pink-deep bg-pink-light/30'
                             : 'text-dark hover:text-pink-deep hover:bg-pink-light/20'
-                          }`}
+                        }`}
                       >
                         {link.label}
                       </Link>
@@ -119,11 +160,11 @@ export default function Navbar() {
                         onClick={() =>
                           setActiveDropdown(activeDropdown === link.label ? null : link.label)
                         }
-                        className={`px-1 py-2 text-sm font-medium rounded-r-lg transition-colors
-                          ${pathname.startsWith(link.href)
+                        className={`px-1 py-2 text-sm font-medium rounded-r-lg transition-colors ${
+                          pathname.startsWith(link.href) && link.href !== '/'
                             ? 'text-pink-deep bg-pink-light/30'
                             : 'text-dark hover:text-pink-deep hover:bg-pink-light/20'
-                          }`}
+                        }`}
                       >
                         <FiChevronDown
                           className={`w-3.5 h-3.5 transition-transform ${
@@ -135,17 +176,17 @@ export default function Navbar() {
                   ) : (
                     <Link
                       href={link.href}
-                      className={`px-3 py-2 text-sm font-medium rounded-lg transition-colors
-                        ${pathname === link.href
+                      className={`px-3 py-2 text-sm font-medium rounded-lg transition-colors ${
+                        pathname === link.href
                           ? 'text-pink-deep bg-pink-light/30'
                           : 'text-dark hover:text-pink-deep hover:bg-pink-light/20'
-                        }`}
+                      }`}
                     >
                       {link.label}
                     </Link>
                   )}
 
-                  {/* Dropdown */}
+                  {/* Dropdown — unified simple style */}
                   <AnimatePresence>
                     {link.children && activeDropdown === link.label && (
                       <motion.div
@@ -155,14 +196,22 @@ export default function Navbar() {
                         transition={{ duration: 0.15 }}
                         className="absolute top-full left-0 mt-1 w-56 bg-white rounded-xl shadow-lg border border-outline-variant/10 py-2 z-50"
                       >
-                        {link.children.map((child) => (
-                          <Link
-                            key={child.href}
-                            href={child.href}
-                            className="block px-4 py-2.5 text-sm text-dark hover:bg-pink-light/20 hover:text-pink-deep transition-colors"
-                          >
-                            {child.label}
-                          </Link>
+                        {link.children.map((child, idx) => (
+                          <div key={child.href}>
+                            {child.divider && (
+                              <div className="border-t border-outline-variant/10 my-1" />
+                            )}
+                            <Link
+                              href={child.href}
+                              className={`block px-4 py-2.5 text-sm transition-colors ${
+                                child.divider
+                                  ? 'text-pink-deep font-semibold hover:bg-pink-light/20'
+                                  : 'text-dark hover:bg-pink-light/20 hover:text-pink-deep'
+                              }`}
+                            >
+                              {child.label}
+                            </Link>
+                          </div>
                         ))}
                       </motion.div>
                     )}
@@ -171,9 +220,8 @@ export default function Navbar() {
               ))}
             </nav>
 
-            {/* Right Actions */}
+            {/* ── Right Actions ────────────────────────────────────────── */}
             <div className="flex items-center gap-2 sm:gap-3">
-              {/* Search */}
               <button
                 onClick={() => dispatch(toggleSearch())}
                 className="p-2 rounded-full hover:bg-pink-light/30 transition-colors text-dark"
@@ -183,7 +231,6 @@ export default function Navbar() {
                 <FiSearch className="w-5 h-5" />
               </button>
 
-              {/* Wishlist */}
               <Link
                 href="/wishlist"
                 className="relative p-2 rounded-full hover:bg-pink-light/30 transition-colors text-dark hidden sm:block"
@@ -198,7 +245,6 @@ export default function Navbar() {
                 )}
               </Link>
 
-              {/* Cart */}
               <button
                 onClick={() => dispatch(openCartDrawer())}
                 className="relative p-2 rounded-full hover:bg-pink-light/30 transition-colors text-dark"
@@ -213,7 +259,6 @@ export default function Navbar() {
                 )}
               </button>
 
-              {/* Auth */}
               {isAuthenticated ? (
                 <Link
                   href="/account"
@@ -235,7 +280,6 @@ export default function Navbar() {
                 </Link>
               )}
 
-              {/* Mobile Hamburger */}
               <button
                 onClick={() => dispatch(toggleMobileMenu())}
                 className="lg:hidden p-2 rounded-full hover:bg-pink-light/30 transition-colors text-dark"
@@ -252,11 +296,10 @@ export default function Navbar() {
           </div>
         </div>
 
-        {/* Mobile Menu — fixed overlay slides in from top */}
+        {/* ── Mobile Menu ─────────────────────────────────────────────── */}
         <AnimatePresence>
           {isMobileMenuOpen && (
             <>
-              {/* Backdrop */}
               <motion.div
                 key="backdrop"
                 initial={{ opacity: 0 }}
@@ -267,7 +310,6 @@ export default function Navbar() {
                 onClick={() => dispatch(closeMobileMenu())}
               />
 
-              {/* Drawer panel */}
               <motion.div
                 key="drawer"
                 initial={{ opacity: 0, y: -20 }}
@@ -277,7 +319,6 @@ export default function Navbar() {
                 className="fixed top-0 left-0 right-0 z-50 lg:hidden bg-white shadow-2xl"
                 style={{ maxHeight: '90vh', overflowY: 'auto' }}
               >
-                {/* Drawer header */}
                 <div className="flex items-center justify-between px-5 py-4 border-b border-outline-variant/20">
                   <span className="text-xl font-script text-pink-deep">Cake Bake</span>
                   <button
@@ -289,9 +330,8 @@ export default function Navbar() {
                   </button>
                 </div>
 
-                {/* Nav links */}
                 <nav className="px-4 py-4 space-y-1">
-                  {NAV_LINKS.map((link) => (
+                  {navLinks.map((link) => (
                     <div key={link.label}>
                       {link.children ? (
                         <>
@@ -313,13 +353,21 @@ export default function Navbar() {
                           {activeDropdown === link.label && (
                             <div className="pl-4 space-y-0.5 mt-1">
                               {link.children.map((child) => (
-                                <Link
-                                  key={child.href}
-                                  href={child.href}
-                                  className="block px-3 py-2.5 text-sm text-on-surface-variant hover:text-pink-deep hover:bg-pink-light/10 rounded-lg transition-colors"
-                                >
-                                  {child.label}
-                                </Link>
+                                <div key={child.href}>
+                                  {child.divider && (
+                                    <div className="border-t border-outline-variant/10 my-1 ml-3 mr-3" />
+                                  )}
+                                  <Link
+                                    href={child.href}
+                                    className={`block px-3 py-2.5 text-sm rounded-lg transition-colors ${
+                                      child.divider
+                                        ? 'text-pink-deep font-semibold hover:bg-pink-light/10'
+                                        : 'text-on-surface-variant hover:text-pink-deep hover:bg-pink-light/10'
+                                    }`}
+                                  >
+                                    {child.label}
+                                  </Link>
+                                </div>
                               ))}
                             </div>
                           )}
@@ -339,7 +387,6 @@ export default function Navbar() {
                     </div>
                   ))}
 
-                  {/* Mobile auth */}
                   <div className="pt-4 mt-2 border-t border-outline-variant/20 space-y-2">
                     <Link
                       href="/wishlist"

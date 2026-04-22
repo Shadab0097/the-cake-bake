@@ -7,12 +7,12 @@ import Link from 'next/link';
 import { motion, AnimatePresence } from 'framer-motion';
 import {
   FiUser, FiMail, FiPhone, FiMapPin, FiCalendar,
-  FiCreditCard, FiCheck, FiArrowLeft, FiArrowRight, FiLock,
+  FiCreditCard, FiCheck, FiArrowLeft, FiArrowRight, FiLock, FiTag, FiChevronDown,
 } from 'react-icons/fi';
 import AppShell from '@/components/layout/AppShell';
 import { formatPrice } from '@/lib/utils';
 import { addToast } from '@/store/slices/toastSlice';
-import { clearGuestCart, resetCart, fetchCart } from '@/store/slices/cartSlice';
+import { clearGuestCart, resetCart, fetchCart, clearPendingAddOns, syncAddOnsToServerCart } from '@/store/slices/cartSlice';
 import api from '@/lib/api';
 
 const STEPS_GUEST  = ['How to Checkout', 'Your Details', 'Delivery', 'Payment'];
@@ -36,7 +36,7 @@ export default function CheckoutPage() {
   const dispatch = useDispatch();
   const router = useRouter();
   const { isAuthenticated, isSessionLoading, user } = useSelector((s) => s.auth);
-  const { items, guestItems, cart } = useSelector((s) => s.cart);
+  const { items, guestItems, cart, pendingAddOns } = useSelector((s) => s.cart);
 
   const cartItems = isAuthenticated ? items : guestItems;
 
@@ -61,7 +61,16 @@ export default function CheckoutPage() {
 
   // Guest details
   const [guestInfo, setGuestInfo] = useState({ name: '', email: '', phone: '' });
-  const [guestAddress, setGuestAddress] = useState({ line1: '', city: '', state: '', pincode: '' });
+  const [guestAddress, setGuestAddress] = useState({ line1: '', area: '', city: '', state: '', pincode: '' });
+
+  // Delivery zones
+  const [zones, setZones] = useState([]);
+  const [selectedZone, setSelectedZone] = useState(null);
+
+  // Coupon (auth only)
+  const [couponCode, setCouponCode] = useState('');
+  const [couponLoading, setCouponLoading] = useState(false);
+  const [appliedCoupon, setAppliedCoupon] = useState(null); // { code, discount, description }
 
   // Auth user
   const [addresses, setAddresses] = useState([]);
@@ -71,8 +80,9 @@ export default function CheckoutPage() {
     fullName: '',
     phone: '',
     line1: '',
+    area: '',
     city: '',
-    state: 'Punjab',
+    state: '',
     pincode: '',
     landmark: '',
   });
@@ -89,6 +99,13 @@ export default function CheckoutPage() {
       }
     } catch { /* ignore */ }
   };
+
+  // Fetch zones once
+  useEffect(() => {
+    api.get('/delivery/zones')
+      .then((res) => setZones(res.data?.data || []))
+      .catch(() => {});
+  }, []);
 
   // Fetch addresses when user enters address step (step 1)
   useEffect(() => {
@@ -111,9 +128,15 @@ export default function CheckoutPage() {
   const subtotal = isAuthenticated
     ? cartItems.reduce((s, i) => s + (i.snapshotPrice || i.variant?.price || 0) * i.quantity, 0)
     : cartItems.reduce((s, i) => s + (i.price || 0) * i.quantity, 0);
-  const discount = cart?.discount || 0;
-  const deliveryCost = subtotal >= 49900 ? 0 : 4900;
-  const total = subtotal - discount + deliveryCost;
+  const couponDiscount = appliedCoupon?.discount || cart?.discount || 0;
+  // Add-ons total across all pending selections
+  const addonTotal = Object.values(pendingAddOns).reduce(
+    (sum, list) => sum + list.reduce((s, a) => s + (a.price || 0), 0), 0
+  );
+  const deliveryCost = selectedZone
+    ? (subtotal + addonTotal >= selectedZone.freeDeliveryAbove ? 0 : selectedZone.deliveryCharge)
+    : (subtotal + addonTotal >= 49900 ? 0 : 4900);
+  const total = subtotal + addonTotal - couponDiscount + deliveryCost;
 
   // Redirect if cart is empty
   if (cartItems.length === 0) {
@@ -167,10 +190,28 @@ export default function CheckoutPage() {
         dispatch(addToast({ message: 'Please select or add a delivery address', type: 'error' }));
         return;
       }
+      // Validate state + area for new address
+      if (showNewAddress) {
+        if (!newAddress.state || !newAddress.city) {
+          dispatch(addToast({ message: 'Please select state and city', type: 'error' }));
+          return;
+        }
+        const zone = zones.find((z) => z.state === newAddress.state && z.city === newAddress.city);
+        if (zone?.areas?.length > 0 && !newAddress.area) {
+          dispatch(addToast({ message: 'Please select an area / sector', type: 'error' }));
+          return;
+        }
+      }
     } else {
-      const { line1, city, pincode } = guestAddress;
-      if (!line1 || !city || !pincode) {
+      const { line1, state, city, pincode } = guestAddress;
+      if (!line1 || !state || !city || !pincode) {
         dispatch(addToast({ message: 'Please complete your delivery address', type: 'error' }));
+        return;
+      }
+      // Validate area for guest if zone has areas
+      const zone = zones.find((z) => z.state === state && z.city === city);
+      if (zone?.areas?.length > 0 && !guestAddress.area) {
+        dispatch(addToast({ message: 'Please select an area / sector', type: 'error' }));
         return;
       }
     }
@@ -186,20 +227,28 @@ export default function CheckoutPage() {
     try {
       if (checkoutMode === 'guest') {
         // Build guest order items from guestItems (local Redux state)
-        const guestOrderItems = cartItems.map((item) => ({
-          name: item.productName || item.name || 'Cake',
-          image: item.image || '',
-          weight: item.weight || '',
-          price: item.price || 0,
-          quantity: item.quantity,
-          isEggless: item.isEggless || false,
-          cakeMessage: item.cakeMessage || '',
-          addOns: item.addOns || [],
-        }));
+        const guestOrderItems = cartItems.map((item) => {
+          const addOns = pendingAddOns[item.localId] || [];
+          return {
+            name: item.productName || item.name || 'Cake',
+            image: item.productImage || item.image || '',
+            weight: item.variantWeight || item.weight || '',
+            price: item.price || 0,
+            quantity: item.quantity,
+            isEggless: item.isEggless || false,
+            cakeMessage: item.cakeMessage || '',
+            addOns: addOns.map((a) => ({ name: a.name, price: a.price })),
+          };
+        });
 
         const guestSubtotal = cartItems.reduce((s, i) => s + (i.price || 0) * i.quantity, 0);
-        const guestDeliveryCharge = guestSubtotal >= 49900 ? 0 : 4900;
-        const guestTotal = guestSubtotal + guestDeliveryCharge;
+        const guestAddOnTotal = Object.values(pendingAddOns).reduce(
+          (sum, list) => sum + list.reduce((s, a) => s + (a.price || 0), 0), 0
+        );
+        const guestDeliveryCharge = selectedZone
+          ? (guestSubtotal + guestAddOnTotal >= selectedZone.freeDeliveryAbove ? 0 : selectedZone.deliveryCharge)
+          : (guestSubtotal + guestAddOnTotal >= 49900 ? 0 : 4900);
+        const guestTotal = guestSubtotal + guestAddOnTotal + guestDeliveryCharge;
 
         const guestPayload = {
           guestInfo: {
@@ -211,8 +260,9 @@ export default function CheckoutPage() {
             fullName: guestInfo.name,
             phone: guestInfo.phone,
             addressLine1: guestAddress.line1,
+            area: guestAddress.area || '',
             city: guestAddress.city,
-            state: guestAddress.state || 'Punjab',
+            state: guestAddress.state,
             pincode: guestAddress.pincode,
           },
           items: guestOrderItems,
@@ -224,14 +274,22 @@ export default function CheckoutPage() {
         };
 
         const res = await api.post('/guest-checkout', guestPayload);
-        const orderId = res.data?.data?.order?._id;
+        const guestOrderNum = res.data?.data?.order?.orderNumber;
+        const guestOrderId  = res.data?.data?.order?._id;
         dispatch(addToast({ message: 'Order placed successfully! 🎉', type: 'success' }));
         dispatch(clearGuestCart());
-        router.push(`/order-confirmation?orderId=${orderId}`);
+        dispatch(clearPendingAddOns());
+        router.push(guestOrderNum
+          ? `/order-confirmation?orderNumber=${guestOrderNum}`
+          : `/order-confirmation?orderId=${guestOrderId}`);
         return;
       }
 
       // Authenticated order
+      // Sync pending add-ons to the server cart so the backend picks them up
+      if (Object.keys(pendingAddOns).length > 0) {
+        await dispatch(syncAddOnsToServerCart()).unwrap();
+      }
       // Convert the slot string "10:00 AM – 12:00 PM" → object shape the backend expects
       const slotParts = deliverySlot ? deliverySlot.split('–').map((s) => s.trim()) : [];
       const deliverySlotObj = {
@@ -246,13 +304,18 @@ export default function CheckoutPage() {
         deliveryDate,
         deliverySlot: deliverySlotObj,
         paymentMethod: paymentMethod === 'cod' ? 'cod' : 'online',
-        items: items.map((i) => ({
-          product: i.product?._id || i.product,
-          variant: i.variant?._id || i.variant,
-          quantity: i.quantity,
-          isEggless: i.isEggless,
-          cakeMessage: i.cakeMessage,
-        })),
+        items: items.map((i) => {
+          const itemKey = i._id;
+          const addOns = pendingAddOns[itemKey] || [];
+          return {
+            product: i.product?._id || i.product,
+            variant: i.variant?._id || i.variant,
+            quantity: i.quantity,
+            isEggless: i.isEggless,
+            cakeMessage: i.cakeMessage,
+            addOns: addOns.map((a) => ({ name: a.name, price: a.price })),
+          };
+        }),
       };
 
       // If using unsaved new address, include inline shippingAddress
@@ -270,11 +333,15 @@ export default function CheckoutPage() {
 
       if (paymentMethod === 'cod') {
         const res = await api.post('/checkout/create-order', orderPayload);
-        const orderId = res.data?.data?.order?._id;
+        const orderNum = res.data?.data?.order?.orderNumber;
+        const orderId  = res.data?.data?.order?._id;
         dispatch(addToast({ message: 'Order placed! 🎂', type: 'success' }));
         dispatch(resetCart());
+        dispatch(clearPendingAddOns());
         if (isAuthenticated) dispatch(fetchCart());
-        router.push(`/order-confirmation?orderId=${orderId}`);
+        router.push(orderNum
+          ? `/order-confirmation?orderNumber=${orderNum}`
+          : `/order-confirmation?orderId=${orderId}`);
         return;
       } else {
         // Razorpay online
@@ -292,8 +359,12 @@ export default function CheckoutPage() {
             await api.post('/payments/verify', response);
             dispatch(addToast({ message: 'Payment successful! 🎂', type: 'success' }));
             dispatch(resetCart());
+            dispatch(clearPendingAddOns());
             if (isAuthenticated) dispatch(fetchCart());
-            router.push(`/order-confirmation?orderId=${orderId}`);
+            const onlineOrderNum = res.data?.data?.order?.orderNumber;
+            router.push(onlineOrderNum
+              ? `/order-confirmation?orderNumber=${onlineOrderNum}`
+              : `/order-confirmation?orderId=${orderId}`);
             return;
           },
           prefill: paymentParams.prefill || { name: user?.name, email: user?.email, contact: user?.phone },
@@ -462,14 +533,11 @@ export default function CheckoutPage() {
 
                   {showNewAddress && (
                     <div className="space-y-3 p-4 bg-surface-container-low rounded-xl mb-4">
+                      {/* Basic text fields */}
                       {[
                         { label: 'Full Name', key: 'fullName', placeholder: 'Enter your full name', required: true },
                         { label: 'Phone Number', key: 'phone', placeholder: '+91 98765 43210', required: true, type: 'tel' },
                         { label: 'Address Line 1', key: 'line1', placeholder: 'House no, Street name', required: true },
-                        { label: 'City', key: 'city', placeholder: 'Amritsar', required: true },
-                        { label: 'State', key: 'state', placeholder: 'Punjab', required: true },
-                        { label: 'Pincode', key: 'pincode', placeholder: '143001', required: true },
-                        { label: 'Landmark (optional)', key: 'landmark', placeholder: 'Near by landmark', required: false },
                       ].map(({ label, key, placeholder, required, type }) => (
                         <div key={key}>
                           <label className="text-xs font-medium text-outline mb-1 block">
@@ -477,6 +545,92 @@ export default function CheckoutPage() {
                           </label>
                           <input
                             type={type || 'text'}
+                            value={newAddress[key]}
+                            onChange={(e) => setNewAddress((p) => ({ ...p, [key]: e.target.value }))}
+                            placeholder={placeholder}
+                            className="w-full px-3 py-2 text-sm border border-outline-variant/30 rounded-lg focus:outline-none focus:border-pink-deep"
+                          />
+                        </div>
+                      ))}
+
+                      {/* State dropdown */}
+                      <div>
+                        <label className="text-xs font-medium text-outline mb-1 block">State <span className="text-pink-deep">*</span></label>
+                        <div className="relative">
+                          <select
+                            value={newAddress.state}
+                            onChange={(e) => {
+                              setNewAddress((p) => ({ ...p, state: e.target.value, city: '', area: '' }));
+                              setSelectedZone(null);
+                            }}
+                            className="w-full px-3 py-2 text-sm border border-outline-variant/30 rounded-lg focus:outline-none focus:border-pink-deep appearance-none bg-white pr-8"
+                          >
+                            <option value="">Select state</option>
+                            {[...new Set(zones.map((z) => z.state).filter(Boolean))].map((s) => (
+                              <option key={s} value={s}>{s}</option>
+                            ))}
+                          </select>
+                          <FiChevronDown className="absolute right-2 top-1/2 -translate-y-1/2 w-4 h-4 text-outline pointer-events-none" />
+                        </div>
+                      </div>
+
+                      {/* City dropdown — filtered by state */}
+                      {newAddress.state && (
+                        <div>
+                          <label className="text-xs font-medium text-outline mb-1 block">City <span className="text-pink-deep">*</span></label>
+                          <div className="relative">
+                            <select
+                              value={newAddress.city}
+                              onChange={(e) => {
+                                const city = e.target.value;
+                                const zone = zones.find((z) => z.state === newAddress.state && z.city === city) || null;
+                                setNewAddress((p) => ({ ...p, city, area: '' }));
+                                setSelectedZone(zone);
+                              }}
+                              className="w-full px-3 py-2 text-sm border border-outline-variant/30 rounded-lg focus:outline-none focus:border-pink-deep appearance-none bg-white pr-8"
+                            >
+                              <option value="">Select city</option>
+                              {zones.filter((z) => z.state === newAddress.state).map((z) => (
+                                <option key={z._id} value={z.city}>{z.city}</option>
+                              ))}
+                            </select>
+                            <FiChevronDown className="absolute right-2 top-1/2 -translate-y-1/2 w-4 h-4 text-outline pointer-events-none" />
+                          </div>
+                        </div>
+                      )}
+
+                      {/* Area dropdown — shown when city has areas */}
+                      {newAddress.city && (() => {
+                        const zone = zones.find((z) => z.state === newAddress.state && z.city === newAddress.city);
+                        return zone?.areas?.length > 0 ? (
+                          <div>
+                            <label className="text-xs font-medium text-outline mb-1 block">Area / Sector <span className="text-pink-deep">*</span></label>
+                            <div className="relative">
+                              <select
+                                value={newAddress.area}
+                                onChange={(e) => setNewAddress((p) => ({ ...p, area: e.target.value }))}
+                                className="w-full px-3 py-2 text-sm border border-outline-variant/30 rounded-lg focus:outline-none focus:border-pink-deep appearance-none bg-white pr-8"
+                              >
+                                <option value="">Select area</option>
+                                {zone.areas.map((a) => <option key={a} value={a}>{a}</option>)}
+                              </select>
+                              <FiChevronDown className="absolute right-2 top-1/2 -translate-y-1/2 w-4 h-4 text-outline pointer-events-none" />
+                            </div>
+                          </div>
+                        ) : null;
+                      })()}
+
+                      {/* Pincode + Landmark */}
+                      {[
+                        { label: 'Pincode', key: 'pincode', placeholder: '143001', required: true },
+                        { label: 'Landmark (optional)', key: 'landmark', placeholder: 'Near by landmark', required: false },
+                      ].map(({ label, key, placeholder, required }) => (
+                        <div key={key}>
+                          <label className="text-xs font-medium text-outline mb-1 block">
+                            {label} {required && <span className="text-pink-deep">*</span>}
+                          </label>
+                          <input
+                            type="text"
                             value={newAddress[key]}
                             onChange={(e) => setNewAddress((p) => ({ ...p, [key]: e.target.value }))}
                             placeholder={placeholder}
@@ -509,6 +663,12 @@ export default function CheckoutPage() {
                             dispatch(addToast({ message: 'Please fill all required fields', type: 'error' }));
                             return;
                           }
+                          // Validate area if zone has areas configured
+                          const zone = zones.find((z) => z.state === newAddress.state && z.city === newAddress.city);
+                          if (zone?.areas?.length > 0 && !newAddress.area) {
+                            dispatch(addToast({ message: 'Please select an area / sector', type: 'error' }));
+                            return;
+                          }
                           setSavingAddress(true);
                           try {
                             const payload = {
@@ -516,6 +676,7 @@ export default function CheckoutPage() {
                               fullName: newAddress.fullName,
                               phone: newAddress.phone,
                               addressLine1: newAddress.line1,
+                              area: newAddress.area || '',
                               city: newAddress.city,
                               state: newAddress.state,
                               pincode: newAddress.pincode,
@@ -560,22 +721,95 @@ export default function CheckoutPage() {
 
                   <div className="space-y-4 mb-6">
                     <p className="text-sm font-semibold text-dark">Delivery Address</p>
-                    {[
-                      { label: 'Address Line 1', key: 'line1', placeholder: 'House no, Street name' },
-                      { label: 'City', key: 'city', placeholder: 'Amritsar' },
-                      { label: 'State', key: 'state', placeholder: 'Punjab' },
-                      { label: 'Pincode', key: 'pincode', placeholder: '143001' },
-                    ].map(({ label, key, placeholder }) => (
-                      <div key={key}>
-                        <label className="text-xs font-medium text-outline mb-1 block">{label}</label>
-                        <input
-                          value={guestAddress[key]}
-                          onChange={(e) => setGuestAddress((p) => ({ ...p, [key]: e.target.value }))}
-                          placeholder={placeholder}
-                          className="w-full px-4 py-3 text-sm border border-outline-variant/30 rounded-xl focus:outline-none focus:border-pink-deep"
-                        />
+
+                    {/* Address line 1 */}
+                    <div>
+                      <label className="text-xs font-medium text-outline mb-1 block">Address Line 1</label>
+                      <input
+                        value={guestAddress.line1}
+                        onChange={(e) => setGuestAddress((p) => ({ ...p, line1: e.target.value }))}
+                        placeholder="House no, Street name"
+                        className="w-full px-4 py-3 text-sm border border-outline-variant/30 rounded-xl focus:outline-none focus:border-pink-deep"
+                      />
+                    </div>
+
+                    {/* State dropdown */}
+                    <div>
+                      <label className="text-xs font-medium text-outline mb-1 block">State</label>
+                      <div className="relative">
+                        <select
+                          value={guestAddress.state}
+                          onChange={(e) => {
+                            setGuestAddress((p) => ({ ...p, state: e.target.value, city: '', area: '' }));
+                            setSelectedZone(null);
+                          }}
+                          className="w-full px-4 py-3 text-sm border border-outline-variant/30 rounded-xl focus:outline-none focus:border-pink-deep appearance-none bg-white pr-8"
+                        >
+                          <option value="">Select state</option>
+                          {[...new Set(zones.map((z) => z.state).filter(Boolean))].map((s) => (
+                            <option key={s} value={s}>{s}</option>
+                          ))}
+                        </select>
+                        <FiChevronDown className="absolute right-3 top-1/2 -translate-y-1/2 w-4 h-4 text-outline pointer-events-none" />
                       </div>
-                    ))}
+                    </div>
+
+                    {/* City dropdown — filtered by state */}
+                    {guestAddress.state && (
+                      <div>
+                        <label className="text-xs font-medium text-outline mb-1 block">City</label>
+                        <div className="relative">
+                          <select
+                            value={guestAddress.city}
+                            onChange={(e) => {
+                              const city = e.target.value;
+                              const zone = zones.find((z) => z.state === guestAddress.state && z.city === city) || null;
+                              setGuestAddress((p) => ({ ...p, city, area: '' }));
+                              setSelectedZone(zone);
+                            }}
+                            className="w-full px-4 py-3 text-sm border border-outline-variant/30 rounded-xl focus:outline-none focus:border-pink-deep appearance-none bg-white pr-8"
+                          >
+                            <option value="">Select city</option>
+                            {zones.filter((z) => z.state === guestAddress.state).map((z) => (
+                              <option key={z._id} value={z.city}>{z.city}</option>
+                            ))}
+                          </select>
+                          <FiChevronDown className="absolute right-3 top-1/2 -translate-y-1/2 w-4 h-4 text-outline pointer-events-none" />
+                        </div>
+                      </div>
+                    )}
+
+                    {/* Area dropdown */}
+                    {guestAddress.city && (() => {
+                      const zone = zones.find((z) => z.state === guestAddress.state && z.city === guestAddress.city);
+                      return zone?.areas?.length > 0 ? (
+                        <div>
+                          <label className="text-xs font-medium text-outline mb-1 block">Area / Sector</label>
+                          <div className="relative">
+                            <select
+                              value={guestAddress.area}
+                              onChange={(e) => setGuestAddress((p) => ({ ...p, area: e.target.value }))}
+                              className="w-full px-4 py-3 text-sm border border-outline-variant/30 rounded-xl focus:outline-none focus:border-pink-deep appearance-none bg-white pr-8"
+                            >
+                              <option value="">Select area</option>
+                              {zone.areas.map((a) => <option key={a} value={a}>{a}</option>)}
+                            </select>
+                            <FiChevronDown className="absolute right-3 top-1/2 -translate-y-1/2 w-4 h-4 text-outline pointer-events-none" />
+                          </div>
+                        </div>
+                      ) : null;
+                    })()}
+
+                    {/* Pincode */}
+                    <div>
+                      <label className="text-xs font-medium text-outline mb-1 block">Pincode</label>
+                      <input
+                        value={guestAddress.pincode}
+                        onChange={(e) => setGuestAddress((p) => ({ ...p, pincode: e.target.value }))}
+                        placeholder="143001"
+                        className="w-full px-4 py-3 text-sm border border-outline-variant/30 rounded-xl focus:outline-none focus:border-pink-deep"
+                      />
+                    </div>
                   </div>
 
                   <DeliveryDateSlot
@@ -625,6 +859,68 @@ export default function CheckoutPage() {
                     <FiArrowLeft className="w-4 h-4" /> Back
                   </button>
                   <h2 className="text-xl font-bold text-dark mb-6">Payment Method</h2>
+
+                  {/* ── Coupon Section ── */}
+                  <div className="mb-6 p-4 bg-surface-container-low rounded-xl">
+                    <div className="flex items-center gap-2 mb-3">
+                      <FiTag className="w-4 h-4 text-pink-deep" />
+                      <span className="text-sm font-semibold text-dark">Have a coupon?</span>
+                    </div>
+                    {isAuthenticated ? (
+                      appliedCoupon ? (
+                        <div className="flex items-center justify-between p-3 bg-success/10 rounded-xl">
+                          <div>
+                            <span className="text-sm font-bold text-success">{appliedCoupon.code}</span>
+                            {appliedCoupon.description && (
+                              <p className="text-xs text-success/80 mt-0.5">{appliedCoupon.description}</p>
+                            )}
+                            <p className="text-xs text-success font-medium">-{formatPrice(appliedCoupon.discount)} saved!</p>
+                          </div>
+                          <button
+                            onClick={() => setAppliedCoupon(null)}
+                            className="text-xs text-error hover:underline font-medium"
+                          >
+                            Remove
+                          </button>
+                        </div>
+                      ) : (
+                        <div className="flex gap-2">
+                          <input
+                            type="text"
+                            value={couponCode}
+                            onChange={(e) => setCouponCode(e.target.value.toUpperCase())}
+                            placeholder="Enter coupon code"
+                            className="flex-1 px-3 py-2 text-sm border border-outline-variant/30 rounded-xl focus:outline-none focus:border-pink-deep bg-white placeholder:text-outline"
+                          />
+                          <button
+                            onClick={async () => {
+                              if (!couponCode.trim()) return;
+                              setCouponLoading(true);
+                              try {
+                                const res = await api.post('/coupons/validate', { code: couponCode.trim(), cartSubtotal: subtotal });
+                                const data = res.data?.data;
+                                setAppliedCoupon({ code: data.coupon.code, discount: data.discount, description: data.coupon.description });
+                                setCouponCode('');
+                              } catch (err) {
+                                dispatch(addToast({ message: err?.response?.data?.message || 'Invalid coupon', type: 'error' }));
+                              } finally {
+                                setCouponLoading(false);
+                              }
+                            }}
+                            disabled={couponLoading}
+                            className="px-4 py-2 text-sm font-semibold text-pink-deep border border-pink-deep rounded-xl hover:bg-pink-light/20 transition-colors disabled:opacity-50"
+                          >
+                            {couponLoading ? <div className="w-4 h-4 border-2 border-pink-deep border-t-transparent rounded-full animate-spin" /> : 'Apply'}
+                          </button>
+                        </div>
+                      )
+                    ) : (
+                      <p className="text-sm text-outline">
+                        <Link href="/login?next=/checkout" className="text-pink-deep font-semibold hover:underline">Sign in</Link>
+                        {' '}to unlock exclusive coupon codes
+                      </p>
+                    )}
+                  </div>
 
                   <div className="space-y-3 mb-8">
                     {[
@@ -700,14 +996,20 @@ export default function CheckoutPage() {
                   <span className="text-outline">Subtotal</span>
                   <span className="font-medium">{formatPrice(subtotal)}</span>
                 </div>
-                {discount > 0 && (
+                {addonTotal > 0 && (
+                  <div className="flex justify-between text-dark">
+                    <span className="text-outline">Add-ons</span>
+                    <span>+{formatPrice(addonTotal)}</span>
+                  </div>
+                )}
+                {couponDiscount > 0 && (
                   <div className="flex justify-between text-success">
-                    <span>Discount</span>
-                    <span>-{formatPrice(discount)}</span>
+                    <span>Coupon{appliedCoupon?.code ? ` (${appliedCoupon.code})` : ''}</span>
+                    <span>-{formatPrice(couponDiscount)}</span>
                   </div>
                 )}
                 <div className="flex justify-between">
-                  <span className="text-outline">Delivery</span>
+                  <span className="text-outline">Delivery{selectedZone ? ` · ${selectedZone.city}` : ''}</span>
                   <span className={deliveryCost === 0 ? 'text-success font-medium' : 'font-medium'}>
                     {deliveryCost === 0 ? 'Free' : formatPrice(deliveryCost)}
                   </span>

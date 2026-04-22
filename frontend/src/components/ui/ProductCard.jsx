@@ -28,7 +28,12 @@ export default function ProductCard({ product, index = 0 }) {
     e.preventDefault();
     e.stopPropagation();
     if (!isAuthenticated) {
-      dispatch(addToast({ message: 'Please login to save to wishlist', type: 'info' }));
+      dispatch(addToast({
+        message: 'Sign in to save to wishlist',
+        type: 'info',
+        link: '/login',
+        linkLabel: 'Sign in',
+      }));
       return;
     }
     await dispatch(toggleWishlistItem(product._id));
