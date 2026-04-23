@@ -2,7 +2,7 @@
  * Cluster Mode Entry Point
  *
  * Uses Node.js cluster module to fork worker processes equal to CPU count.
- * This allows the Cake Bake API to utilize all CPU cores on a single server,
+ * This allows The Cake Bake API to utilize all CPU cores on a single server,
  * dramatically increasing throughput for concurrent requests.
  *
  * Usage:

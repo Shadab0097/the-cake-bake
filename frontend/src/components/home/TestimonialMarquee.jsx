@@ -37,7 +37,7 @@ const testimonials = [
     name: 'Amit Patel',
     city: 'Chandigarh',
     rating: 5,
-    text: 'The wedding cake was a showstopper! Everyone at the party loved it. Thank you Cake Bake!',
+    text: 'The wedding cake was a showstopper! Everyone at the party loved it. Thank you The Cake Bake!',
   },
 ];
 

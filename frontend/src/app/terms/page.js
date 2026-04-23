@@ -1,8 +1,8 @@
 import AppShell from '@/components/layout/AppShell';
 
 export const metadata = {
-  title: 'Terms & Conditions | Cake Bake',
-  description: 'Read Cake Bake\'s terms and conditions for using our website and services.',
+  title: 'Terms & Conditions | The Cake Bake',
+  description: 'Read The Cake Bake\'s terms and conditions for using our website and services.',
 };
 
 export default function TermsPage() {
@@ -15,7 +15,7 @@ export default function TermsPage() {
         <div className="space-y-8 text-sm text-on-surface-variant leading-relaxed">
           <section>
             <h2 className="text-lg font-semibold text-dark mb-3">Acceptance of Terms</h2>
-            <p>By accessing or using the Cake Bake website or placing an order, you agree to be bound by these Terms and Conditions. If you do not agree, please do not use our services.</p>
+            <p>By accessing or using The Cake Bake website or placing an order, you agree to be bound by these Terms and Conditions. If you do not agree, please do not use our services.</p>
           </section>
 
           <section>
@@ -30,12 +30,12 @@ export default function TermsPage() {
 
           <section>
             <h2 className="text-lg font-semibold text-dark mb-3">Intellectual Property</h2>
-            <p>All content on this website — including images, text, logos, and designs — is the property of Cake Bake and may not be reproduced without written permission.</p>
+            <p>All content on this website — including images, text, logos, and designs — is the property of The Cake Bake and may not be reproduced without written permission.</p>
           </section>
 
           <section>
             <h2 className="text-lg font-semibold text-dark mb-3">Limitation of Liability</h2>
-            <p>Cake Bake shall not be liable for any indirect, incidental, or consequential damages arising from the use of our products or services. Our maximum liability shall be limited to the value of the order placed.</p>
+            <p>The Cake Bake shall not be liable for any indirect, incidental, or consequential damages arising from the use of our products or services. Our maximum liability shall be limited to the value of the order placed.</p>
           </section>
 
           <section>

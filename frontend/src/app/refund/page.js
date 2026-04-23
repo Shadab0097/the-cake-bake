@@ -1,8 +1,8 @@
 import AppShell from '@/components/layout/AppShell';
 
 export const metadata = {
-  title: 'Cancellation & Refund Policy | Cake Bake',
-  description: 'Understand Cake Bake\'s cancellation and refund policy.',
+  title: 'Cancellation & Refund Policy | The Cake Bake',
+  description: 'Understand The Cake Bake\'s cancellation and refund policy.',
 };
 
 export default function RefundPage() {

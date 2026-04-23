@@ -23,7 +23,7 @@ const seedAdmin = async () => {
   }
 
   const admin = await User.create({
-    name: 'Cake Bake Admin',
+    name: 'The Cake Bake Admin',
     email: 'admin@cakebake.in',
     phone: '9999999999',
     passwordHash: 'admin123456',

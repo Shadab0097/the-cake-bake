@@ -28,7 +28,7 @@ export default function Footer() {
           {/* Brand */}
           <div className="sm:col-span-2 lg:col-span-1">
             <Link href="/" className="inline-block mb-4">
-              <span className="text-3xl font-script text-pink-light">Cake Bake</span>
+              <span className="text-3xl font-script text-pink-light">The Cake Bake</span>
             </Link>
             <p className="text-sm text-white/70 leading-relaxed mb-6">
               Freshly Baked, Delivered with Love. Premium cakes for every celebration,
@@ -140,7 +140,7 @@ export default function Footer() {
       <div className="border-t border-white/10">
         <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-4 flex flex-col sm:flex-row items-center justify-between gap-2">
           <p className="text-xs text-white/50">
-            © {new Date().getFullYear()} Cake Bake. All rights reserved.
+            © {new Date().getFullYear()} The Cake Bake. All rights reserved.
           </p>
           <p className="text-xs text-white/50">
             Made with 💖 in Amritsar

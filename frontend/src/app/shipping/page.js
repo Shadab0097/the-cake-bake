@@ -1,8 +1,8 @@
 import AppShell from '@/components/layout/AppShell';
 
 export const metadata = {
-  title: 'Shipping Policy | Cake Bake',
-  description: 'Learn about Cake Bake delivery areas, timelines, and charges.',
+  title: 'Shipping Policy | The Cake Bake',
+  description: 'Learn about The Cake Bake delivery areas, timelines, and charges.',
 };
 
 export default function ShippingPage() {

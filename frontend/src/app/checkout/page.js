@@ -352,7 +352,7 @@ export default function CheckoutPage() {
           key: paymentParams.key_id,
           amount: paymentParams.amount,
           currency: paymentParams.currency || 'INR',
-          name: paymentParams.name || 'Cake Bake',
+          name: paymentParams.name || 'The Cake Bake',
           description: paymentParams.description || 'Delicious cake order',
           order_id: paymentParams.order_id,
           handler: async (response) => {

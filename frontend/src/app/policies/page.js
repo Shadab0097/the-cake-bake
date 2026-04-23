@@ -1,8 +1,8 @@
 import AppShell from '@/components/layout/AppShell';
 
 export const metadata = {
-  title: 'Privacy Policy | Cake Bake',
-  description: 'Cake Bake\'s privacy policy — how we collect, use, and protect your data.',
+  title: 'Privacy Policy | The Cake Bake',
+  description: 'The Cake Bake\'s privacy policy — how we collect, use, and protect your data.',
 };
 
 export default function PoliciesPage() {

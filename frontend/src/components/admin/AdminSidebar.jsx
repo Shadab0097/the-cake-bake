@@ -72,7 +72,7 @@ export default function AdminSidebar({ collapsed, onToggle, mobileOpen, onMobile
           </div>
           {!collapsed && (
             <div>
-              <div style={{ fontWeight: 700, fontSize: '0.9375rem', color: 'var(--admin-text)', lineHeight: 1.2 }}>Cake Bake</div>
+              <div style={{ fontWeight: 700, fontSize: '0.9375rem', color: 'var(--admin-text)', lineHeight: 1.2 }}>The Cake Bake</div>
               <div style={{ fontSize: '0.6875rem', color: 'var(--admin-text-muted)', letterSpacing: '0.04em' }}>ADMIN PANEL</div>
             </div>
           )}

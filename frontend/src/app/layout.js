@@ -18,8 +18,8 @@ const greatVibes = Great_Vibes({
 
 export const metadata = {
   title: {
-    default: 'Cake Bake — Freshly Baked, Delivered with Love',
-    template: '%s | Cake Bake',
+    default: 'The Cake Bake — Freshly Baked, Delivered with Love',
+    template: '%s | The Cake Bake',
   },
   description:
     'Premium cakes delivered fresh to your doorstep in Amritsar. Birthday cakes, wedding cakes, custom designs, eggless options & more. Order online today!',
@@ -31,20 +31,20 @@ export const metadata = {
     'eggless cake',
     'Amritsar bakery',
     'online cake order',
-    'Cake Bake',
+    'The Cake Bake',
   ],
   openGraph: {
-    title: 'Cake Bake — Freshly Baked, Delivered with Love',
+    title: 'The Cake Bake — Freshly Baked, Delivered with Love',
     description:
       'Premium cakes delivered fresh to your doorstep. Birthday, wedding, custom designs & more.',
     url: 'https://cakebake.in',
-    siteName: 'Cake Bake',
+    siteName: 'The Cake Bake',
     locale: 'en_IN',
     type: 'website',
   },
   twitter: {
     card: 'summary_large_image',
-    title: 'Cake Bake — Freshly Baked, Delivered with Love',
+    title: 'The Cake Bake — Freshly Baked, Delivered with Love',
     description:
       'Premium cakes delivered fresh to your doorstep. Order online today!',
   },

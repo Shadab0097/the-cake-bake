@@ -17,7 +17,7 @@ const startServer = async () => {
       logger.info(`
   ╔══════════════════════════════════════════════╗
   ║                                              ║
-  ║    🎂  Cake Bake API Server                  ║
+  ║    🎂  The Cake Bake API Server              ║
   ║                                              ║
   ║    Environment: ${env.nodeEnv.padEnd(28)}║
   ║    Port:        ${String(env.port).padEnd(28)}║

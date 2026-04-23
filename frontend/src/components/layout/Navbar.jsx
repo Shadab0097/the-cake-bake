@@ -136,7 +136,7 @@ export default function Navbar() {
             {/* Logo */}
             <Link href="/" className="flex items-center gap-2 shrink-0">
               <span className="text-2xl lg:text-3xl font-script text-pink-deep">
-                Cake Bake
+                The Cake Bake
               </span>
             </Link>
 
@@ -320,7 +320,7 @@ export default function Navbar() {
                 style={{ maxHeight: '90vh', overflowY: 'auto' }}
               >
                 <div className="flex items-center justify-between px-5 py-4 border-b border-outline-variant/20">
-                  <span className="text-xl font-script text-pink-deep">Cake Bake</span>
+                  <span className="text-xl font-script text-pink-deep">The Cake Bake</span>
                   <button
                     onClick={() => dispatch(closeMobileMenu())}
                     className="p-2 rounded-full hover:bg-pink-light/30 transition-colors text-dark"

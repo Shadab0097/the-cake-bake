@@ -2,7 +2,7 @@ import AppShell from '@/components/layout/AppShell';
 
 export const metadata = {
   title: 'Our Story',
-  description: 'Learn about Cake Bake — premium cakes baked fresh in Amritsar with love and passion.',
+  description: 'Learn about The Cake Bake — premium cakes baked fresh in Amritsar with love and passion.',
 };
 
 export default function AboutPage() {
@@ -15,7 +15,7 @@ export default function AboutPage() {
           <h1 className="text-3xl lg:text-4xl font-bold text-dark mb-4">Our Story</h1>
           <p className="text-lg text-on-surface-variant max-w-2xl mx-auto leading-relaxed">
             Born from a passion for baking and a love for celebrations,
-            Cake Bake has been crafting unforgettable moments since 2020.
+            The Cake Bake has been crafting unforgettable moments since 2020.
           </p>
         </div>
 
@@ -38,7 +38,7 @@ export default function AboutPage() {
         <div className="prose prose-sm max-w-none text-on-surface-variant space-y-4">
           <h2 className="text-2xl font-bold text-dark">From Our Kitchen to Your Table</h2>
           <p>What started as a small home bakery in Amritsar has grown into a beloved brand trusted by thousands of families across Punjab. Every day, we wake up with one mission: to make celebrations sweeter.</p>
-          <p>At Cake Bake, we believe that every cake tells a story. Whether it&apos;s a child&apos;s first birthday, a golden anniversary, or a simple &ldquo;thank you&rdquo; — we pour our heart into every creation.</p>
+          <p>At The Cake Bake, we believe that every cake tells a story. Whether it&apos;s a child&apos;s first birthday, a golden anniversary, or a simple &ldquo;thank you&rdquo; — we pour our heart into every creation.</p>
           <p>Our commitment to quality is unwavering. We never use artificial preservatives, and every cake is freshly baked to order. This is our promise to you.</p>
         </div>
 

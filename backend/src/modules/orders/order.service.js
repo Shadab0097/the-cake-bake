@@ -281,7 +281,7 @@ class OrderService {
           key_id: process.env.RAZORPAY_KEY_ID,
           amount: total,
           currency: 'INR',
-          name: process.env.APP_NAME || 'Cake Bake',
+          name: process.env.APP_NAME || 'The Cake Bake',
           description: `Order ${orderNumber}`,
           order_id: razorpayOrder.id,
           prefill: {

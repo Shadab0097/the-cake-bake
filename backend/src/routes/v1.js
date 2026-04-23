@@ -38,7 +38,7 @@ router.get('/health', (req, res) => {
 
   const healthData = {
     success: isHealthy,
-    message: isHealthy ? 'Cake Bake API is running' : 'Service degraded',
+    message: isHealthy ? 'The Cake Bake API is running' : 'Service degraded',
     timestamp: new Date().toISOString(),
     uptime: process.uptime(),
     version: '1.0.0',

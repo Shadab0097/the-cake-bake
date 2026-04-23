@@ -72,9 +72,9 @@ export default function AdminLoginPage() {
       <div style={styles.container}>
         {/* Logo */}
         <div style={styles.logoBox}>
-          <div style={styles.logoIcon}>CB</div>
+          <div style={styles.logoIcon}>TCB</div>
           <div>
-            <div style={styles.logoTitle}>Cake Bake</div>
+            <div style={styles.logoTitle}>The Cake Bake</div>
             <div style={styles.logoSub}>Admin Dashboard</div>
           </div>
         </div>
@@ -144,7 +144,7 @@ export default function AdminLoginPage() {
         </div>
 
         <p style={styles.footer}>
-          © {new Date().getFullYear()} Cake Bake. All rights reserved.
+          © {new Date().getFullYear()} The Cake Bake. All rights reserved.
         </p>
       </div>
     </div>

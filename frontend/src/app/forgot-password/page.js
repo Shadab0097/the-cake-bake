@@ -36,7 +36,7 @@ export default function ForgotPasswordPage() {
       >
         <div className="text-center mb-8">
           <Link href="/" className="inline-block">
-            <h1 className="text-4xl font-script text-pink-deep">Cake Bake</h1>
+            <h1 className="text-4xl font-script text-pink-deep">The Cake Bake</h1>
           </Link>
           <p className="text-sm text-outline mt-2">Reset your password</p>
         </div>

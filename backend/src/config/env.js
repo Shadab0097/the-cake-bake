@@ -50,7 +50,7 @@ const env = {
   },
 
   app: {
-    name: process.env.APP_NAME || 'Cake Bake',
+    name: process.env.APP_NAME || 'The Cake Bake',
     url: process.env.APP_URL || 'http://localhost:3000',
     adminEmail: process.env.ADMIN_EMAIL || 'admin@cakebake.in',
   },
