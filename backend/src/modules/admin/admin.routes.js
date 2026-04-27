@@ -66,6 +66,7 @@ router.put('/inquiries/:id', validate(adminValidation.updateInquiry), adminContr
 // Customers
 router.get('/customers', adminController.getCustomers);
 router.get('/customers/:id', validate(adminValidation.paramId), adminController.getCustomerDetail);
+router.put('/customers/:id/points', validate(adminValidation.adjustPoints), adminController.adjustCustomerPoints);
 
 // Reviews
 router.get('/reviews', adminController.getReviews);
@@ -81,5 +82,13 @@ router.delete('/banners/:id', validate(adminValidation.paramId), adminController
 // Notifications
 router.get('/notifications', adminController.getNotifications);
 router.post('/notifications/send', validate(adminValidation.sendNotification), adminController.sendManualNotification);
+
+// Chatbot — Bot Rules & Logs
+router.get('/chatbot/stats', adminController.getChatbotStats);
+router.get('/chatbot/rules', adminController.listBotRules);
+router.post('/chatbot/rules', validate(adminValidation.createBotRule), adminController.createBotRule);
+router.put('/chatbot/rules/:id', validate(adminValidation.updateBotRule), adminController.updateBotRule);
+router.delete('/chatbot/rules/:id', validate(adminValidation.paramId), adminController.deleteBotRule);
+router.get('/chatbot/logs', adminController.getChatbotLogs);
 
 module.exports = router;

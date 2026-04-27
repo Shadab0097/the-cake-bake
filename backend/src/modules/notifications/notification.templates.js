@@ -1,5 +1,8 @@
 /**
  * WhatsApp notification template name mapping and parameter builders
+ *
+ * NOTE: All template *names* must match an approved template in your
+ * Meta WhatsApp Business Account → Message Templates.
  */
 
 const TEMPLATES = {
@@ -112,6 +115,15 @@ const TEMPLATES = {
       refundAmount: ((payment?.refundAmount || order.total) / 100).toFixed(2),
     }),
   },
+
+  // Welcome message — requires a pre-approved "welcome" template in Meta Business
+  welcome: {
+    name: 'welcome',
+    buildParams: (user) => ({
+      name: user.name,
+    }),
+  },
 };
 
 module.exports = TEMPLATES;
+

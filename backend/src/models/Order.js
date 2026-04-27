@@ -97,6 +97,14 @@ const orderSchema = new mongoose.Schema(
       type: String,
       default: '',
     },
+    pointsRedeemed: {
+      type: Number,
+      default: 0,
+    },
+    pointsDiscount: {
+      type: Number,
+      default: 0,
+    },
     tax: {
       type: Number,
       default: 0,

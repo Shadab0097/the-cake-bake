@@ -9,6 +9,7 @@ const DeliveryZone = require('../../models/DeliveryZone');
 const { generateOrderNumber } = require('../../utils/helpers');
 const { ORDER_STATUSES, PAYMENT_STATUSES } = require('../../utils/constants');
 const cache = require('../../utils/cache');
+const logger = require('../../middleware/logger');
 
 /**
  * POST /api/v1/guest-checkout
@@ -149,6 +150,16 @@ router.post(
 
     // Bust dashboard cache so the new order appears immediately
     cache.del('admin:dashboard');
+
+    // Send order confirmation to guest via email + WhatsApp (fire-and-forget)
+    setImmediate(async () => {
+      try {
+        const notificationService = require('../notifications/notification.service');
+        await notificationService.sendOrderConfirmation(order);
+      } catch (err) {
+        logger.warn('[GuestCheckout] Order notification failed:', err.message);
+      }
+    });
 
     return ApiResponse.created({ order }, 'Guest order placed successfully').send(res);
   })

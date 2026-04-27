@@ -26,10 +26,7 @@ const notificationLogSchema = new mongoose.Schema(
       type: String,
       default: '',
     },
-    templateParams: {
-      type: mongoose.Schema.Types.Mixed,
-      default: {},
-    },
+    // templateParams intentionally omitted — not needed for audit, reduces doc size
     status: {
       type: String,
       enum: ['sent', 'delivered', 'read', 'failed'],
@@ -53,5 +50,9 @@ const notificationLogSchema = new mongoose.Schema(
 
 notificationLogSchema.index({ user: 1, createdAt: -1 });
 notificationLogSchema.index({ channel: 1, type: 1, createdAt: -1 });
+
+// TTL index — MongoDB auto-deletes notification logs older than 24 hours
+// (runs as a background task every ~60s, zero app-level maintenance needed)
+notificationLogSchema.index({ createdAt: 1 }, { expireAfterSeconds: 86400 });
 
 module.exports = mongoose.model('NotificationLog', notificationLogSchema);

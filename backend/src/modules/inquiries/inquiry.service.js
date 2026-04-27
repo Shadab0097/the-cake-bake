@@ -1,13 +1,28 @@
+'use strict';
+
 const CustomCakeInquiry = require('../../models/CustomCakeInquiry');
 const CorporateInquiry = require('../../models/CorporateInquiry');
 const ApiError = require('../../utils/ApiError');
 const { parsePagination, paginatedResponse } = require('../../utils/pagination');
+const logger = require('../../middleware/logger');
 
 class InquiryService {
   // ---- Custom Cake ----
   async submitCustomCakeInquiry(data, userId = null) {
     if (userId) data.user = userId;
-    return CustomCakeInquiry.create(data);
+    const inquiry = await CustomCakeInquiry.create(data);
+
+    // Notify admin — fire-and-forget
+    setImmediate(async () => {
+      try {
+        const notificationService = require('../notifications/notification.service');
+        await notificationService.sendInquiryAlert(inquiry, 'custom_cake');
+      } catch (err) {
+        logger.warn('[Inquiry] Admin alert (custom cake) failed:', err.message);
+      }
+    });
+
+    return inquiry;
   }
 
   async getMyInquiries(userId) {
@@ -20,7 +35,19 @@ class InquiryService {
 
   // ---- Corporate ----
   async submitCorporateInquiry(data) {
-    return CorporateInquiry.create(data);
+    const inquiry = await CorporateInquiry.create(data);
+
+    // Notify admin — fire-and-forget
+    setImmediate(async () => {
+      try {
+        const notificationService = require('../notifications/notification.service');
+        await notificationService.sendInquiryAlert(inquiry, 'corporate');
+      } catch (err) {
+        logger.warn('[Inquiry] Admin alert (corporate) failed:', err.message);
+      }
+    });
+
+    return inquiry;
   }
 
   // ---- Admin ----

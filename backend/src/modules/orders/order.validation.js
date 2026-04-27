@@ -19,6 +19,7 @@ const createOrder = {
     specialInstructions: Joi.string().max(500).allow('').default('').custom(joiSanitize),
     isGift: Joi.boolean().default(false),
     giftMessage: Joi.string().max(300).allow('').default('').custom(joiSanitize),
+    redeemPoints: Joi.boolean().default(false),
     shippingAddress: Joi.object({
       fullName: Joi.string().trim().required().custom(joiSanitize),
       phone: Joi.string().trim().required(),

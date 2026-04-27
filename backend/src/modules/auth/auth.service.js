@@ -3,6 +3,7 @@ const crypto = require('crypto');
 const User = require('../../models/User');
 const { env } = require('../../config/env');
 const ApiError = require('../../utils/ApiError');
+const logger = require('../../middleware/logger');
 
 class AuthService {
   /**
@@ -31,6 +32,16 @@ class AuthService {
     const tokens = this.generateTokens(user);
     user.refreshToken = tokens.refreshToken;
     await user.save();
+
+    // Send welcome notification — fire-and-forget, never blocks registration
+    setImmediate(async () => {
+      try {
+        const notificationService = require('../notifications/notification.service');
+        await notificationService.sendWelcomeNotification(user);
+      } catch (err) {
+        logger.warn('[Auth] Welcome notification failed:', err.message);
+      }
+    });
 
     return {
       user: this.sanitizeUser(user),
@@ -110,8 +121,18 @@ class AuthService {
     user.resetPasswordExpire = Date.now() + 30 * 60 * 1000; // 30 minutes
     await user.save();
 
-    // TODO: Send reset email/WhatsApp with resetToken embedded in a link
-    // SECURITY: resetToken must NEVER be returned in the API response
+    // Send password reset email — fire-and-forget, never reveals whether email exists
+    // SECURITY: resetToken is embedded in the link only — never returned in API response
+    const resetUrl = `${env.app.url}/reset-password?token=${resetToken}`;
+    setImmediate(async () => {
+      try {
+        const notificationService = require('../notifications/notification.service');
+        await notificationService.sendPasswordResetEmail(user, resetUrl);
+      } catch (err) {
+        logger.warn('[Auth] Password reset email failed:', err.message);
+      }
+    });
+
     return { message: 'If the email exists, a reset link has been sent' };
   }
 

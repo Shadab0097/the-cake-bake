@@ -29,6 +29,8 @@ router.use('/inquiries', inquiryLimiter, require('../modules/inquiries/inquiry.r
 router.use('/notifications', require('../modules/notifications/notification.routes'));
 router.use('/reminders', require('../modules/reminders/reminder.routes'));
 router.use('/admin', require('../modules/admin/admin.routes'));
+// WhatsApp chatbot webhook — public, no auth (called by Meta Cloud API)
+router.use('/chatbot', require('../modules/chatbot/chatbot.routes'));
 
 // Enhanced health check — verifies DB connectivity
 router.get('/health', (req, res) => {

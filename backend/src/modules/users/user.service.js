@@ -9,6 +9,28 @@ class UserService {
     return user;
   }
 
+  async getPoints(userId) {
+    const LoyaltyPoints = require('../../models/LoyaltyPoints');
+    const { env } = require('../../config/env');
+
+    const user = await User.findById(userId).select('loyaltyPoints');
+    if (!user) throw ApiError.notFound('User not found');
+
+    const transactions = await LoyaltyPoints.find({ user: userId })
+      .sort({ createdAt: -1 })
+      .limit(50)
+      .lean();
+
+    return {
+      balance: user.loyaltyPoints || 0,
+      pointValue: env.loyalty.pointValue,            // paise per point
+      minRedeem: env.loyalty.minRedeem,
+      maxRedeemPercent: env.loyalty.maxRedeemPercent,
+      expiryDays: env.loyalty.expiryDays,
+      transactions,
+    };
+  }
+
   async updateProfile(userId, data) {
     const user = await User.findByIdAndUpdate(userId, data, {
       new: true,

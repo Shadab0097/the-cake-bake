@@ -114,6 +114,19 @@ export default function CheckoutPage() {
     }
   }, [step, checkoutMode, addresses.length]);
 
+  // Loyalty Points
+  const [usePoints, setUsePoints] = useState(false);
+  const [pointsInfo, setPointsInfo] = useState(null); // { balance, pointValue, minRedeem, maxRedeemPercent }
+
+  // Fetch loyalty points when authenticated user reaches payment step
+  useEffect(() => {
+    if (isAuthenticated && !pointsInfo) {
+      api.get('/users/me/points')
+        .then((res) => setPointsInfo(res.data?.data || null))
+        .catch(() => {});
+    }
+  }, [isAuthenticated, pointsInfo]);
+
   // Delivery
   const [deliveryDate, setDeliveryDate] = useState(getTomorrow());
   const [deliverySlot, setDeliverySlot] = useState(DELIVERY_SLOTS[0]);
@@ -123,6 +136,7 @@ export default function CheckoutPage() {
   const [placing, setPlacing] = useState(false);
   const [savingAddress, setSavingAddress] = useState(false);
   const orderInProgressRef = useRef(false);
+
 
   // Subtotals
   const subtotal = isAuthenticated
@@ -136,7 +150,19 @@ export default function CheckoutPage() {
   const deliveryCost = selectedZone
     ? (subtotal + addonTotal >= selectedZone.freeDeliveryAbove ? 0 : selectedZone.deliveryCharge)
     : (subtotal + addonTotal >= 49900 ? 0 : 4900);
-  const total = subtotal + addonTotal - couponDiscount + deliveryCost;
+
+  // Loyalty points discount calculation
+  let pointsDiscount = 0;
+  let pointsToRedeem = 0;
+  if (usePoints && pointsInfo && pointsInfo.balance >= (pointsInfo.minRedeem || 50)) {
+    const prePointsTotal = subtotal + addonTotal - couponDiscount + deliveryCost;
+    const maxPtsDiscount = Math.floor(prePointsTotal * (pointsInfo.maxRedeemPercent || 20) / 100);
+    const maxRedeemable = Math.floor(maxPtsDiscount / (pointsInfo.pointValue || 100));
+    pointsToRedeem = Math.min(pointsInfo.balance, maxRedeemable);
+    pointsDiscount = pointsToRedeem * (pointsInfo.pointValue || 100);
+  }
+
+  const total = subtotal + addonTotal - couponDiscount + deliveryCost - pointsDiscount;
 
   // Redirect if cart is empty
   if (cartItems.length === 0) {
@@ -304,6 +330,7 @@ export default function CheckoutPage() {
         deliveryDate,
         deliverySlot: deliverySlotObj,
         paymentMethod: paymentMethod === 'cod' ? 'cod' : 'online',
+        redeemPoints: usePoints && pointsToRedeem > 0,
         items: items.map((i) => {
           const itemKey = i._id;
           const addOns = pendingAddOns[itemKey] || [];
@@ -922,6 +949,50 @@ export default function CheckoutPage() {
                     )}
                   </div>
 
+                  {/* ── Loyalty Points Section ── */}
+                  {isAuthenticated && pointsInfo && pointsInfo.balance > 0 && (
+                    <div className="mb-6 p-4 bg-surface-container-low rounded-xl">
+                      <div className="flex items-center gap-2 mb-3">
+                        <FiTag className="w-4 h-4 text-pink-deep" />
+                        <span className="text-sm font-semibold text-dark">Use Reward Points</span>
+                        <span className="ml-auto text-xs font-medium text-outline">
+                          Balance: {pointsInfo.balance} pts
+                        </span>
+                      </div>
+                      {pointsInfo.balance < (pointsInfo.minRedeem || 50) ? (
+                        <p className="text-xs text-outline">
+                          You need at least {pointsInfo.minRedeem || 50} points to redeem. Keep ordering to earn more! 🌟
+                        </p>
+                      ) : (
+                        <>
+                          <label className={`flex items-center gap-3 p-3 rounded-xl border-2 cursor-pointer transition-all select-none ${
+                            usePoints
+                              ? 'border-pink-deep bg-pink-light/10'
+                              : 'border-outline-variant/30 hover:border-pink-deep/50'
+                          }`}>
+                            <input
+                              type="checkbox"
+                              checked={usePoints}
+                              onChange={(e) => setUsePoints(e.target.checked)}
+                              className="accent-pink-deep w-4 h-4"
+                            />
+                            <div className="flex-1">
+                              <p className="text-sm font-medium text-dark">
+                                Redeem {pointsToRedeem} points
+                                {pointsDiscount > 0 && (
+                                  <span className="text-success ml-1">(save {formatPrice(pointsDiscount)})</span>
+                                )}
+                              </p>
+                              <p className="text-xs text-outline">
+                                Max {pointsInfo.maxRedeemPercent || 20}% of order total · 1 pt = {formatPrice(pointsInfo.pointValue || 100)}
+                              </p>
+                            </div>
+                          </label>
+                        </>
+                      )}
+                    </div>
+                  )}
+
                   <div className="space-y-3 mb-8">
                     {[
                       { value: 'cod', label: 'Cash on Delivery', desc: 'Pay when your cake arrives at your door', icon: '💵' },
@@ -1014,6 +1085,12 @@ export default function CheckoutPage() {
                     {deliveryCost === 0 ? 'Free' : formatPrice(deliveryCost)}
                   </span>
                 </div>
+                {pointsDiscount > 0 && (
+                  <div className="flex justify-between text-success">
+                    <span>Points ({pointsToRedeem} pts)</span>
+                    <span>-{formatPrice(pointsDiscount)}</span>
+                  </div>
+                )}
                 <div className="flex justify-between font-bold text-base pt-2 border-t border-outline-variant/20">
                   <span>Total</span>
                   <span className="text-pink-deep">{formatPrice(total)}</span>

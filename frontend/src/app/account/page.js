@@ -7,7 +7,7 @@ import Link from 'next/link';
 import {
   FiPackage, FiHeart, FiMapPin, FiLogOut, FiUser,
   FiShoppingBag, FiChevronRight, FiClock, FiCalendar,
-  FiTruck, FiCheckCircle, FiXCircle, FiRefreshCw,
+  FiTruck, FiCheckCircle, FiXCircle, FiRefreshCw, FiStar,
 } from 'react-icons/fi';
 import AppShell from '@/components/layout/AppShell';
 import { logout } from '@/store/slices/authSlice';
@@ -19,6 +19,7 @@ import api from '@/lib/api';
 
 const TABS = [
   { label: 'Orders', icon: FiPackage, key: 'orders' },
+  { label: 'Rewards', icon: FiStar, key: 'rewards' },
   { label: 'Wishlist', icon: FiHeart, key: 'wishlist' },
   { label: 'Addresses', icon: FiMapPin, key: 'addresses' },
   { label: 'Profile', icon: FiUser, key: 'profile' },
@@ -179,6 +180,8 @@ export default function AccountPage() {
   const [addresses, setAddresses] = useState([]);
   const [loading, setLoading] = useState(true);
   const [ordersRefreshing, setOrdersRefreshing] = useState(false);
+  const [pointsData, setPointsData] = useState(null);
+  const [pointsLoading, setPointsLoading] = useState(false);
 
   const fetchData = async (refreshOnly = false) => {
     if (refreshOnly) {
@@ -209,6 +212,17 @@ export default function AccountPage() {
     if (!isAuthenticated) return;
     fetchData();
   }, [isAuthenticated]);
+
+  // Fetch points when Rewards tab is opened
+  useEffect(() => {
+    if (activeTab === 'rewards' && isAuthenticated && !pointsData) {
+      setPointsLoading(true);
+      api.get('/users/me/points')
+        .then((res) => setPointsData(res.data?.data || null))
+        .catch(() => {})
+        .finally(() => setPointsLoading(false));
+    }
+  }, [activeTab, isAuthenticated, pointsData]);
 
   const handleLogout = async () => {
     await dispatch(logout());
@@ -395,6 +409,88 @@ export default function AccountPage() {
                 </div>
               ))}
             </div>
+          </div>
+        )}
+
+        {activeTab === 'rewards' && (
+          <div>
+            {pointsLoading ? (
+              <div className="space-y-4">
+                <div className="h-36 bg-surface-container-high rounded-2xl animate-pulse" />
+                <div className="h-48 bg-surface-container-high rounded-2xl animate-pulse" />
+              </div>
+            ) : pointsData ? (
+              <>
+                {/* Balance Card */}
+                <div className="relative overflow-hidden rounded-2xl p-6 mb-6" style={{ background: 'linear-gradient(135deg, #D81B60 0%, #F06292 50%, #FCE4EC 100%)' }}>
+                  <div className="relative z-10">
+                    <p className="text-pink-100 text-sm font-medium mb-1">Your Reward Points</p>
+                    <p className="text-4xl font-extrabold text-white mb-1">
+                      {pointsData.balance.toLocaleString()}
+                      <span className="text-lg font-normal text-pink-100 ml-2">pts</span>
+                    </p>
+                    <p className="text-sm text-pink-100">
+                      Worth {formatPrice(pointsData.balance * (pointsData.pointValue || 100))}
+                    </p>
+                  </div>
+                  {/* Decorative circles */}
+                  <div className="absolute -top-6 -right-6 w-32 h-32 bg-white/10 rounded-full" />
+                  <div className="absolute -bottom-8 -left-4 w-24 h-24 bg-white/5 rounded-full" />
+                </div>
+
+                {/* Info Cards */}
+                <div className="grid grid-cols-2 sm:grid-cols-3 gap-3 mb-6">
+                  <div className="bg-surface-container-lowest rounded-xl p-3 border border-outline-variant/10">
+                    <p className="text-xs text-outline">Point Value</p>
+                    <p className="text-sm font-bold text-dark">1 pt = {formatPrice(pointsData.pointValue || 100)}</p>
+                  </div>
+                  <div className="bg-surface-container-lowest rounded-xl p-3 border border-outline-variant/10">
+                    <p className="text-xs text-outline">Min to Redeem</p>
+                    <p className="text-sm font-bold text-dark">{pointsData.minRedeem || 50} pts</p>
+                  </div>
+                  <div className="bg-surface-container-lowest rounded-xl p-3 border border-outline-variant/10">
+                    <p className="text-xs text-outline">Max per Order</p>
+                    <p className="text-sm font-bold text-dark">{pointsData.maxRedeemPercent || 20}% of total</p>
+                  </div>
+                </div>
+
+                {/* Transaction History */}
+                <div className="bg-surface-container-lowest rounded-2xl border border-outline-variant/10 shadow-card">
+                  <h3 className="text-sm font-bold text-dark px-5 pt-4 pb-2">Transaction History</h3>
+                  {(!pointsData.transactions || pointsData.transactions.length === 0) ? (
+                    <div className="text-center py-8">
+                      <FiStar className="w-8 h-8 text-outline/30 mx-auto mb-2" />
+                      <p className="text-sm text-outline">No transactions yet. Place an order to earn points!</p>
+                    </div>
+                  ) : (
+                    <div className="divide-y divide-outline-variant/10">
+                      {pointsData.transactions.map((txn) => (
+                        <div key={txn._id} className="flex items-center justify-between px-5 py-3">
+                          <div className="min-w-0 flex-1">
+                            <p className="text-sm text-dark font-medium truncate">{txn.description || txn.type}</p>
+                            <p className="text-xs text-outline">
+                              {new Date(txn.createdAt).toLocaleDateString('en-IN', { day: '2-digit', month: 'short', year: 'numeric' })}
+                              <span className="mx-1">·</span>
+                              <span className="capitalize">{txn.source}</span>
+                            </p>
+                          </div>
+                          <span className={`text-sm font-bold shrink-0 ml-3 ${
+                            txn.points > 0 ? 'text-success' : 'text-error'
+                          }`}>
+                            {txn.points > 0 ? '+' : ''}{txn.points}
+                          </span>
+                        </div>
+                      ))}
+                    </div>
+                  )}
+                </div>
+              </>
+            ) : (
+              <div className="text-center py-12">
+                <FiStar className="w-10 h-10 text-outline/40 mx-auto mb-3" />
+                <p className="text-sm text-outline">Unable to load rewards data.</p>
+              </div>
+            )}
           </div>
         )}
 

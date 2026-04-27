@@ -7,7 +7,6 @@ const Product = require('../../models/Product');
 const User = require('../../models/User');
 const Coupon = require('../../models/Coupon');
 const CouponUsage = require('../../models/CouponUsage');
-const LoyaltyPoints = require('../../models/LoyaltyPoints');
 const ApiError = require('../../utils/ApiError');
 const { env } = require('../../config/env');
 const { ORDER_STATUSES, PAYMENT_STATUSES } = require('../../utils/constants');

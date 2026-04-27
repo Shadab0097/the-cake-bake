@@ -111,4 +111,34 @@ module.exports = {
   updateCoupon,
   updateInquiry,
   sendNotification,
+  // Loyalty Points
+  adjustPoints: {
+    params: idParam,
+    body: Joi.object({
+      points: Joi.number().integer().required(),
+      reason: Joi.string().trim().max(200).required().custom(joiSanitize),
+    }).messages(joiXssMessages),
+  },
+  // Chatbot
+  createBotRule: {
+    body: Joi.object({
+      keyword: Joi.string().trim().lowercase().max(200).required().custom(joiSanitize),
+      response: Joi.string().trim().max(1000).required().custom(joiSanitize),
+      matchType: Joi.string().valid('exact', 'contains', 'startsWith').default('contains'),
+      category: Joi.string().valid('greeting', 'order', 'support', 'faq', 'custom').default('custom'),
+      priority: Joi.number().integer().min(0).max(100).default(0),
+      isActive: Joi.boolean().default(true),
+    }).messages(joiXssMessages),
+  },
+  updateBotRule: {
+    params: Joi.object({ id: Joi.string().pattern(/^[0-9a-fA-F]{24}$/).required() }),
+    body: Joi.object({
+      keyword: Joi.string().trim().lowercase().max(200).custom(joiSanitize),
+      response: Joi.string().trim().max(1000).custom(joiSanitize),
+      matchType: Joi.string().valid('exact', 'contains', 'startsWith'),
+      category: Joi.string().valid('greeting', 'order', 'support', 'faq', 'custom'),
+      priority: Joi.number().integer().min(0).max(100),
+      isActive: Joi.boolean(),
+    }).messages(joiXssMessages),
+  },
 };

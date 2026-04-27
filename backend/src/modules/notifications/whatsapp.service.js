@@ -1,10 +1,23 @@
+'use strict';
+
 const { getWhatsAppClient } = require('../../config/whatsapp');
 const { env } = require('../../config/env');
 const logger = require('../../middleware/logger');
 
 class WhatsAppService {
-  constructor() {
-    this.enabled = env.whatsapp.accessToken && env.whatsapp.accessToken !== 'placeholder';
+  /**
+   * Whether the WhatsApp channel is enabled.
+   * Controlled by ENABLE_WHATSAPP_NOTIFICATIONS env flag.
+   * Credentials are also checked so the service doesn't crash on placeholder values.
+   */
+  get enabled() {
+    return (
+      env.notifications.whatsappEnabled &&
+      !!env.whatsapp.accessToken &&
+      env.whatsapp.accessToken !== 'placeholder' &&
+      !!env.whatsapp.phoneNumberId &&
+      env.whatsapp.phoneNumberId !== 'placeholder'
+    );
   }
 
   /**
@@ -12,15 +25,15 @@ class WhatsAppService {
    */
   async sendTemplateMessage(recipientPhone, templateName, parameters = {}, languageCode = 'en') {
     if (!this.enabled) {
-      logger.info(`[WhatsApp DISABLED] Would send template "${templateName}" to ${recipientPhone}`);
-      return { success: false, reason: 'WhatsApp not configured' };
+      logger.info(
+        `[WhatsApp DISABLED] Would send template "${templateName}" to ${recipientPhone}. ` +
+        `Set ENABLE_WHATSAPP_NOTIFICATIONS=true and add real credentials to activate.`
+      );
+      return { success: false, reason: 'WhatsApp not enabled or credentials not configured' };
     }
 
     try {
-      // Format phone number to E.164
       const phone = this.formatPhone(recipientPhone);
-
-      // Build template components from parameters
       const components = this.buildTemplateComponents(parameters);
 
       const client = getWhatsAppClient();
@@ -60,8 +73,8 @@ class WhatsAppService {
    */
   async sendTextMessage(recipientPhone, text) {
     if (!this.enabled) {
-      logger.info(`[WhatsApp DISABLED] Would send text to ${recipientPhone}: ${text.substring(0, 50)}...`);
-      return { success: false, reason: 'WhatsApp not configured' };
+      logger.info(`[WhatsApp DISABLED] Would send text to ${recipientPhone}: ${text.substring(0, 80)}...`);
+      return { success: false, reason: 'WhatsApp not enabled or credentials not configured' };
     }
 
     try {
@@ -88,7 +101,7 @@ class WhatsAppService {
   }
 
   /**
-   * Format phone to E.164 (Indian numbers)
+   * Format phone number to E.164 (Indian numbers default to +91)
    */
   formatPhone(phone) {
     let cleaned = phone.replace(/\D/g, '');
@@ -98,7 +111,7 @@ class WhatsAppService {
   }
 
   /**
-   * Build template components from parameters object
+   * Build WhatsApp template body components from a key-value parameters object
    */
   buildTemplateComponents(parameters) {
     if (!parameters || Object.keys(parameters).length === 0) return [];
@@ -118,3 +131,4 @@ class WhatsAppService {
 }
 
 module.exports = new WhatsAppService();
+

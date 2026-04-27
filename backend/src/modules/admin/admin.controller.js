@@ -214,6 +214,12 @@ const getCustomerDetail = asyncHandler(async (req, res) => {
   ApiResponse.ok(result).send(res);
 });
 
+const adjustCustomerPoints = asyncHandler(async (req, res) => {
+  const { points, reason } = req.body;
+  const result = await adminService.adjustCustomerPoints(req.params.id, points, reason, req.user._id);
+  ApiResponse.ok(result, 'Points adjusted').send(res);
+});
+
 // ---- Reviews ----
 const getReviews = asyncHandler(async (req, res) => {
   const result = await reviewService.adminListReviews(req.query);
@@ -288,6 +294,39 @@ const bulkImportProducts = asyncHandler(async (req, res) => {
   ApiResponse.ok({ imported: results.filter(r => r.success).length, total: results.length, results }, 'Bulk import completed').send(res);
 });
 
+// ---- Chatbot (Bot Rules & Logs) ----
+const chatbotService = require('../chatbot/chatbot.service');
+
+const listBotRules = asyncHandler(async (req, res) => {
+  const result = await chatbotService.listRules(req.query);
+  ApiResponse.ok(result).send(res);
+});
+
+const createBotRule = asyncHandler(async (req, res) => {
+  const rule = await chatbotService.createRule(req.body);
+  ApiResponse.created(rule, 'Bot rule created').send(res);
+});
+
+const updateBotRule = asyncHandler(async (req, res) => {
+  const rule = await chatbotService.updateRule(req.params.id, req.body);
+  ApiResponse.ok(rule, 'Bot rule updated').send(res);
+});
+
+const deleteBotRule = asyncHandler(async (req, res) => {
+  await chatbotService.deleteRule(req.params.id);
+  ApiResponse.ok(null, 'Bot rule deleted').send(res);
+});
+
+const getChatbotLogs = asyncHandler(async (req, res) => {
+  const result = await chatbotService.getLogs(req.query);
+  ApiResponse.ok(result).send(res);
+});
+
+const getChatbotStats = asyncHandler(async (req, res) => {
+  const result = await chatbotService.getStats();
+  ApiResponse.ok(result).send(res);
+});
+
 module.exports = {
   getDashboard, getAnalytics,
   listProducts, createProduct, updateProduct, deleteProduct, addVariant, updateVariant, bulkImportProducts,
@@ -297,8 +336,9 @@ module.exports = {
   getSlots, createSlot, updateSlot, getZones, createZone, updateZone,
   listAddOns, createAddOn, updateAddOn, deleteAddOn,
   getCustomInquiries, getCorporateInquiries, updateInquiry,
-  getCustomers, getCustomerDetail,
+  getCustomers, getCustomerDetail, adjustCustomerPoints,
   getReviews, approveReview, deleteReview,
   getBanners, createBanner, updateBanner, deleteBanner,
   getNotifications, sendManualNotification,
+  listBotRules, createBotRule, updateBotRule, deleteBotRule, getChatbotLogs, getChatbotStats,
 };

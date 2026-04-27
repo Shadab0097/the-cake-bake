@@ -7,7 +7,7 @@ import {
   HiOutlineHome, HiOutlineShoppingBag, HiOutlineCube, HiOutlineTag,
   HiOutlineTicket, HiOutlineTruck, HiOutlinePuzzlePiece, HiOutlineUsers,
   HiOutlineStar, HiOutlineEnvelope, HiOutlinePhoto, HiOutlineBell,
-  HiOutlineChevronLeft, HiOutlineChevronRight
+  HiOutlineChevronLeft, HiOutlineChevronRight, HiOutlineChatBubbleLeftRight
 } from 'react-icons/hi2';
 
 const NAV_ITEMS = [
@@ -23,6 +23,7 @@ const NAV_ITEMS = [
   { label: 'Inquiries', href: '/admin/inquiries', icon: HiOutlineEnvelope },
   { label: 'Banners', href: '/admin/banners', icon: HiOutlinePhoto },
   { label: 'Notifications', href: '/admin/notifications', icon: HiOutlineBell },
+  { label: 'Bot', href: '/admin/chatbot', icon: HiOutlineChatBubbleLeftRight },
 ];
 
 export default function AdminSidebar({ collapsed, onToggle, mobileOpen, onMobileClose }) {

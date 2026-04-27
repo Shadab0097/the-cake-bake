@@ -70,6 +70,7 @@ const adminApi = {
   customers: {
     list: (params) => api.get('/admin/customers', { params }),
     get: (id) => api.get(`/admin/customers/${id}`),
+    adjustPoints: (id, data) => api.put(`/admin/customers/${id}/points`, data),
   },
 
   // Reviews
@@ -91,6 +92,16 @@ const adminApi = {
   notifications: {
     list: (params) => api.get('/admin/notifications', { params }),
     send: (data) => api.post('/admin/notifications/send', data),
+  },
+
+  // Chatbot — Bot Rules, Logs & Stats
+  chatbot: {
+    getStats: () => api.get('/admin/chatbot/stats'),
+    listRules: (params) => api.get('/admin/chatbot/rules', { params }),
+    createRule: (data) => api.post('/admin/chatbot/rules', data),
+    updateRule: (id, data) => api.put(`/admin/chatbot/rules/${id}`, data),
+    deleteRule: (id) => api.delete(`/admin/chatbot/rules/${id}`),
+    getLogs: (params) => api.get('/admin/chatbot/logs', { params }),
   },
 };
 

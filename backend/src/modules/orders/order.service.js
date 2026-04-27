@@ -8,11 +8,15 @@ const Coupon = require('../../models/Coupon');
 const CouponUsage = require('../../models/CouponUsage');
 const DeliveryZone = require('../../models/DeliveryZone');
 const Address = require('../../models/Address');
+const User = require('../../models/User');
+const LoyaltyPoints = require('../../models/LoyaltyPoints');
 const ApiError = require('../../utils/ApiError');
 const { generateOrderNumber, escapeRegex } = require('../../utils/helpers');
 const { parsePagination, paginatedResponse } = require('../../utils/pagination');
 const { ORDER_STATUSES, PAYMENT_STATUSES } = require('../../utils/constants');
 const { getRazorpayInstance } = require('../../config/razorpay');
+const { env } = require('../../config/env');
+const logger = require('../../middleware/logger');
 
 class OrderService {
   /**
@@ -92,7 +96,7 @@ class OrderService {
    * Create order and Razorpay payment order
    */
   async createOrder(userId, checkoutData) {
-    const { addressId, deliveryDate, shippingAddress, specialInstructions, isGift, giftMessage, paymentMethod = 'cod' } = checkoutData;
+    const { addressId, deliveryDate, shippingAddress, specialInstructions, isGift, giftMessage, paymentMethod = 'cod', redeemPoints = false } = checkoutData;
 
     // Normalise deliverySlot — frontend sends a plain string like "10:00 AM – 12:00 PM"
     let deliverySlot = checkoutData.deliverySlot || {};
@@ -165,7 +169,27 @@ class OrderService {
       }
     }
 
-    const total = subtotal + deliveryCharge - discount;
+    // ── Loyalty Points Redemption ──────────────────────────────────────────
+    let pointsRedeemed = 0;
+    let pointsDiscount = 0;
+
+    if (redeemPoints && userId) {
+      const loyaltyConfig = env.loyalty;
+      const user = await User.findById(userId).select('loyaltyPoints');
+      const userBalance = user?.loyaltyPoints || 0;
+
+      if (userBalance >= loyaltyConfig.minRedeem) {
+        // Max discount from points = maxRedeemPercent% of (subtotal + deliveryCharge - couponDiscount)
+        const prePointsTotal = subtotal + deliveryCharge - discount;
+        const maxPointsDiscount = Math.floor(prePointsTotal * loyaltyConfig.maxRedeemPercent / 100);
+        // Max points the user can redeem (capped by balance and discount ceiling)
+        const maxRedeemablePoints = Math.floor(maxPointsDiscount / loyaltyConfig.pointValue);
+        pointsRedeemed = Math.min(userBalance, maxRedeemablePoints);
+        pointsDiscount = pointsRedeemed * loyaltyConfig.pointValue; // paise
+      }
+    }
+
+    const total = subtotal + deliveryCharge - discount - pointsDiscount;
     if (total <= 0) throw ApiError.badRequest('Invalid order total');
 
     // Generate order number
@@ -198,6 +222,8 @@ class OrderService {
         deliveryCharge,
         discount,
         couponCode,
+        pointsRedeemed,
+        pointsDiscount,
         tax: 0,
         total,
         status: ORDER_STATUSES.PENDING,
@@ -210,6 +236,19 @@ class OrderService {
       }], { session });
 
       const createdOrder = order[0];
+
+      // ── Deduct loyalty points (inside transaction for atomicity) ──────────
+      if (pointsRedeemed > 0 && userId) {
+        await User.findByIdAndUpdate(userId, { $inc: { loyaltyPoints: -pointsRedeemed } }, { session });
+        await LoyaltyPoints.create([{
+          user: userId,
+          type: 'redeemed',
+          points: -pointsRedeemed,
+          source: 'order',
+          referenceId: createdOrder._id,
+          description: `Redeemed ${pointsRedeemed} points for order ${orderNumber}`,
+        }], { session });
+      }
 
       // Clear ordered items from cart
       if (cart && cart.items.length > 0 && orderItems.length > 0) {
@@ -242,6 +281,16 @@ class OrderService {
         }], { session });
 
         await session.commitTransaction();
+
+        // Send order confirmation notification for COD orders (fire-and-forget)
+        setImmediate(async () => {
+          try {
+            const notificationService = require('../notifications/notification.service');
+            await notificationService.sendOrderConfirmation(createdOrder);
+          } catch (err) {
+            logger.warn('[Order] COD confirmation notification failed:', err.message);
+          }
+        });
 
         return { order: createdOrder };
       }
@@ -349,6 +398,33 @@ class OrderService {
     });
     await order.save();
 
+    // ── Refund redeemed loyalty points (if any) ──────────────────────────
+    if (order.pointsRedeemed > 0 && order.user) {
+      try {
+        await User.findByIdAndUpdate(order.user, { $inc: { loyaltyPoints: order.pointsRedeemed } });
+        await LoyaltyPoints.create({
+          user: order.user,
+          type: 'adjusted',
+          points: order.pointsRedeemed,
+          source: 'order',
+          referenceId: order._id,
+          description: `Points refunded for cancelled order ${order.orderNumber}`,
+        });
+      } catch (lpErr) {
+        logger.warn('[Order] Loyalty points refund failed:', lpErr.message);
+      }
+    }
+
+    // Send cancellation notification (fire-and-forget)
+    setImmediate(async () => {
+      try {
+        const notificationService = require('../notifications/notification.service');
+        await notificationService.sendStatusUpdate(order, 'cancelled');
+      } catch (err) {
+        logger.warn('[Order] Cancel notification failed:', err.message);
+      }
+    });
+
     // Restore stock — target specific variant by product AND weight
     for (const item of order.items) {
       if (item.product) {
@@ -377,27 +453,28 @@ class OrderService {
       updatedBy: adminId,
     });
 
-    if (status === ORDER_STATUSES.DELIVERED) {
-      // Award loyalty points: 1 point per ₹100 spent
+    if (status === ORDER_STATUSES.DELIVERED && order.user) {
+      // Award loyalty points — uses env config, with idempotency guard
       try {
-        const LoyaltyPoints = require('../../models/LoyaltyPoints');
-        const { USER_ROLES } = require('../../utils/constants');
-        const User = require('../../models/User');
-        const pointsEarned = Math.floor(order.total / 10000); // paise → rupees → /100
-        if (pointsEarned > 0) {
-          await LoyaltyPoints.create({
-            user: order.user,
-            type: 'earned',
-            points: pointsEarned,
-            source: 'order',
-            referenceId: order._id,
-            description: `Points earned for order ${order.orderNumber}`,
-          });
-          await User.findByIdAndUpdate(order.user, { $inc: { loyaltyPoints: pointsEarned } });
+        // Idempotency: skip if points were already awarded for this order
+        const existingAward = await LoyaltyPoints.findOne({ referenceId: order._id, type: 'earned' });
+        if (!existingAward) {
+          const totalInRupees = order.total / 100; // paise → rupees
+          const pointsEarned = Math.floor(totalInRupees * env.loyalty.pointsPerRupee);
+          if (pointsEarned > 0) {
+            await LoyaltyPoints.create({
+              user: order.user,
+              type: 'earned',
+              points: pointsEarned,
+              source: 'order',
+              referenceId: order._id,
+              description: `Points earned for order ${order.orderNumber}`,
+            });
+            await User.findByIdAndUpdate(order.user, { $inc: { loyaltyPoints: pointsEarned } });
+          }
         }
       } catch (lpErr) {
-        const logger = require('../../middleware/logger');
-        logger.warn('Loyalty points update failed:', lpErr.message);
+        logger.warn('Loyalty points award failed:', lpErr.message);
       }
     }
 

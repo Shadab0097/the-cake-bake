@@ -7,6 +7,11 @@ const getProfile = asyncHandler(async (req, res) => {
   ApiResponse.ok(user).send(res);
 });
 
+const getPoints = asyncHandler(async (req, res) => {
+  const result = await userService.getPoints(req.user._id);
+  ApiResponse.ok(result).send(res);
+});
+
 const updateProfile = asyncHandler(async (req, res) => {
   const user = await userService.updateProfile(req.user._id, req.body);
   ApiResponse.ok(user, 'Profile updated').send(res);
@@ -50,4 +55,4 @@ const updateAvatar = asyncHandler(async (req, res) => {
   ApiResponse.ok({ avatar: user.avatar }, 'Avatar updated').send(res);
 });
 
-module.exports = { getProfile, updateProfile, updateAvatar, getAddresses, createAddress, updateAddress, deleteAddress, setDefaultAddress };
+module.exports = { getProfile, getPoints, updateProfile, updateAvatar, getAddresses, createAddress, updateAddress, deleteAddress, setDefaultAddress };

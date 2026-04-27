@@ -58,6 +58,9 @@ const NOTIFICATION_TYPES = {
   ORDER_DELIVERED: 'order_delivered',
   ORDER_CANCELLED: 'order_cancelled',
   REFUND_INITIATED: 'refund_initiated',
+  WELCOME: 'welcome',
+  PASSWORD_RESET: 'password_reset',
+  INQUIRY_ALERT: 'inquiry_alert',
 };
 
 const LOYALTY_TYPES = {
