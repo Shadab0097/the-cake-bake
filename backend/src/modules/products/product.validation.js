@@ -1,5 +1,6 @@
 const Joi = require('joi');
 const { joiSanitize, joiXssMessages } = require('../../utils/xssSanitizer');
+const { safeImageUrl } = require('../../utils/urlValidation');
 
 const createProduct = {
   body: Joi.object({
@@ -12,7 +13,8 @@ const createProduct = {
     flavors: Joi.array().items(Joi.string().trim()).default([]),
     basePrice: Joi.number().min(0).required(),
     images: Joi.array().items(Joi.object({
-      url: Joi.string().required(),
+      url: Joi.string().trim().required().custom(safeImageUrl),
+      publicId: Joi.string().allow('').default(''),
       alt: Joi.string().allow('').default('').custom(joiSanitize),
       sortOrder: Joi.number().default(0),
     })).default([]),
@@ -51,7 +53,8 @@ const updateProduct = {
     flavors: Joi.array().items(Joi.string().trim()),
     basePrice: Joi.number().min(0),
     images: Joi.array().items(Joi.object({
-      url: Joi.string().required(),
+      url: Joi.string().trim().required().custom(safeImageUrl),
+      publicId: Joi.string().allow('').default(''),
       alt: Joi.string().allow('').default('').custom(joiSanitize),
       sortOrder: Joi.number().default(0),
     })),

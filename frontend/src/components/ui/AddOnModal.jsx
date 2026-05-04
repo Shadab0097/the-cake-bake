@@ -268,7 +268,7 @@ export default function AddOnModal({ isOpen, onClose }) {
                             <div className="w-12 h-12 rounded-xl bg-gray-100 flex items-center justify-center mb-2.5 text-2xl group-hover:scale-105 transition-transform">
                               {addon.image ? (
                                 <Image
-                                  src={addon.image.startsWith('/') ? `${process.env.NEXT_PUBLIC_API_URL || 'http://localhost:5000'}${addon.image}` : addon.image}
+                                  src={addon.image.startsWith('/') ? `${process.env.NEXT_PUBLIC_API_BASE || 'http://localhost:5000'}${addon.image}` : addon.image}
                                   alt={addon.name}
                                   width={48}
                                   height={48}

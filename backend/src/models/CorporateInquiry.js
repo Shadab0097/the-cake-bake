@@ -48,6 +48,16 @@ const corporateInquirySchema = new mongoose.Schema(
       type: String,
       required: [true, 'Requirements description is required'],
     },
+    referenceImages: [
+      {
+        type: String,
+      },
+    ],
+    referenceImagePublicIds: [
+      {
+        type: String,
+      },
+    ],
     status: {
       type: String,
       enum: Object.values(INQUIRY_STATUSES),

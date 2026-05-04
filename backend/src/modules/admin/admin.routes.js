@@ -55,7 +55,7 @@ router.put('/delivery/zones/:id', validate(adminValidation.paramId), adminContro
 // Add-Ons
 router.get('/addons', adminController.listAddOns);
 router.post('/addons', validate(addonValidation.createAddOn), adminController.createAddOn);
-router.put('/addons/:id', validate(adminValidation.paramId), adminController.updateAddOn);
+router.put('/addons/:id', validate(adminValidation.updateAddOn), adminController.updateAddOn);
 router.delete('/addons/:id', validate(adminValidation.paramId), adminController.deleteAddOn);
 
 // Inquiries

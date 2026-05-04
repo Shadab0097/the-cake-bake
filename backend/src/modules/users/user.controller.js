@@ -1,4 +1,5 @@
 const userService = require('./user.service');
+const uploadService = require('../media/upload.service');
 const asyncHandler = require('../../utils/asyncHandler');
 const ApiResponse = require('../../utils/ApiResponse');
 
@@ -44,15 +45,23 @@ const setDefaultAddress = asyncHandler(async (req, res) => {
 
 const updateAvatar = asyncHandler(async (req, res) => {
   if (!req.file) throw require('../../utils/ApiError').badRequest('No file uploaded');
-  const path = require('path');
-  const avatarUrl = `/uploads/${path.basename(req.file.path)}`;
   const User = require('../../models/User');
-  const user = await User.findByIdAndUpdate(
-    req.user._id,
-    { avatar: avatarUrl },
-    { new: true }
-  ).select('-passwordHash -refreshToken');
-  ApiResponse.ok({ avatar: user.avatar }, 'Avatar updated').send(res);
+  const currentUser = await User.findById(req.user._id).select('avatarPublicId');
+  const uploaded = await uploadService.uploadImage(req.file, { context: 'avatars' });
+
+  try {
+    const user = await User.findByIdAndUpdate(
+      req.user._id,
+      { avatar: uploaded.url, avatarPublicId: uploaded.publicId },
+      { new: true }
+    ).select('-passwordHash -refreshToken');
+
+    await uploadService.deleteImage(currentUser?.avatarPublicId);
+    ApiResponse.ok({ avatar: user.avatar, avatarPublicId: user.avatarPublicId }, 'Avatar updated').send(res);
+  } catch (err) {
+    await uploadService.deleteImage(uploaded.publicId);
+    throw err;
+  }
 });
 
 module.exports = { getProfile, getPoints, updateProfile, updateAvatar, getAddresses, createAddress, updateAddress, deleteAddress, setDefaultAddress };

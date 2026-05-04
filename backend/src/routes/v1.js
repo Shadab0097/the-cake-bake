@@ -15,6 +15,7 @@ router.use('/auth', require('../modules/auth/auth.routes'));
 router.use('/users', require('../modules/users/user.routes'));
 router.use('/products', require('../modules/products/product.routes'));
 router.use('/categories', require('../modules/categories/category.routes'));
+router.use('/banners', require('../modules/banners/banner.routes'));
 router.use('/cart', require('../modules/cart/cart.routes'));
 router.use('/checkout', orderLimiter, checkoutRouter);               // Rate limit order creation
 router.use('/guest-checkout', orderLimiter, guestCheckoutRouter);     // Guest COD orders (no auth)
@@ -23,6 +24,7 @@ router.use('/payments', require('../modules/payments/payment.routes'));
 router.use('/coupons', require('../modules/coupons/coupon.routes'));
 router.use('/delivery', require('../modules/delivery/delivery.routes'));
 router.use('/addons', require('../modules/addons/addon.routes'));
+router.use('/uploads', require('../modules/media/upload.routes'));
 router.use('/wishlist', require('../modules/wishlist/wishlist.routes'));
 router.use('/reviews', require('../modules/reviews/review.routes'));
 router.use('/inquiries', inquiryLimiter, require('../modules/inquiries/inquiry.routes'));  // Spam protection
@@ -56,6 +58,11 @@ router.get('/health', async (req, res) => {
       status: process.env.ENABLE_WHATSAPP_NOTIFICATIONS === 'true'
         ? (process.env.WHATSAPP_ACCESS_TOKEN && process.env.WHATSAPP_PHONE_NUMBER_ID ? 'ok' : 'misconfigured')
         : 'disabled',
+    },
+    cloudinary: {
+      status: (process.env.CLOUDINARY_CLOUD_NAME && process.env.CLOUDINARY_API_KEY && process.env.CLOUDINARY_API_SECRET)
+        ? 'ok'
+        : 'misconfigured',
     },
   };
 

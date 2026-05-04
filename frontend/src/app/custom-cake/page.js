@@ -1,11 +1,12 @@
 'use client';
 
-import { useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { useDispatch } from 'react-redux';
 import AppShell from '@/components/layout/AppShell';
 import { addToast } from '@/store/slices/toastSlice';
-import { FiUpload } from 'react-icons/fi';
+import { FiUpload, FiX } from 'react-icons/fi';
 import api from '@/lib/api';
+import { IMAGE_UPLOAD, validateImageFiles } from '@/lib/uploadApi';
 
 export default function CustomCakePage() {
   const dispatch = useDispatch();
@@ -14,14 +15,62 @@ export default function CustomCakePage() {
     message: '', designDescription: '', deliveryDate: '',
   });
   const [submitting, setSubmitting] = useState(false);
+  const [referenceFiles, setReferenceFiles] = useState([]);
+  const [referencePreviews, setReferencePreviews] = useState([]);
+  const referencePreviewsRef = useRef([]);
+
+  useEffect(() => {
+    referencePreviewsRef.current = referencePreviews;
+  }, [referencePreviews]);
+
+  useEffect(() => {
+    return () => {
+      referencePreviewsRef.current.forEach((preview) => URL.revokeObjectURL(preview));
+    };
+  }, []);
+
+  const clearReferenceFiles = () => {
+    referencePreviews.forEach((preview) => URL.revokeObjectURL(preview));
+    setReferenceFiles([]);
+    setReferencePreviews([]);
+  };
+
+  const handleReferenceFiles = (files) => {
+    const selected = Array.from(files || []);
+    if (selected.length === 0) return;
+    try {
+      const nextFiles = [...referenceFiles, ...selected];
+      validateImageFiles(nextFiles, { maxFiles: IMAGE_UPLOAD.maxInquiryFiles });
+      setReferenceFiles(nextFiles);
+      setReferencePreviews(prev => [...prev, ...selected.map((file) => URL.createObjectURL(file))]);
+    } catch (err) {
+      dispatch(addToast({ message: err.message || 'Invalid image file', type: 'error' }));
+    }
+  };
+
+  const removeReferenceFile = (index) => {
+    URL.revokeObjectURL(referencePreviews[index]);
+    setReferenceFiles(prev => prev.filter((_, i) => i !== index));
+    setReferencePreviews(prev => prev.filter((_, i) => i !== index));
+  };
 
   const handleSubmit = async (e) => {
     e.preventDefault();
     setSubmitting(true);
     try {
-      await api.post('/inquiries/custom-cake', form);
+      const payload = new FormData();
+      Object.entries(form).forEach(([key, value]) => {
+        payload.append(key, value ?? '');
+      });
+      referenceFiles.forEach((file) => {
+        payload.append('referenceImages', file);
+      });
+      await api.post('/inquiries/custom-cake', payload, {
+        headers: { 'Content-Type': 'multipart/form-data' },
+      });
       dispatch(addToast({ message: 'Custom cake request submitted! We\'ll contact you soon 🎨', type: 'success' }));
       setForm({ name: '', phone: '', email: '', occasion: '', flavor: '', weight: '1 kg', message: '', designDescription: '', deliveryDate: '' });
+      clearReferenceFiles();
     } catch (err) {
       dispatch(addToast({ message: err?.response?.data?.message || 'Failed to submit. Please try again.', type: 'error' }));
     }
@@ -61,7 +110,7 @@ export default function CustomCakePage() {
             <input placeholder="Your Name *" required value={form.name} onChange={(e) => setForm({ ...form, name: e.target.value })} className="w-full px-4 py-3 text-sm border border-outline-variant/30 rounded-xl focus:outline-none focus:border-pink-deep placeholder:text-outline" />
             <input type="tel" placeholder="Phone *" required value={form.phone} onChange={(e) => setForm({ ...form, phone: e.target.value })} className="w-full px-4 py-3 text-sm border border-outline-variant/30 rounded-xl focus:outline-none focus:border-pink-deep placeholder:text-outline" />
           </div>
-          <input type="email" placeholder="Email" value={form.email} onChange={(e) => setForm({ ...form, email: e.target.value })} className="w-full px-4 py-3 text-sm border border-outline-variant/30 rounded-xl focus:outline-none focus:border-pink-deep placeholder:text-outline" />
+          <input type="email" placeholder="Email *" required value={form.email} onChange={(e) => setForm({ ...form, email: e.target.value })} className="w-full px-4 py-3 text-sm border border-outline-variant/30 rounded-xl focus:outline-none focus:border-pink-deep placeholder:text-outline" />
 
           <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
             <select value={form.occasion} onChange={(e) => setForm({ ...form, occasion: e.target.value })} className="w-full px-4 py-3 text-sm border border-outline-variant/30 rounded-xl focus:outline-none focus:border-pink-deep">
@@ -83,6 +132,40 @@ export default function CustomCakePage() {
           <input type="date" value={form.deliveryDate} onChange={(e) => setForm({ ...form, deliveryDate: e.target.value })} min={new Date().toISOString().split('T')[0]} className="w-full px-4 py-3 text-sm border border-outline-variant/30 rounded-xl focus:outline-none focus:border-pink-deep" />
           <input placeholder="Message on Cake" value={form.message} onChange={(e) => setForm({ ...form, message: e.target.value })} className="w-full px-4 py-3 text-sm border border-outline-variant/30 rounded-xl focus:outline-none focus:border-pink-deep placeholder:text-outline" />
           <textarea placeholder="Describe your dream cake in detail... *" rows={4} required value={form.designDescription} onChange={(e) => setForm({ ...form, designDescription: e.target.value })} className="w-full px-4 py-3 text-sm border border-outline-variant/30 rounded-xl focus:outline-none focus:border-pink-deep placeholder:text-outline resize-none" />
+
+          <div className="space-y-3">
+            <label className="flex items-center justify-center gap-2 w-full px-4 py-4 text-sm font-medium border border-dashed border-outline-variant/50 rounded-xl cursor-pointer hover:border-pink-deep transition-colors">
+              <FiUpload className="w-4 h-4" />
+              Add Reference Images
+              <input
+                type="file"
+                multiple
+                accept={IMAGE_UPLOAD.accept}
+                onChange={(e) => {
+                  handleReferenceFiles(e.target.files);
+                  e.target.value = '';
+                }}
+                className="hidden"
+              />
+            </label>
+            {referencePreviews.length > 0 && (
+              <div className="grid grid-cols-3 sm:grid-cols-5 gap-2">
+                {referencePreviews.map((preview, index) => (
+                  <div key={preview} className="relative aspect-square rounded-xl overflow-hidden border border-outline-variant/30">
+                    {/* eslint-disable-next-line @next/next/no-img-element */}
+                    <img src={preview} alt={`Reference ${index + 1}`} className="w-full h-full object-cover" />
+                    <button
+                      type="button"
+                      onClick={() => removeReferenceFile(index)}
+                      className="absolute top-1 right-1 w-6 h-6 rounded-full bg-black/60 text-white flex items-center justify-center"
+                    >
+                      <FiX className="w-3.5 h-3.5" />
+                    </button>
+                  </div>
+                ))}
+              </div>
+            )}
+          </div>
 
           <button type="submit" disabled={submitting} className="w-full py-3 rounded-xl gradient-primary text-white font-semibold hover:opacity-90 disabled:opacity-60 flex items-center justify-center gap-2">
             {submitting ? <div className="w-5 h-5 border-2 border-white border-t-transparent rounded-full animate-spin" /> : <>Submit Request 🎨</>}

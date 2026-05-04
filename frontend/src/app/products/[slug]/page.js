@@ -67,9 +67,7 @@ export default function ProductDetailPage() {
   const handleAddToCart = async () => {
     if (!isAuthenticated) {
       // Guest: store item in local cart with all customization options
-      const imageUrl = product.images?.[0]?.url?.startsWith('/')
-        ? `http://localhost:5000${product.images[0].url}`
-        : (product.images?.[0]?.url || '/images/placeholder-cake.svg');
+      const imageUrl = getProductImage(product);
 
       dispatch(addGuestItem({
         product: product._id,
@@ -179,7 +177,7 @@ export default function ProductDetailPage() {
             {/* Thumbnails */}
             {product.images?.length > 1 && (
               <div className="flex gap-2.5 overflow-x-auto no-scrollbar">
-                {product.images.map((img, i) => (
+                {product.images.map((_, i) => (
                   <button
                     key={i}
                     onClick={() => setSelectedImage(i)}
@@ -188,7 +186,7 @@ export default function ProductDetailPage() {
                     }`}
                   >
                     <Image
-                      src={img.url?.startsWith('/') ? `http://localhost:5000${img.url}` : (img.url || '/images/placeholder-cake.svg')}
+                      src={getProductImage(product, i)}
                       alt={`${product.name} view ${i + 1}`}
                       width={64}
                       height={64}

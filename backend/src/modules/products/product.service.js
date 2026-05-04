@@ -4,6 +4,7 @@ const ApiError = require('../../utils/ApiError');
 const { parsePagination, paginatedResponse } = require('../../utils/pagination');
 const { generateSlug, escapeRegex } = require('../../utils/helpers');
 const cache = require('../../utils/cache');
+const uploadService = require('../media/upload.service');
 
 class ProductService {
   /**
@@ -217,12 +218,25 @@ class ProductService {
       data.slug = generateSlug(data.name);
     }
 
+    const existingProduct = data.images
+      ? await Product.findById(productId).select('images.publicId').lean()
+      : null;
+
     const product = await Product.findByIdAndUpdate(productId, data, {
       new: true,
       runValidators: true,
     });
 
     if (!product) throw ApiError.notFound('Product not found');
+
+    if (existingProduct?.images && data.images) {
+      const nextPublicIds = new Set((product.images || []).map((image) => image.publicId).filter(Boolean));
+      const stalePublicIds = existingProduct.images
+        .map((image) => image.publicId)
+        .filter((publicId) => publicId && !nextPublicIds.has(publicId));
+      uploadService.deleteImages(stalePublicIds);
+    }
+
     cache.invalidatePattern('products:');
     return product;
   }

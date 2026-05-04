@@ -49,6 +49,11 @@ const customCakeInquirySchema = new mongoose.Schema(
         type: String,
       },
     ],
+    referenceImagePublicIds: [
+      {
+        type: String,
+      },
+    ],
     deliveryDate: {
       type: Date,
     },

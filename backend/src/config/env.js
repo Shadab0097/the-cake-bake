@@ -66,6 +66,13 @@ const env = {
     maxFileSize: parseInt(process.env.MAX_FILE_SIZE, 10) || 5242880,
   },
 
+  cloudinary: {
+    cloudName: process.env.CLOUDINARY_CLOUD_NAME || '',
+    apiKey: process.env.CLOUDINARY_API_KEY || '',
+    apiSecret: process.env.CLOUDINARY_API_SECRET || '',
+    folder: process.env.CLOUDINARY_FOLDER || 'the-cake-bake',
+  },
+
   app: {
     name: process.env.APP_NAME || 'The Cake Bake',
     url: process.env.APP_URL || 'http://localhost:3000',
@@ -105,4 +112,3 @@ const env = {
 };
 
 module.exports = { env, validateEnv };
-

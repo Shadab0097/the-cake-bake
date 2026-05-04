@@ -15,6 +15,10 @@ const bannerSchema = new mongoose.Schema(
       desktop: { type: String, default: '' },
       mobile: { type: String, default: '' },
     },
+    imagePublicId: {
+      desktop: { type: String, default: '' },
+      mobile: { type: String, default: '' },
+    },
     link: {
       type: String,
       default: '',

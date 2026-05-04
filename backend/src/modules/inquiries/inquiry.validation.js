@@ -12,7 +12,8 @@ const customCakeInquiry = {
     servingCount: Joi.number().min(0).default(0),
     designDescription: Joi.string().required().custom(joiSanitize),
     referenceImages: Joi.array().items(Joi.string()).max(5).default([]),
-    deliveryDate: Joi.date().iso().allow(null),
+    referenceImagePublicIds: Joi.array().items(Joi.string()).max(5).default([]),
+    deliveryDate: Joi.date().iso().allow(null, ''),
     city: Joi.string().allow('').default('').custom(joiSanitize),
     budget: Joi.string().allow('').default('').custom(joiSanitize),
   }).messages(joiXssMessages),
@@ -27,9 +28,11 @@ const corporateInquiry = {
     eventType: Joi.string().allow('').default('').custom(joiSanitize),
     quantity: Joi.number().min(1).default(1),
     budget: Joi.string().allow('').default('').custom(joiSanitize),
-    deliveryDate: Joi.date().iso().allow(null),
+    deliveryDate: Joi.date().iso().allow(null, ''),
     city: Joi.string().allow('').default('').custom(joiSanitize),
     requirements: Joi.string().required().custom(joiSanitize),
+    referenceImages: Joi.array().items(Joi.string()).max(5).default([]),
+    referenceImagePublicIds: Joi.array().items(Joi.string()).max(5).default([]),
   }).messages(joiXssMessages),
 };
 

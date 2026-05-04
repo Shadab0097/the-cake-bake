@@ -1,6 +1,7 @@
 const Joi = require('joi');
-const { ORDER_STATUSES, INQUIRY_STATUSES } = require('../../utils/constants');
+const { ORDER_STATUSES, INQUIRY_STATUSES, ADDON_CATEGORIES } = require('../../utils/constants');
 const { joiSanitize, joiXssMessages } = require('../../utils/xssSanitizer');
+const { safeImageUrl, safeLinkUrl } = require('../../utils/urlValidation');
 
 // Reusable ObjectId pattern for params validation
 const objectIdPattern = /^[0-9a-fA-F]{24}$/;
@@ -19,9 +20,11 @@ const createBanner = {
   body: Joi.object({
     title: Joi.string().trim().max(200).required().custom(joiSanitize),
     subtitle: Joi.string().trim().max(300).allow('').default('').custom(joiSanitize),
-    imageUrl: Joi.string().required(),
-    linkUrl: Joi.string().allow('').default(''),
-    position: Joi.string().valid('hero', 'promo', 'category').default('hero'),
+    imageUrl: Joi.string().trim().required().custom(safeImageUrl),
+    imagePublicId: Joi.string().allow('').default(''),
+    link: Joi.string().trim().allow('').default('').custom(safeLinkUrl),
+    linkUrl: Joi.string().trim().allow('').default('').custom(safeLinkUrl),
+    position: Joi.string().valid('hero', 'promo', 'category', 'sidebar').default('hero'),
     sortOrder: Joi.number().default(0),
     isActive: Joi.boolean().default(true),
   }).messages(joiXssMessages),
@@ -32,9 +35,11 @@ const updateBanner = {
   body: Joi.object({
     title: Joi.string().trim().max(200).custom(joiSanitize),
     subtitle: Joi.string().trim().max(300).allow('').custom(joiSanitize),
-    imageUrl: Joi.string(),
-    linkUrl: Joi.string().allow(''),
-    position: Joi.string().valid('hero', 'promo', 'category'),
+    imageUrl: Joi.string().trim().allow('').custom(safeImageUrl),
+    imagePublicId: Joi.string().allow(''),
+    link: Joi.string().trim().allow('').custom(safeLinkUrl),
+    linkUrl: Joi.string().trim().allow('').custom(safeLinkUrl),
+    position: Joi.string().valid('hero', 'promo', 'category', 'sidebar'),
     sortOrder: Joi.number(),
     isActive: Joi.boolean(),
   }).messages(joiXssMessages),
@@ -58,9 +63,24 @@ const updateCategory = {
   body: Joi.object({
     name: Joi.string().trim().max(100).custom(joiSanitize),
     description: Joi.string().allow('').custom(joiSanitize),
-    image: Joi.string().allow(''),
+    image: Joi.string().trim().allow('').custom(safeImageUrl),
+    imagePublicId: Joi.string().allow(''),
     isActive: Joi.boolean(),
     sortOrder: Joi.number(),
+  }).messages(joiXssMessages),
+};
+
+const updateAddOn = {
+  params: idParam,
+  body: Joi.object({
+    name: Joi.string().trim().custom(joiSanitize),
+    description: Joi.string().allow('').custom(joiSanitize),
+    image: Joi.string().trim().allow('').custom(safeImageUrl),
+    imagePublicId: Joi.string().allow(''),
+    price: Joi.number().min(0),
+    category: Joi.string().valid(...ADDON_CATEGORIES),
+    sortOrder: Joi.number(),
+    isActive: Joi.boolean(),
   }).messages(joiXssMessages),
 };
 
@@ -108,6 +128,7 @@ module.exports = {
   bulkImportProducts,
   paramId,
   updateCategory,
+  updateAddOn,
   updateCoupon,
   updateInquiry,
   sendNotification,

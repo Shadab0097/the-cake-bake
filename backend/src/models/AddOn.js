@@ -20,6 +20,10 @@ const addOnSchema = new mongoose.Schema(
       type: String,
       default: '',
     },
+    imagePublicId: {
+      type: String,
+      default: '',
+    },
     price: {
       type: Number,
       required: [true, 'Price is required'],

@@ -3,8 +3,10 @@
 import { useEffect, useState, useCallback } from 'react';
 import adminApi, { formatPrice, ADDON_CATEGORIES } from '@/lib/adminApi';
 import { AdminModal, ConfirmDialog, AdminToast, useAdminToast, EmptyState, LoadingSkeleton, RefreshButton } from '@/components/admin/AdminUI';
+import AdminImageUpload from '@/components/admin/AdminImageUpload';
+import { createImagePreview, deleteAdminImage, uploadAdminImage, validateImageFiles } from '@/lib/uploadApi';
 
-const emptyAddon = { name: '', description: '', image: '', price: '', category: 'candles', sortOrder: 0, isActive: true };
+const emptyAddon = { name: '', description: '', image: '', imagePublicId: '', price: '', category: 'candles', sortOrder: 0, isActive: true };
 
 export default function AdminAddonsPage() {
   const [addons, setAddons] = useState([]);
@@ -12,6 +14,8 @@ export default function AdminAddonsPage() {
   const [modal, setModal] = useState({ open: false, mode: 'create', data: null });
   const [form, setForm] = useState(emptyAddon);
   const [saving, setSaving] = useState(false);
+  const [imageFile, setImageFile] = useState(null);
+  const [imagePreview, setImagePreview] = useState('');
   const [deleteId, setDeleteId] = useState(null);
   const [deleting, setDeleting] = useState(false);
   const [filterCat, setFilterCat] = useState('');
@@ -30,19 +34,57 @@ export default function AdminAddonsPage() {
 
   useEffect(() => { fetch(); }, [fetch]);
 
-  const openCreate = () => { setForm({ ...emptyAddon }); setModal({ open: true, mode: 'create', data: null }); };
-  const openEdit = (a) => { setForm({ ...a, price: a.price }); setModal({ open: true, mode: 'edit', data: a }); };
+  useEffect(() => {
+    return () => {
+      if (imagePreview) URL.revokeObjectURL(imagePreview);
+    };
+  }, [imagePreview]);
+
+  const clearImageFile = () => {
+    if (imagePreview) URL.revokeObjectURL(imagePreview);
+    setImageFile(null);
+    setImagePreview('');
+  };
+
+  const handleImageFile = (file) => {
+    if (!file) return;
+    try {
+      validateImageFiles([file]);
+      clearImageFile();
+      setImageFile(file);
+      setImagePreview(createImagePreview(file));
+    } catch (err) {
+      showToast(err.message || 'Invalid image file', 'error');
+    }
+  };
+
+  const openCreate = () => { clearImageFile(); setForm({ ...emptyAddon }); setModal({ open: true, mode: 'create', data: null }); };
+  const openEdit = (a) => { clearImageFile(); setForm({ ...a, imagePublicId: a.imagePublicId || '', price: a.price }); setModal({ open: true, mode: 'edit', data: a }); };
 
   const handleSave = async () => {
     setSaving(true);
+    let uploadedImage = null;
     try {
       const data = { ...form, price: Number(form.price), sortOrder: Number(form.sortOrder) || 0 };
+      if (imageFile) {
+        uploadedImage = await uploadAdminImage(imageFile, 'addons');
+        data.image = uploadedImage.url;
+        data.imagePublicId = uploadedImage.publicId;
+      }
       if (modal.mode === 'create') await adminApi.addons.create(data);
       else await adminApi.addons.update(modal.data._id, data);
       showToast(modal.mode === 'create' ? 'Add-on created' : 'Add-on updated');
+      clearImageFile();
       setModal({ open: false, mode: 'create', data: null }); fetch();
-    } catch (err) { showToast(err.response?.data?.message || 'Save failed', 'error'); }
-    finally { setSaving(false); }
+    } catch (err) {
+      if (uploadedImage?.publicId && err.response) {
+        deleteAdminImage(uploadedImage.publicId).catch(() => {});
+      }
+      showToast(err.response?.data?.message || 'Save failed', 'error');
+    }
+    finally {
+      setSaving(false);
+    }
   };
 
   const handleDelete = async () => {
@@ -99,19 +141,30 @@ export default function AdminAddonsPage() {
         </div>
       )}
 
-      <AdminModal open={modal.open} title={modal.mode === 'create' ? 'Add Add-On' : 'Edit Add-On'} onClose={() => setModal({ open: false, mode: 'create', data: null })}>
+      <AdminModal open={modal.open} title={modal.mode === 'create' ? 'Add Add-On' : 'Edit Add-On'} onClose={() => { clearImageFile(); setModal({ open: false, mode: 'create', data: null }); }}>
         <div className="admin-field"><label className="admin-label">Name *</label><input className="admin-input" value={form.name} onChange={e => setForm(f => ({ ...f, name: e.target.value }))} /></div>
         <div className="admin-field"><label className="admin-label">Description</label><input className="admin-input" value={form.description || ''} onChange={e => setForm(f => ({ ...f, description: e.target.value }))} /></div>
         <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '1rem' }}>
           <div className="admin-field"><label className="admin-label">Price (paise) *</label><input className="admin-input" type="number" value={form.price} onChange={e => setForm(f => ({ ...f, price: e.target.value }))} /></div>
           <div className="admin-field"><label className="admin-label">Category</label><select className="admin-input admin-select" value={form.category} onChange={e => setForm(f => ({ ...f, category: e.target.value }))}>{ADDON_CATEGORIES.map(c => <option key={c} value={c}>{c}</option>)}</select></div>
         </div>
-        <div className="admin-field"><label className="admin-label">Image URL</label><input className="admin-input" value={form.image || ''} onChange={e => setForm(f => ({ ...f, image: e.target.value }))} /></div>
+        <AdminImageUpload
+          label="Add-on Image"
+          value={form.image || ''}
+          previewUrl={imagePreview}
+          file={imageFile}
+          onFileChange={handleImageFile}
+          onClearFile={clearImageFile}
+          onUrlChange={(value) => {
+            clearImageFile();
+            setForm(f => ({ ...f, image: value, imagePublicId: '' }));
+          }}
+        />
         <label style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', fontSize: '0.875rem', color: 'var(--admin-text-secondary)', cursor: 'pointer' }}>
           <input type="checkbox" checked={form.isActive !== false} onChange={e => setForm(f => ({ ...f, isActive: e.target.checked }))} /> Active
         </label>
         <div className="admin-modal-footer" style={{ padding: '1rem 0 0', borderTop: 'none' }}>
-          <button className="admin-btn admin-btn-secondary" onClick={() => setModal({ open: false, mode: 'create', data: null })}>Cancel</button>
+          <button className="admin-btn admin-btn-secondary" onClick={() => { clearImageFile(); setModal({ open: false, mode: 'create', data: null }); }}>Cancel</button>
           <button className="admin-btn admin-btn-primary" onClick={handleSave} disabled={saving || !form.name || !form.price}>{saving ? 'Saving...' : 'Save'}</button>
         </div>
       </AdminModal>

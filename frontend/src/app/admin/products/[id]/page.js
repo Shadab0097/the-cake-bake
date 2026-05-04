@@ -2,9 +2,11 @@
 
 import { useState, useEffect, useCallback, use } from 'react';
 import { useRouter } from 'next/navigation';
-import adminApi, { PRODUCT_TAGS, OCCASIONS } from '@/lib/adminApi';
+import adminApi, { PRODUCT_TAGS } from '@/lib/adminApi';
 import { AdminToast, useAdminToast } from '@/components/admin/AdminUI';
 import { HiOutlineArrowLeft } from 'react-icons/hi2';
+import AdminImageUpload from '@/components/admin/AdminImageUpload';
+import { createImagePreview, deleteAdminImage, uploadAdminImage, validateImageFiles } from '@/lib/uploadApi';
 
 export default function AdminEditProductPage({ params }) {
   const { id } = use(params);
@@ -12,6 +14,8 @@ export default function AdminEditProductPage({ params }) {
   const [categories, setCategories] = useState([]);
   const [saving, setSaving] = useState(false);
   const [loading, setLoading] = useState(true);
+  const [imageFile, setImageFile] = useState(null);
+  const [imagePreview, setImagePreview] = useState('');
   const { toast, showToast, hideToast } = useAdminToast();
   const router = useRouter();
 
@@ -43,13 +47,50 @@ export default function AdminEditProductPage({ params }) {
   }, [id]);
 
   useEffect(() => { fetchProduct(); }, [fetchProduct]);
+  useEffect(() => {
+    return () => {
+      if (imagePreview) URL.revokeObjectURL(imagePreview);
+    };
+  }, [imagePreview]);
 
   const set = (key, val) => setForm(f => ({ ...f, [key]: val }));
+
+  const handleImageFile = (file) => {
+    if (!file) return;
+    try {
+      validateImageFiles([file]);
+      if (imagePreview) URL.revokeObjectURL(imagePreview);
+      setImageFile(file);
+      setImagePreview(createImagePreview(file));
+    } catch (err) {
+      showToast(err.message || 'Invalid image file', 'error');
+    }
+  };
+
+  const clearImageFile = () => {
+    if (imagePreview) URL.revokeObjectURL(imagePreview);
+    setImageFile(null);
+    setImagePreview('');
+  };
 
   const handleSubmit = async (e) => {
     e.preventDefault();
     setSaving(true);
+    let uploadedImage = null;
     try {
+      if (imageFile) {
+        uploadedImage = await uploadAdminImage(imageFile, 'products');
+      }
+
+      const productImages = uploadedImage
+        ? [{ url: uploadedImage.url, publicId: uploadedImage.publicId, alt: form.name, sortOrder: 0 }]
+        : (form.images?.filter(img => img.url) || []).map((img, index) => ({
+            url: img.url,
+            publicId: img.publicId || '',
+            alt: img.alt || form.name,
+            sortOrder: img.sortOrder || index,
+          }));
+
       const data = {
         name: form.name, description: form.description, shortDescription: form.shortDescription,
         category: form.category, basePrice: Number(form.basePrice),
@@ -59,12 +100,17 @@ export default function AdminEditProductPage({ params }) {
         cities: typeof form.cities === 'string' ? form.cities.split(',').map(c => c.trim()).filter(Boolean) : form.cities,
         isEggless: form.isEggless, hasEgglessOption: form.hasEgglessOption,
         isFeatured: form.isFeatured, isVeg: form.isVeg, isActive: form.isActive,
-        images: form.images?.filter(img => img.url) || [],
+        images: productImages,
         seo: form.seo,
       };
       await adminApi.products.update(id, data);
       showToast('Product updated successfully');
+      clearImageFile();
+      setForm(f => ({ ...f, images: productImages }));
     } catch (err) {
+      if (uploadedImage?.publicId && err.response) {
+        deleteAdminImage(uploadedImage.publicId).catch(() => {});
+      }
       showToast(err.response?.data?.message || 'Update failed', 'error');
     } finally {
       setSaving(false);
@@ -147,8 +193,19 @@ export default function AdminEditProductPage({ params }) {
         </div>
 
         <div className="admin-card" style={{ marginBottom: '1.5rem' }}>
-          <h3 style={{ marginTop: 0 }}>Image URL</h3>
-          <input className="admin-input" value={form.images?.[0]?.url || ''} onChange={(e) => setForm(f => ({ ...f, images: [{ url: e.target.value, alt: f.name }] }))} />
+          <h3 style={{ marginTop: 0 }}>Product Image</h3>
+          <AdminImageUpload
+            label="Product Image"
+            value={form.images?.[0]?.url || ''}
+            previewUrl={imagePreview}
+            file={imageFile}
+            onFileChange={handleImageFile}
+            onClearFile={clearImageFile}
+            onUrlChange={(value) => {
+              clearImageFile();
+              setForm(f => ({ ...f, images: [{ url: value, publicId: '', alt: f.name }] }));
+            }}
+          />
         </div>
 
         <div style={{ display: 'flex', gap: '0.75rem' }}>

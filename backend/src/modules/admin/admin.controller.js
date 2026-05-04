@@ -13,6 +13,23 @@ const AddOn = require('../../models/AddOn');
 const asyncHandler = require('../../utils/asyncHandler');
 const ApiResponse = require('../../utils/ApiResponse');
 const ApiError = require('../../utils/ApiError');
+const uploadService = require('../media/upload.service');
+
+const normalizeBannerPayload = (payload = {}) => {
+  const data = { ...payload };
+  if (data.imageUrl !== undefined) {
+    data.image = { ...(data.image || {}), desktop: data.imageUrl, mobile: data.imageUrl };
+    delete data.imageUrl;
+  }
+  if (data.imagePublicId !== undefined && typeof data.imagePublicId === 'string') {
+    data.imagePublicId = { desktop: data.imagePublicId, mobile: data.imagePublicId };
+  }
+  if (data.linkUrl !== undefined && !data.link) {
+    data.link = data.linkUrl;
+  }
+  delete data.linkUrl;
+  return data;
+};
 
 // ---- Dashboard ----
 const getDashboard = asyncHandler(async (req, res) => {
@@ -245,19 +262,33 @@ const getBanners = asyncHandler(async (req, res) => {
 });
 
 const createBanner = asyncHandler(async (req, res) => {
-  const banner = await Banner.create(req.body);
+  const banner = await Banner.create(normalizeBannerPayload(req.body));
   ApiResponse.created(banner, 'Banner created').send(res);
 });
 
 const updateBanner = asyncHandler(async (req, res) => {
-  const banner = await Banner.findByIdAndUpdate(req.params.id, req.body, { new: true });
+  const existingBanner = await Banner.findById(req.params.id).select('imagePublicId').lean();
+  const banner = await Banner.findByIdAndUpdate(req.params.id, normalizeBannerPayload(req.body), { new: true });
   if (!banner) throw ApiError.notFound('Banner not found');
+  const oldPublicIds = [
+    existingBanner?.imagePublicId?.desktop,
+    existingBanner?.imagePublicId?.mobile,
+  ].filter(Boolean);
+  const nextPublicIds = new Set([
+    banner.imagePublicId?.desktop,
+    banner.imagePublicId?.mobile,
+  ].filter(Boolean));
+  uploadService.deleteImages(oldPublicIds.filter((publicId) => !nextPublicIds.has(publicId)));
   ApiResponse.ok(banner, 'Banner updated').send(res);
 });
 
 const deleteBanner = asyncHandler(async (req, res) => {
   const banner = await Banner.findByIdAndDelete(req.params.id);
   if (!banner) throw ApiError.notFound('Banner not found');
+  await uploadService.deleteImages([
+    banner.imagePublicId?.desktop,
+    banner.imagePublicId?.mobile,
+  ]);
   ApiResponse.ok(null, 'Banner deleted').send(res);
 });
 

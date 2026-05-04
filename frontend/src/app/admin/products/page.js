@@ -4,6 +4,7 @@ import { useEffect, useState, useCallback } from 'react';
 import Link from 'next/link';
 import adminApi, { formatPrice } from '@/lib/adminApi';
 import { Pagination, LoadingSkeleton, EmptyState, ConfirmDialog, AdminToast, useAdminToast, RefreshButton } from '@/components/admin/AdminUI';
+import { resolveImageUrl } from '@/lib/uploadApi';
 
 export default function AdminProductsPage() {
   const [products, setProducts] = useState([]);
@@ -88,7 +89,7 @@ export default function AdminProductsPage() {
                       <td>
                         <div style={{ display: 'flex', alignItems: 'center', gap: '0.75rem' }}>
                           {p.images?.[0]?.url ? (
-                            <img src={p.images[0].url} alt={p.name} style={{ width: 40, height: 40, borderRadius: 6, objectFit: 'cover', background: 'var(--admin-bg)' }} />
+                            <img src={resolveImageUrl(p.images[0].url)} alt={p.name} style={{ width: 40, height: 40, borderRadius: 6, objectFit: 'cover', background: 'var(--admin-bg)' }} />
                           ) : (
                             <div style={{ width: 40, height: 40, borderRadius: 6, background: 'var(--admin-bg)', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: '1rem' }}>🎂</div>
                           )}

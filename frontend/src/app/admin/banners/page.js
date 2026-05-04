@@ -3,8 +3,10 @@
 import { useEffect, useState, useCallback } from 'react';
 import adminApi, { BANNER_POSITIONS } from '@/lib/adminApi';
 import { AdminModal, ConfirmDialog, AdminToast, useAdminToast, EmptyState, LoadingSkeleton, RefreshButton } from '@/components/admin/AdminUI';
+import AdminImageUpload from '@/components/admin/AdminImageUpload';
+import { createImagePreview, deleteAdminImage, uploadAdminImage, validateImageFiles } from '@/lib/uploadApi';
 
-const emptyBanner = { title: '', subtitle: '', imageUrl: '', link: '', position: 'hero', sortOrder: 0, isActive: true };
+const emptyBanner = { title: '', subtitle: '', imageUrl: '', imagePublicId: '', link: '', position: 'hero', sortOrder: 0, isActive: true };
 
 export default function AdminBannersPage() {
   const [banners, setBanners] = useState([]);
@@ -12,6 +14,8 @@ export default function AdminBannersPage() {
   const [modal, setModal] = useState({ open: false, mode: 'create', data: null });
   const [form, setForm] = useState(emptyBanner);
   const [saving, setSaving] = useState(false);
+  const [imageFile, setImageFile] = useState(null);
+  const [imagePreview, setImagePreview] = useState('');
   const [deleteId, setDeleteId] = useState(null);
   const [deleting, setDeleting] = useState(false);
   const { toast, showToast, hideToast } = useAdminToast();
@@ -27,18 +31,67 @@ export default function AdminBannersPage() {
 
   useEffect(() => { fetch(); }, [fetch]);
 
-  const openCreate = () => { setForm({ ...emptyBanner }); setModal({ open: true, mode: 'create', data: null }); };
-  const openEdit = (b) => { setForm({ title: b.title || '', subtitle: b.subtitle || '', imageUrl: b.imageUrl || b.image?.desktop || '', link: b.link || '', position: b.position || 'hero', sortOrder: b.sortOrder || 0, isActive: b.isActive !== false }); setModal({ open: true, mode: 'edit', data: b }); };
+  useEffect(() => {
+    return () => {
+      if (imagePreview) URL.revokeObjectURL(imagePreview);
+    };
+  }, [imagePreview]);
+
+  const clearImageFile = () => {
+    if (imagePreview) URL.revokeObjectURL(imagePreview);
+    setImageFile(null);
+    setImagePreview('');
+  };
+
+  const handleImageFile = (file) => {
+    if (!file) return;
+    try {
+      validateImageFiles([file]);
+      clearImageFile();
+      setImageFile(file);
+      setImagePreview(createImagePreview(file));
+    } catch (err) {
+      showToast(err.message || 'Invalid image file', 'error');
+    }
+  };
+
+  const openCreate = () => { clearImageFile(); setForm({ ...emptyBanner }); setModal({ open: true, mode: 'create', data: null }); };
+  const openEdit = (b) => {
+    clearImageFile();
+    setForm({
+      title: b.title || '',
+      subtitle: b.subtitle || '',
+      imageUrl: b.imageUrl || b.image?.desktop || '',
+      imagePublicId: b.imagePublicId?.desktop || b.imagePublicId || '',
+      link: b.link || '',
+      position: b.position || 'hero',
+      sortOrder: b.sortOrder || 0,
+      isActive: b.isActive !== false,
+    });
+    setModal({ open: true, mode: 'edit', data: b });
+  };
 
   const handleSave = async () => {
     setSaving(true);
+    let uploadedImage = null;
     try {
       const data = { ...form, sortOrder: Number(form.sortOrder) || 0 };
+      if (imageFile) {
+        uploadedImage = await uploadAdminImage(imageFile, 'banners');
+        data.imageUrl = uploadedImage.url;
+        data.imagePublicId = uploadedImage.publicId;
+      }
       if (modal.mode === 'create') await adminApi.banners.create(data);
       else await adminApi.banners.update(modal.data._id, data);
       showToast(modal.mode === 'create' ? 'Banner created' : 'Banner updated');
+      clearImageFile();
       setModal({ open: false, mode: 'create', data: null }); fetch();
-    } catch (err) { showToast(err.response?.data?.message || 'Save failed', 'error'); }
+    } catch (err) {
+      if (uploadedImage?.publicId && err.response) {
+        deleteAdminImage(uploadedImage.publicId).catch(() => {});
+      }
+      showToast(err.response?.data?.message || 'Save failed', 'error');
+    }
     finally { setSaving(false); }
   };
 
@@ -88,10 +141,21 @@ export default function AdminBannersPage() {
         </div>
       )}
 
-      <AdminModal open={modal.open} title={modal.mode === 'create' ? 'Add Banner' : 'Edit Banner'} onClose={() => setModal({ open: false, mode: 'create', data: null })}>
+      <AdminModal open={modal.open} title={modal.mode === 'create' ? 'Add Banner' : 'Edit Banner'} onClose={() => { clearImageFile(); setModal({ open: false, mode: 'create', data: null }); }}>
         <div className="admin-field"><label className="admin-label">Title</label><input className="admin-input" value={form.title} onChange={e => setForm(f => ({ ...f, title: e.target.value }))} /></div>
         <div className="admin-field"><label className="admin-label">Subtitle</label><input className="admin-input" value={form.subtitle} onChange={e => setForm(f => ({ ...f, subtitle: e.target.value }))} /></div>
-        <div className="admin-field"><label className="admin-label">Image URL</label><input className="admin-input" value={form.imageUrl} onChange={e => setForm(f => ({ ...f, imageUrl: e.target.value }))} placeholder="https://..." /></div>
+        <AdminImageUpload
+          label="Banner Image"
+          value={form.imageUrl}
+          previewUrl={imagePreview}
+          file={imageFile}
+          onFileChange={handleImageFile}
+          onClearFile={clearImageFile}
+          onUrlChange={(value) => {
+            clearImageFile();
+            setForm(f => ({ ...f, imageUrl: value, imagePublicId: '' }));
+          }}
+        />
         <div className="admin-field"><label className="admin-label">Link URL</label><input className="admin-input" value={form.link} onChange={e => setForm(f => ({ ...f, link: e.target.value }))} placeholder="/products" /></div>
         <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '1rem' }}>
           <div className="admin-field"><label className="admin-label">Position</label><select className="admin-input admin-select" value={form.position} onChange={e => setForm(f => ({ ...f, position: e.target.value }))}>{BANNER_POSITIONS.map(p => <option key={p} value={p}>{p}</option>)}</select></div>
@@ -101,7 +165,7 @@ export default function AdminBannersPage() {
           <input type="checkbox" checked={form.isActive !== false} onChange={e => setForm(f => ({ ...f, isActive: e.target.checked }))} /> Active
         </label>
         <div className="admin-modal-footer" style={{ padding: '1rem 0 0', borderTop: 'none' }}>
-          <button className="admin-btn admin-btn-secondary" onClick={() => setModal({ open: false, mode: 'create', data: null })}>Cancel</button>
+          <button className="admin-btn admin-btn-secondary" onClick={() => { clearImageFile(); setModal({ open: false, mode: 'create', data: null }); }}>Cancel</button>
           <button className="admin-btn admin-btn-primary" onClick={handleSave} disabled={saving}>{saving ? 'Saving...' : 'Save'}</button>
         </div>
       </AdminModal>

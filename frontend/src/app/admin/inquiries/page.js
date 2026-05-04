@@ -3,6 +3,7 @@
 import { useEffect, useState, useCallback } from 'react';
 import adminApi, { formatDate, INQUIRY_STATUSES } from '@/lib/adminApi';
 import { Pagination, AdminModal, StatusBadge, AdminToast, useAdminToast, EmptyState, LoadingSkeleton, RefreshButton } from '@/components/admin/AdminUI';
+import { resolveImageUrl } from '@/lib/uploadApi';
 
 // Status color map for the inline dropdown highlight
 const STATUS_COLORS = {
@@ -232,6 +233,19 @@ export default function AdminInquiriesPage() {
               {editModal.data.requirements && <div><strong>Requirements:</strong> {editModal.data.requirements}</div>}
               {editModal.data.city && <div><strong>City:</strong> {editModal.data.city}</div>}
               {editModal.data.deliveryDate && <div><strong>Delivery Date:</strong> {formatDate(editModal.data.deliveryDate)}</div>}
+              {editModal.data.referenceImages?.length > 0 && (
+                <div style={{ marginTop: '0.75rem' }}>
+                  <strong>Reference Images:</strong>
+                  <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(74px, 1fr))', gap: '0.5rem', marginTop: '0.5rem' }}>
+                    {editModal.data.referenceImages.map((image, index) => (
+                      <a key={`${image}-${index}`} href={resolveImageUrl(image)} target="_blank" rel="noreferrer" style={{ display: 'block', height: 74, borderRadius: 'var(--admin-radius-sm)', overflow: 'hidden', border: '1px solid var(--admin-border)' }}>
+                        {/* eslint-disable-next-line @next/next/no-img-element */}
+                        <img src={resolveImageUrl(image)} alt={`Reference ${index + 1}`} style={{ width: '100%', height: '100%', objectFit: 'cover' }} />
+                      </a>
+                    ))}
+                  </div>
+                </div>
+              )}
               {editModal.data.quotedPrice > 0 && <div><strong>Current Quoted Price:</strong> ₹{editModal.data.quotedPrice}</div>}
             </div>
 

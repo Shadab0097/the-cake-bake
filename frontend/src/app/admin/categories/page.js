@@ -3,13 +3,17 @@
 import { useEffect, useState, useCallback } from 'react';
 import adminApi from '@/lib/adminApi';
 import { AdminModal, ConfirmDialog, AdminToast, useAdminToast, EmptyState, LoadingSkeleton, RefreshButton } from '@/components/admin/AdminUI';
+import AdminImageUpload from '@/components/admin/AdminImageUpload';
+import { createImagePreview, deleteAdminImage, uploadAdminImage, validateImageFiles } from '@/lib/uploadApi';
 
 export default function AdminCategoriesPage() {
   const [categories, setCategories] = useState([]);
   const [loading, setLoading] = useState(true);
   const [modal, setModal] = useState({ open: false, mode: 'create', data: null });
-  const [form, setForm] = useState({ name: '', description: '', image: '', sortOrder: 0, seo: { title: '', description: '', keywords: '' } });
+  const [form, setForm] = useState({ name: '', description: '', image: '', imagePublicId: '', sortOrder: 0, seo: { title: '', description: '', keywords: '' } });
   const [saving, setSaving] = useState(false);
+  const [imageFile, setImageFile] = useState(null);
+  const [imagePreview, setImagePreview] = useState('');
   const [deleteId, setDeleteId] = useState(null);
   const [deleting, setDeleting] = useState(false);
   const { toast, showToast, hideToast } = useAdminToast();
@@ -24,30 +28,67 @@ export default function AdminCategoriesPage() {
   }, []);
 
   useEffect(() => { fetch(); }, [fetch]);
+  useEffect(() => {
+    return () => {
+      if (imagePreview) URL.revokeObjectURL(imagePreview);
+    };
+  }, [imagePreview]);
+
+  const clearImageFile = () => {
+    if (imagePreview) URL.revokeObjectURL(imagePreview);
+    setImageFile(null);
+    setImagePreview('');
+  };
+
+  const handleImageFile = (file) => {
+    if (!file) return;
+    try {
+      validateImageFiles([file]);
+      clearImageFile();
+      setImageFile(file);
+      setImagePreview(createImagePreview(file));
+    } catch (err) {
+      showToast(err.message || 'Invalid image file', 'error');
+    }
+  };
 
   const openCreate = () => {
-    setForm({ name: '', description: '', image: '', sortOrder: 0, seo: { title: '', description: '', keywords: '' } });
+    clearImageFile();
+    setForm({ name: '', description: '', image: '', imagePublicId: '', sortOrder: 0, seo: { title: '', description: '', keywords: '' } });
     setModal({ open: true, mode: 'create', data: null });
   };
 
   const openEdit = (cat) => {
-    setForm({ name: cat.name, description: cat.description || '', image: cat.image || '', sortOrder: cat.sortOrder || 0, seo: cat.seo || { title: '', description: '', keywords: '' } });
+    clearImageFile();
+    setForm({ name: cat.name, description: cat.description || '', image: cat.image || '', imagePublicId: cat.imagePublicId || '', sortOrder: cat.sortOrder || 0, seo: cat.seo || { title: '', description: '', keywords: '' } });
     setModal({ open: true, mode: 'edit', data: cat });
   };
 
   const handleSave = async () => {
     setSaving(true);
+    let uploadedImage = null;
     try {
+      const data = { ...form };
+      if (imageFile) {
+        uploadedImage = await uploadAdminImage(imageFile, 'categories');
+        data.image = uploadedImage.url;
+        data.imagePublicId = uploadedImage.publicId;
+      }
+
       if (modal.mode === 'create') {
-        await adminApi.categories.create(form);
+        await adminApi.categories.create(data);
         showToast('Category created');
       } else {
-        await adminApi.categories.update(modal.data._id, form);
+        await adminApi.categories.update(modal.data._id, data);
         showToast('Category updated');
       }
+      clearImageFile();
       setModal({ open: false, mode: 'create', data: null });
       fetch();
     } catch (err) {
+      if (uploadedImage?.publicId && err.response) {
+        deleteAdminImage(uploadedImage.publicId).catch(() => {});
+      }
       showToast(err.response?.data?.message || 'Save failed', 'error');
     } finally { setSaving(false); }
   };
@@ -97,13 +138,24 @@ export default function AdminCategoriesPage() {
         </div>
       )}
 
-      <AdminModal open={modal.open} title={modal.mode === 'create' ? 'Add Category' : 'Edit Category'} onClose={() => setModal({ open: false, mode: 'create', data: null })}>
+      <AdminModal open={modal.open} title={modal.mode === 'create' ? 'Add Category' : 'Edit Category'} onClose={() => { clearImageFile(); setModal({ open: false, mode: 'create', data: null }); }}>
         <div className="admin-field"><label className="admin-label">Name *</label><input className="admin-input" value={form.name} onChange={(e) => setForm(f => ({ ...f, name: e.target.value }))} required /></div>
         <div className="admin-field"><label className="admin-label">Description</label><textarea className="admin-input admin-textarea" value={form.description} onChange={(e) => setForm(f => ({ ...f, description: e.target.value }))} /></div>
-        <div className="admin-field"><label className="admin-label">Image URL</label><input className="admin-input" value={form.image} onChange={(e) => setForm(f => ({ ...f, image: e.target.value }))} placeholder="https://..." /></div>
+        <AdminImageUpload
+          label="Category Image"
+          value={form.image}
+          previewUrl={imagePreview}
+          file={imageFile}
+          onFileChange={handleImageFile}
+          onClearFile={clearImageFile}
+          onUrlChange={(value) => {
+            clearImageFile();
+            setForm(f => ({ ...f, image: value, imagePublicId: '' }));
+          }}
+        />
         <div className="admin-field"><label className="admin-label">Sort Order</label><input className="admin-input" type="number" value={form.sortOrder} onChange={(e) => setForm(f => ({ ...f, sortOrder: Number(e.target.value) }))} style={{ maxWidth: 120 }} /></div>
         <div className="admin-modal-footer" style={{ padding: '1rem 0 0', borderTop: 'none' }}>
-          <button className="admin-btn admin-btn-secondary" onClick={() => setModal({ open: false, mode: 'create', data: null })}>Cancel</button>
+          <button className="admin-btn admin-btn-secondary" onClick={() => { clearImageFile(); setModal({ open: false, mode: 'create', data: null }); }}>Cancel</button>
           <button className="admin-btn admin-btn-primary" onClick={handleSave} disabled={saving || !form.name}>{saving ? 'Saving...' : 'Save'}</button>
         </div>
       </AdminModal>

@@ -1,6 +1,7 @@
 const Category = require('../../models/Category');
 const ApiError = require('../../utils/ApiError');
 const { generateSlug } = require('../../utils/helpers');
+const uploadService = require('../media/upload.service');
 
 class CategoryService {
   async listCategories() {
@@ -24,8 +25,17 @@ class CategoryService {
 
   async updateCategory(id, data) {
     if (data.name) data.slug = generateSlug(data.name);
+    const existingCategory = data.imagePublicId !== undefined
+      ? await Category.findById(id).select('imagePublicId').lean()
+      : null;
     const category = await Category.findByIdAndUpdate(id, data, { new: true, runValidators: true });
     if (!category) throw ApiError.notFound('Category not found');
+    if (
+      existingCategory?.imagePublicId &&
+      existingCategory.imagePublicId !== category.imagePublicId
+    ) {
+      uploadService.deleteImage(existingCategory.imagePublicId);
+    }
     return category;
   }
 

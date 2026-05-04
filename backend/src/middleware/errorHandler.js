@@ -7,6 +7,15 @@ const ApiError = require('../utils/ApiError');
 const errorHandler = (err, req, res, next) => {
   let error = err;
 
+  if (err.name === 'MulterError') {
+    const messages = {
+      LIMIT_FILE_SIZE: 'Uploaded file is too large',
+      LIMIT_FILE_COUNT: 'Too many files uploaded',
+      LIMIT_UNEXPECTED_FILE: 'Unexpected file field',
+    };
+    error = ApiError.badRequest(messages[err.code] || err.message || 'File upload failed');
+  }
+
   // If not an ApiError, wrap it
   if (!(error instanceof ApiError)) {
     const statusCode = error.statusCode || 500;
