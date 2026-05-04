@@ -7,6 +7,10 @@ const orderItemSchema = new mongoose.Schema(
       type: mongoose.Schema.Types.ObjectId,
       ref: 'Product',
     },
+    variant: {
+      type: mongoose.Schema.Types.ObjectId,
+      ref: 'Variant',
+    },
     name: { type: String, required: true },
     image: { type: String, default: '' },
     weight: { type: String, default: '' },

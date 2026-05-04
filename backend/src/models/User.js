@@ -43,6 +43,11 @@ const userSchema = new mongoose.Schema(
       type: Boolean,
       default: false,
     },
+    isActive: {
+      type: Boolean,
+      default: true,
+      index: true,
+    },
     loyaltyPoints: {
       type: Number,
       default: 0,
@@ -51,6 +56,17 @@ const userSchema = new mongoose.Schema(
     lastLogin: {
       type: Date,
     },
+    // ── Account lockout ────────────────────────────────────────────────────────
+    failedLoginAttempts: {
+      type: Number,
+      default: 0,
+      select: false,
+    },
+    lockUntil: {
+      type: Date,
+      select: false,
+    },
+    // ──────────────────────────────────────────────────────────────────────────
     refreshToken: {
       type: String,
       select: false,
@@ -85,6 +101,11 @@ userSchema.pre('save', async function (next) {
 // Compare password
 userSchema.methods.comparePassword = async function (candidatePassword) {
   return bcrypt.compare(candidatePassword, this.passwordHash);
+};
+
+// Check if account is currently locked
+userSchema.methods.isLocked = function () {
+  return !!(this.lockUntil && this.lockUntil > Date.now());
 };
 
 // Virtual: addresses

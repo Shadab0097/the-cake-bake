@@ -6,6 +6,7 @@ import { usePathname } from 'next/navigation';
 import { fetchProfile, setSessionLoaded, setUser } from '@/store/slices/authSlice';
 import { fetchCart } from '@/store/slices/cartSlice';
 import { fetchWishlist } from '@/store/slices/wishlistSlice';
+import { fetchCategories } from '@/store/slices/categoriesSlice';
 import { clearToasts } from '@/store/slices/toastSlice';
 import Navbar from '@/components/layout/Navbar';
 import Footer from '@/components/layout/Footer';
@@ -21,6 +22,7 @@ export default function AppShell({ children }) {
   const dispatch = useDispatch();
   const pathname = usePathname();
   const { isAuthenticated } = useSelector((s) => s.auth);
+  const { hasFetched: categoriesFetched } = useSelector((s) => s.categories);
   const dataFetchedRef = useRef(false);
 
   // Clear toasts on route change
@@ -60,6 +62,13 @@ export default function AppShell({ children }) {
       dispatch(fetchWishlist());
     }
   }, [isAuthenticated, dispatch]);
+
+  // Fetch categories once (public data, no auth needed)
+  useEffect(() => {
+    if (!categoriesFetched) {
+      dispatch(fetchCategories());
+    }
+  }, [categoriesFetched, dispatch]);
 
   return (
     <>

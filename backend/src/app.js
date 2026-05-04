@@ -12,11 +12,15 @@ const fs = require('fs');
 const { env } = require('./config/env');
 const { apiLimiter } = require('./middleware/rateLimiter');
 const errorHandler = require('./middleware/errorHandler');
+const requestId = require('./middleware/requestId');
 const ApiError = require('./utils/ApiError');
 
 const v1Routes = require('./routes/v1');
 
 const app = express();
+
+// ---- Request Correlation ID — must be first so all logs carry req.id ----
+app.use(requestId);
 
 // ---- Trust Proxy (required behind Nginx/load balancer for correct IP) ----
 if (env.isProd()) {

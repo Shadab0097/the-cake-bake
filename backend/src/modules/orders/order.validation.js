@@ -4,7 +4,9 @@ const { joiSanitize, joiXssMessages } = require('../../utils/xssSanitizer');
 const createOrder = {
   body: Joi.object({
     addressId: Joi.string().allow(null).allow(''),
-    deliveryDate: Joi.date().iso().required(),
+    deliveryDate: Joi.date().iso().min('now').required().messages({
+      'date.min': 'Delivery date cannot be in the past',
+    }),
     deliverySlot: Joi.alternatives()
       .try(
         Joi.object({
@@ -22,7 +24,7 @@ const createOrder = {
     redeemPoints: Joi.boolean().default(false),
     shippingAddress: Joi.object({
       fullName: Joi.string().trim().required().custom(joiSanitize),
-      phone: Joi.string().trim().required(),
+      phone: Joi.string().trim().pattern(/^\+?[0-9]{10,15}$/).required(),
       addressLine1: Joi.string().trim().required().custom(joiSanitize),
       addressLine2: Joi.string().trim().allow('').default('').custom(joiSanitize),
       city: Joi.string().trim().required().custom(joiSanitize),
@@ -36,11 +38,13 @@ const createOrder = {
 const validateCheckout = {
   body: Joi.object({
     addressId: Joi.string().allow(null).allow(''),
-    deliveryDate: Joi.date().iso().required(),
+    deliveryDate: Joi.date().iso().min('now').required().messages({
+      'date.min': 'Delivery date cannot be in the past',
+    }),
     deliverySlotId: Joi.string().allow(''),
     shippingAddress: Joi.object({
       fullName: Joi.string().trim().required(),
-      phone: Joi.string().trim().required(),
+      phone: Joi.string().trim().pattern(/^\+?[0-9]{10,15}$/).required(),
       addressLine1: Joi.string().trim().required(),
       addressLine2: Joi.string().trim().allow(''),
       city: Joi.string().trim().required(),
@@ -52,3 +56,4 @@ const validateCheckout = {
 };
 
 module.exports = { createOrder, validateCheckout };
+

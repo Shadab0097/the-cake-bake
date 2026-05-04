@@ -50,18 +50,47 @@ class AuthService {
   }
 
   /**
-   * Login user
+   * Login user — with account lockout protection
    */
   async login({ email, password }) {
-    const user = await User.findOne({ email }).select('+passwordHash +refreshToken');
+    const user = await User.findOne({ email }).select('+passwordHash +refreshToken +failedLoginAttempts +lockUntil');
     if (!user) {
       throw ApiError.unauthorized('Invalid email or password');
     }
 
+    // Check if account is active
+    if (user.isActive === false) {
+      throw ApiError.unauthorized('Your account has been disabled. Please contact support.');
+    }
+
+    // Check if account is currently locked
+    if (user.isLocked()) {
+      const unlockMinutes = Math.ceil((user.lockUntil - Date.now()) / 60000);
+      throw ApiError.unauthorized(`Account temporarily locked due to too many failed attempts. Try again in ${unlockMinutes} minute(s).`);
+    }
+
     const isMatch = await user.comparePassword(password);
     if (!isMatch) {
+      // Increment failed attempts
+      const MAX_ATTEMPTS = 5;
+      const LOCK_DURATION_MS = 15 * 60 * 1000; // 15 minutes
+
+      user.failedLoginAttempts = (user.failedLoginAttempts || 0) + 1;
+
+      if (user.failedLoginAttempts >= MAX_ATTEMPTS) {
+        user.lockUntil = new Date(Date.now() + LOCK_DURATION_MS);
+        user.failedLoginAttempts = 0; // reset counter; lockUntil is the guard now
+        await user.save();
+        throw ApiError.unauthorized('Account temporarily locked after too many failed attempts. Try again in 15 minutes.');
+      }
+
+      await user.save();
       throw ApiError.unauthorized('Invalid email or password');
     }
+
+    // Successful login — reset lockout counters
+    user.failedLoginAttempts = 0;
+    user.lockUntil = undefined;
 
     const tokens = this.generateTokens(user);
     user.refreshToken = tokens.refreshToken;

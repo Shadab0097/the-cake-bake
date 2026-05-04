@@ -76,5 +76,5 @@ if (cluster.isPrimary) {
 
 } else {
   // Worker process — load the actual server
-  require('./src/server');
+  require('./server');
 }

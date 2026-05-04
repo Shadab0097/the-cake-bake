@@ -12,6 +12,6 @@ router.post('/refresh', validate(authValidation.refreshToken), authController.re
 router.post('/logout', auth, authController.logout);
 router.post('/forgot-password', authLimiter, validate(authValidation.forgotPassword), authController.forgotPassword);
 router.post('/reset-password', authLimiter, validate(authValidation.resetPassword), authController.resetPassword);
-router.post('/verify-phone', authLimiter, authController.verifyPhone);
+router.post('/verify-phone', authLimiter, validate(authValidation.verifyPhone), authController.verifyPhone);
 
 module.exports = router;

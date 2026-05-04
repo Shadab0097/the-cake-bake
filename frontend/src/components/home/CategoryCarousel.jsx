@@ -1,18 +1,11 @@
 'use client';
 
-import { useEffect, useState } from 'react';
+import { useSelector } from 'react-redux';
 import Link from 'next/link';
 import { motion } from 'framer-motion';
-import api from '@/lib/api';
 
 export default function CategoryCarousel() {
-  const [categories, setCategories] = useState([]);
-
-  useEffect(() => {
-    api.get('/categories')
-      .then((res) => setCategories(res.data?.data || []))
-      .catch(() => {});
-  }, []);
+  const categories = useSelector((s) => s.categories.items);
 
   if (categories.length === 0) return null;
 
@@ -42,7 +35,7 @@ export default function CategoryCarousel() {
         </div>
 
         <div className="flex gap-4 lg:gap-6 overflow-x-auto no-scrollbar pb-4 snap-x snap-mandatory">
-          {categories.filter((c) => c.isActive !== false).map((category, index) => (
+          {categories.map((category, index) => (
             <motion.div
               key={category._id}
               initial={{ opacity: 0, y: 20 }}

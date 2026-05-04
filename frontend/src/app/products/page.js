@@ -2,6 +2,7 @@
 
 import { useState, useEffect, useCallback, Suspense } from 'react';
 import { useSearchParams, useRouter, usePathname } from 'next/navigation';
+import { useSelector } from 'react-redux';
 import { motion } from 'framer-motion';
 import { FiFilter, FiX, FiChevronDown } from 'react-icons/fi';
 import AppShell from '@/components/layout/AppShell';
@@ -23,7 +24,7 @@ function ProductsContent() {
   const pathname = usePathname();
 
   const [products, setProducts] = useState([]);
-  const [categories, setCategories] = useState([]);
+  const categories = useSelector((s) => s.categories.items);
   const [loading, setLoading] = useState(true);
   const [totalPages, setTotalPages] = useState(1);
   const [showFilters, setShowFilters] = useState(false);
@@ -36,13 +37,6 @@ function ProductsContent() {
   const isEggless = searchParams.get('eggless') === 'true';
   const currentMin = searchParams.get('minPrice') || '';
   const currentMax = searchParams.get('maxPrice') || '';
-
-  // Fetch categories
-  useEffect(() => {
-    api.get('/categories')
-      .then((res) => setCategories(res.data?.data || []))
-      .catch(() => {});
-  }, []);
 
   // Fetch products
   useEffect(() => {
@@ -157,7 +151,7 @@ function ProductsContent() {
                   >
                     All Categories
                   </button>
-                  {categories.filter((c) => c.isActive !== false).map((cat) => (
+                  {categories.map((cat) => (
                     <button
                       key={cat._id}
                       onClick={() => {

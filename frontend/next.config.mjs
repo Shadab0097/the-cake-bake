@@ -2,12 +2,16 @@
 const nextConfig = {
   images: {
     remotePatterns: [
+      // Local development
       {
         protocol: 'http',
         hostname: 'localhost',
         port: '5000',
         pathname: '/uploads/**',
       },
+      // ── PRODUCTION: Add your production API domain here before deploying ──
+      // Example: { protocol: 'https', hostname: 'api.thecakebake.in', pathname: '/uploads/**' },
+      // ─────────────────────────────────────────────────────────────────────
       {
         protocol: 'https',
         hostname: '*.googleusercontent.com',

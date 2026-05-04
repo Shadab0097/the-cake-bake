@@ -11,7 +11,6 @@ import {
 import { toggleSearch, toggleMobileMenu, closeMobileMenu } from '@/store/slices/uiSlice';
 import { openCartDrawer } from '@/store/slices/cartSlice';
 import { formatOccasion, OCCASIONS } from '@/lib/utils';
-import api from '@/lib/api';
 
 /* ─── Static nav links (categories injected dynamically) ─────────────────── */
 const STATIC_LINKS = [
@@ -55,7 +54,7 @@ export default function Navbar() {
 
   const [scrolled,       setScrolled]       = useState(false);
   const [activeDropdown, setActiveDropdown]  = useState(null);
-  const [categories,     setCategories]      = useState([]);
+  const categories = useSelector((s) => s.categories.items);
   const dropdownRef = useRef(null);
 
   const isHeroPage = pathname === '/';
@@ -83,17 +82,6 @@ export default function Navbar() {
     dispatch(closeMobileMenu());
     setActiveDropdown(null);
   }, [pathname, dispatch]);
-
-  /* ── Fetch categories ────────────────────────────────────────────────── */
-  useEffect(() => {
-    api.get('/categories')
-      .then((res) => {
-        const list = res.data?.data || [];
-        const cats = Array.isArray(list) ? list : (list.docs || list.items || []);
-        setCategories(cats.filter((c) => c.isActive !== false));
-      })
-      .catch(() => {});
-  }, []);
 
   /* ── Build nav links with dynamic categories ────────────────────────── */
   const navLinks = STATIC_LINKS.map((link) => {

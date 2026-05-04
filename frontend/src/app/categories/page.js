@@ -1,11 +1,10 @@
 'use client';
 
-import { useEffect, useState } from 'react';
 import Link from 'next/link';
+import { useSelector } from 'react-redux';
 import { motion } from 'framer-motion';
 import { FiGrid } from 'react-icons/fi';
 import AppShell from '@/components/layout/AppShell';
-import api from '@/lib/api';
 
 const CAT_EMOJIS = {
   'birthday-cakes':    '🎂',
@@ -23,19 +22,8 @@ const CAT_EMOJIS = {
 };
 
 export default function CategoriesPage() {
-  const [categories, setCategories] = useState([]);
-  const [loading, setLoading]       = useState(true);
-
-  useEffect(() => {
-    api.get('/categories')
-      .then((res) => {
-        const list = res.data?.data || [];
-        const cats = Array.isArray(list) ? list : (list.docs || list.items || []);
-        setCategories(cats.filter((c) => c.isActive !== false));
-      })
-      .catch(() => {})
-      .finally(() => setLoading(false));
-  }, []);
+  const categories = useSelector((s) => s.categories.items);
+  const loading = useSelector((s) => !s.categories.hasFetched);
 
   return (
     <AppShell>

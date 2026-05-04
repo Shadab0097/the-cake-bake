@@ -32,6 +32,23 @@ function getTomorrow() {
   return d.toISOString().split('T')[0];
 }
 
+function normalizeCheckoutPhone(value) {
+  const trimmed = (value || '').trim();
+  const digits = trimmed.replace(/\D/g, '');
+  return trimmed.startsWith('+') ? `+${digits}` : digits;
+}
+
+function getCheckoutErrorMessage(err, fallback) {
+  const data = err?.response?.data;
+  const firstError = data?.errors?.[0];
+
+  if (firstError?.message) {
+    return firstError.field ? `${firstError.field}: ${firstError.message}` : firstError.message;
+  }
+
+  return data?.message || fallback;
+}
+
 export default function CheckoutPage() {
   const dispatch = useDispatch();
   const router = useRouter();
@@ -118,14 +135,15 @@ export default function CheckoutPage() {
   const [usePoints, setUsePoints] = useState(false);
   const [pointsInfo, setPointsInfo] = useState(null); // { balance, pointValue, minRedeem, maxRedeemPercent }
 
-  // Fetch loyalty points when authenticated user reaches payment step
+  // Fetch loyalty points only when authenticated user reaches the payment step
+  const isAtPaymentStep = (checkoutMode === 'auth' && step >= 2) || (checkoutMode === 'guest' && step >= 3);
   useEffect(() => {
-    if (isAuthenticated && !pointsInfo) {
+    if (isAuthenticated && !pointsInfo && isAtPaymentStep) {
       api.get('/users/me/points')
         .then((res) => setPointsInfo(res.data?.data || null))
         .catch(() => {});
     }
-  }, [isAuthenticated, pointsInfo]);
+  }, [isAuthenticated, pointsInfo, isAtPaymentStep]);
 
   // Delivery
   const [deliveryDate, setDeliveryDate] = useState(getTomorrow());
@@ -203,6 +221,17 @@ export default function CheckoutPage() {
       dispatch(addToast({ message: 'Please fill in all your details', type: 'error' }));
       return;
     }
+
+    const normalizedPhone = normalizeCheckoutPhone(phone);
+    if (!/^\+?[0-9]{10,15}$/.test(normalizedPhone)) {
+      dispatch(addToast({ message: 'Please enter a valid 10-15 digit mobile number', type: 'error' }));
+      return;
+    }
+
+    if (normalizedPhone !== phone) {
+      setGuestInfo((prev) => ({ ...prev, phone: normalizedPhone }));
+    }
+
     setStep(2);
   };
 
@@ -252,41 +281,33 @@ export default function CheckoutPage() {
     setPlacing(true);
     try {
       if (checkoutMode === 'guest') {
-        // Build guest order items from guestItems (local Redux state)
+        const guestPhone = normalizeCheckoutPhone(guestInfo.phone);
+
+        // Build guest order items — send product/variant IDs + customization only.
+        // The backend recalculates all prices from DB (server-side price authority).
         const guestOrderItems = cartItems.map((item) => {
           const addOns = pendingAddOns[item.localId] || [];
           return {
-            name: item.productName || item.name || 'Cake',
-            image: item.productImage || item.image || '',
-            weight: item.variantWeight || item.weight || '',
-            price: item.price || 0,
+            productId: item.product,
+            variantId: item.variant,
             quantity: item.quantity,
             isEggless: item.isEggless || false,
             cakeMessage: item.cakeMessage || '',
-            addOns: addOns.map((a) => ({ name: a.name, price: a.price })),
+            addOns: addOns.map((a) => a._id),
           };
         });
-
-        const guestSubtotal = cartItems.reduce((s, i) => s + (i.price || 0) * i.quantity, 0);
-        const guestAddOnTotal = Object.values(pendingAddOns).reduce(
-          (sum, list) => sum + list.reduce((s, a) => s + (a.price || 0), 0), 0
-        );
-        const guestDeliveryCharge = selectedZone
-          ? (guestSubtotal + guestAddOnTotal >= selectedZone.freeDeliveryAbove ? 0 : selectedZone.deliveryCharge)
-          : (guestSubtotal + guestAddOnTotal >= 49900 ? 0 : 4900);
-        const guestTotal = guestSubtotal + guestAddOnTotal + guestDeliveryCharge;
 
         const guestPayload = {
           guestInfo: {
             name: guestInfo.name,
             email: guestInfo.email,
-            phone: guestInfo.phone,
+            phone: guestPhone,
           },
           shippingAddress: {
             fullName: guestInfo.name,
-            phone: guestInfo.phone,
+            phone: guestPhone,
             addressLine1: guestAddress.line1,
-            area: guestAddress.area || '',
+            addressLine2: guestAddress.area || '',
             city: guestAddress.city,
             state: guestAddress.state,
             pincode: guestAddress.pincode,
@@ -294,9 +315,6 @@ export default function CheckoutPage() {
           items: guestOrderItems,
           deliveryDate,
           deliverySlot,
-          subtotal: guestSubtotal,
-          deliveryCharge: guestDeliveryCharge,
-          total: guestTotal,
         };
 
         const res = await api.post('/guest-checkout', guestPayload);
@@ -365,7 +383,6 @@ export default function CheckoutPage() {
         dispatch(addToast({ message: 'Order placed! 🎂', type: 'success' }));
         dispatch(resetCart());
         dispatch(clearPendingAddOns());
-        if (isAuthenticated) dispatch(fetchCart());
         router.push(orderNum
           ? `/order-confirmation?orderNumber=${orderNum}`
           : `/order-confirmation?orderId=${orderId}`);
@@ -387,7 +404,6 @@ export default function CheckoutPage() {
             dispatch(addToast({ message: 'Payment successful! 🎂', type: 'success' }));
             dispatch(resetCart());
             dispatch(clearPendingAddOns());
-            if (isAuthenticated) dispatch(fetchCart());
             const onlineOrderNum = res.data?.data?.order?.orderNumber;
             router.push(onlineOrderNum
               ? `/order-confirmation?orderNumber=${onlineOrderNum}`
@@ -401,7 +417,7 @@ export default function CheckoutPage() {
         rzp.open();
       }
     } catch (err) {
-      dispatch(addToast({ message: err?.response?.data?.message || 'Failed to place order', type: 'error' }));
+      dispatch(addToast({ message: getCheckoutErrorMessage(err, 'Failed to place order'), type: 'error' }));
     } finally {
       orderInProgressRef.current = false;
       setPlacing(false);
@@ -499,7 +515,7 @@ export default function CheckoutPage() {
                     {[
                       { icon: FiUser, label: 'Full Name', key: 'name', type: 'text', placeholder: 'Your name' },
                       { icon: FiMail, label: 'Email Address', key: 'email', type: 'email', placeholder: 'you@example.com' },
-                      { icon: FiPhone, label: 'Mobile Number', key: 'phone', type: 'tel', placeholder: '+91 98765 43210' },
+                      { icon: FiPhone, label: 'Mobile Number', key: 'phone', type: 'tel', placeholder: '9876543210' },
                     ].map(({ icon: Icon, label, key, type, placeholder }) => (
                       <div key={key}>
                         <label className="text-sm font-medium text-dark mb-1.5 block">{label}</label>

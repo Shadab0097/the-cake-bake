@@ -1,4 +1,5 @@
 const crypto = require('crypto');
+const mongoose = require('mongoose');
 const Payment = require('../../models/Payment');
 const Order = require('../../models/Order');
 const Cart = require('../../models/Cart');
@@ -28,30 +29,41 @@ class PaymentService {
       throw ApiError.badRequest('Payment verification failed — invalid signature');
     }
 
-    // Find payment record
-    const payment = await Payment.findOne({ razorpayOrderId });
-    if (!payment) throw ApiError.notFound('Payment record not found');
+    // FIX: Atomic idempotency check-and-set using findOneAndUpdate
+    // This prevents the race condition where two simultaneous requests both
+    // pass the status check before either saves, causing double processing.
+    const payment = await Payment.findOneAndUpdate(
+      {
+        razorpayOrderId,
+        status: { $ne: PAYMENT_STATUSES.CAPTURED }, // Only update if not already captured
+      },
+      {
+        $set: {
+          razorpayPaymentId,
+          razorpaySignature,
+          status: PAYMENT_STATUSES.CAPTURED,
+        },
+      },
+      { new: true }
+    );
 
-    // IDEMPOTENCY: If already captured, return success without re-processing
-    if (payment.status === PAYMENT_STATUSES.CAPTURED) {
-      const existingOrder = await Order.findById(payment.order).lean();
+    // If no document was updated, payment was already captured (idempotent return)
+    if (!payment) {
+      const existingPayment = await Payment.findOne({ razorpayOrderId });
+      if (!existingPayment) throw ApiError.notFound('Payment record not found');
+
+      const existingOrder = await Order.findById(existingPayment.order).lean();
       logger.info(`Payment already captured for order ${existingOrder?.orderNumber} (idempotent return)`);
       return {
         success: true,
         orderNumber: existingOrder?.orderNumber,
-        paymentId: payment.razorpayPaymentId,
+        paymentId: existingPayment.razorpayPaymentId,
       };
     }
 
-    // Update payment record
-    payment.razorpayPaymentId = razorpayPaymentId;
-    payment.razorpaySignature = razorpaySignature;
-    payment.status = PAYMENT_STATUSES.CAPTURED;
-    await payment.save();
-
     // Update order — CRITICAL PATH
     const order = await Order.findById(payment.order);
-    if (order) {
+    if (order && order.status !== ORDER_STATUSES.CONFIRMED) {
       order.paymentStatus = 'paid';
       order.status = ORDER_STATUSES.CONFIRMED;
       order.statusHistory.push({
@@ -91,7 +103,7 @@ class PaymentService {
             await Product.bulkWrite(bulkOps);
           }
 
-          // Send WhatsApp notification
+          // Send confirmation notification
           const notificationService = require('../notifications/notification.service');
           await notificationService.sendOrderConfirmation(order, payment);
         } catch (asyncErr) {
@@ -126,50 +138,53 @@ class PaymentService {
 
     logger.info(`Razorpay webhook received: ${eventType}`);
 
-    // Idempotency check
-    const razorpayPaymentId = event.payload?.payment?.entity?.id;
-    if (razorpayPaymentId) {
-      const existingPayment = await Payment.findOne({
-        razorpayPaymentId,
-        status: PAYMENT_STATUSES.CAPTURED,
-      });
-      if (existingPayment) {
-        logger.info(`Webhook already processed for payment ${razorpayPaymentId}`);
-        return { status: 'already_processed' };
-      }
-    }
-
     switch (eventType) {
       case 'payment.captured': {
         const paymentEntity = event.payload.payment.entity;
         const razorpayOrderId = paymentEntity.order_id;
+        const razorpayPaymentId = paymentEntity.id;
 
-        const payment = await Payment.findOne({ razorpayOrderId });
-        if (payment && payment.status !== PAYMENT_STATUSES.CAPTURED) {
-          payment.razorpayPaymentId = paymentEntity.id;
-          payment.status = PAYMENT_STATUSES.CAPTURED;
-          payment.method = paymentEntity.method;
-          payment.webhookEvents.push({
-            event: eventType,
-            payload: paymentEntity,
-            receivedAt: new Date(),
+        // FIX: Atomic idempotency — findOneAndUpdate with $ne guard
+        const payment = await Payment.findOneAndUpdate(
+          {
+            razorpayOrderId,
+            status: { $ne: PAYMENT_STATUSES.CAPTURED },
+          },
+          {
+            $set: {
+              razorpayPaymentId,
+              status: PAYMENT_STATUSES.CAPTURED,
+              method: paymentEntity.method,
+            },
+            $push: {
+              webhookEvents: {
+                event: eventType,
+                payload: paymentEntity,
+                receivedAt: new Date(),
+              },
+            },
+          },
+          { new: true }
+        );
+
+        if (!payment) {
+          logger.info(`Webhook skipped — payment ${razorpayPaymentId} already captured or not found`);
+          break;
+        }
+
+        // Update order if not already confirmed
+        const order = await Order.findById(payment.order);
+        if (order && order.status === ORDER_STATUSES.PENDING) {
+          order.paymentStatus = 'paid';
+          order.status = ORDER_STATUSES.CONFIRMED;
+          order.statusHistory.push({
+            status: ORDER_STATUSES.CONFIRMED,
+            timestamp: new Date(),
+            note: 'Payment confirmed via webhook',
           });
-          await payment.save();
-
-          // Update order if not already confirmed
-          const order = await Order.findById(payment.order);
-          if (order && order.status === ORDER_STATUSES.PENDING) {
-            order.paymentStatus = 'paid';
-            order.status = ORDER_STATUSES.CONFIRMED;
-            order.statusHistory.push({
-              status: ORDER_STATUSES.CONFIRMED,
-              timestamp: new Date(),
-              note: 'Payment confirmed via webhook',
-            });
-            await order.save();
-            await this.decrementStock(order);
-            if (order.couponCode) await this.recordCouponUsage(order);
-          }
+          await order.save();
+          await this.decrementStock(order);
+          if (order.couponCode) await this.recordCouponUsage(order);
         }
         break;
       }
@@ -178,16 +193,22 @@ class PaymentService {
         const paymentEntity = event.payload.payment.entity;
         const razorpayOrderId = paymentEntity.order_id;
 
-        const payment = await Payment.findOne({ razorpayOrderId });
-        if (payment) {
-          payment.status = PAYMENT_STATUSES.FAILED;
-          payment.webhookEvents.push({
-            event: eventType,
-            payload: paymentEntity,
-            receivedAt: new Date(),
-          });
-          await payment.save();
+        const payment = await Payment.findOneAndUpdate(
+          { razorpayOrderId, status: { $ne: PAYMENT_STATUSES.CAPTURED } },
+          {
+            $set: { status: PAYMENT_STATUSES.FAILED },
+            $push: {
+              webhookEvents: {
+                event: eventType,
+                payload: paymentEntity,
+                receivedAt: new Date(),
+              },
+            },
+          },
+          { new: true }
+        );
 
+        if (payment) {
           const order = await Order.findById(payment.order);
           if (order) {
             order.paymentStatus = 'failed';
@@ -205,20 +226,23 @@ class PaymentService {
   }
 
   /**
-   * Decrement stock for order items
+   * Decrement stock for order items (online payments)
    */
   async decrementStock(order) {
-    for (const item of order.items) {
-      if (item.product) {
-        // Find the variant by product and weight, decrement stock with guard
-        const result = await Variant.updateOne(
-          { product: item.product, weight: item.weight, stock: { $gte: item.quantity } },
-          { $inc: { stock: -item.quantity } }
-        );
-        // SAFETY: Log if stock was insufficient (guard prevented decrement)
-        if (result.modifiedCount === 0) {
-          logger.warn(`Stock decrement skipped — insufficient stock for product ${item.product}, weight ${item.weight}, qty ${item.quantity} (order ${order.orderNumber})`);
-        }
+    const bulkOps = order.items
+      .filter((item) => item.product)
+      .map((item) => ({
+        updateOne: {
+          filter: { product: item.product, weight: item.weight, stock: { $gte: item.quantity } },
+          update: { $inc: { stock: -item.quantity } },
+        },
+      }));
+
+    if (bulkOps.length > 0) {
+      const result = await Variant.bulkWrite(bulkOps);
+      const notUpdated = bulkOps.length - result.modifiedCount;
+      if (notUpdated > 0) {
+        logger.warn(`[Payment] ${notUpdated} item(s) had insufficient stock during order ${order.orderNumber} — stock guard prevented decrement`);
       }
     }
   }

@@ -41,18 +41,28 @@ class ProductService {
       default: sort = { sortOrder: 1, createdAt: -1 };
     }
 
-    const [products, total] = await Promise.all([
-      Product.find(filter)
-        .populate('category', 'name slug')
-        .populate({ path: 'variants', match: { isActive: true }, options: { sort: { price: 1 } } })
-        .sort(sort)
-        .skip(skip)
-        .limit(limit)
-        .lean(),
-      Product.countDocuments(filter),
-    ]);
+    // Cache product listings for 60 seconds — key includes all query params
+    const cacheKey = cache.buildKey('products:list', {
+      page, limit,
+      category: query.category, occasion: query.occasion, flavor: query.flavor,
+      isEggless: query.isEggless, hasEgglessOption: query.hasEgglessOption,
+      isFeatured: query.isFeatured, city: query.city, tag: query.tag,
+      minPrice: query.minPrice, maxPrice: query.maxPrice, sort: query.sort,
+    });
 
-    return paginatedResponse(products, total, page, limit);
+    return cache.getOrSet(cacheKey, async () => {
+      const [products, total] = await Promise.all([
+        Product.find(filter)
+          .populate('category', 'name slug')
+          .populate({ path: 'variants', match: { isActive: true }, options: { sort: { price: 1 } } })
+          .sort(sort)
+          .skip(skip)
+          .limit(limit)
+          .lean(),
+        Product.countDocuments(filter),
+      ]);
+      return paginatedResponse(products, total, page, limit);
+    }, 60); // Cache 60 seconds
   }
 
   /**

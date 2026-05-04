@@ -195,7 +195,6 @@ class OrderService {
     // Generate order number
     const orderNumber = generateOrderNumber();
 
-    // Create order
     // Create order using transaction session
     const session = await mongoose.startSession();
     session.startTransaction();
@@ -268,7 +267,7 @@ class OrderService {
         await cart.save({ session });
       }
 
-      // ── COD: no Razorpay needed ──────────────────────────────────────────────
+      // ── COD: decrement stock + record coupon usage inside transaction ────────
       if (paymentMethod === 'cod') {
         // Create a payment record marked as COD
         await Payment.create([{
@@ -279,6 +278,14 @@ class OrderService {
           status: PAYMENT_STATUSES.PENDING,
           method: 'cod',
         }], { session });
+
+        // FIX: Decrement stock for COD orders (was missing — caused overselling)
+        await this.decrementStockSession(orderItems, session, createdOrder.orderNumber);
+
+        // FIX: Record coupon usage for COD orders (was missing — allowed unlimited reuse)
+        if (couponCode) {
+          await this.recordCouponUsageSession(couponCode, userId, createdOrder._id, session);
+        }
 
         await session.commitTransaction();
 
@@ -341,10 +348,53 @@ class OrderService {
       };
     } catch (error) {
       await session.abortTransaction();
-      // Log the actual error for debugging
-      console.error('Order creation failed:', error);
+      // FIX: Use logger instead of console.error so errors appear in log files
+      logger.error('Order creation failed:', error);
       if (error instanceof ApiError) throw error;
       throw ApiError.internal('Failed to create order. Please try again.');
+    } finally {
+      session.endSession();
+    }
+  }
+
+  /**
+   * Decrement stock within a transaction session (for COD orders)
+   */
+  async decrementStockSession(orderItems, session, orderNumber) {
+    const bulkOps = orderItems
+      .filter((item) => item.product)
+      .map((item) => ({
+        updateOne: {
+          filter: { product: item.product, weight: item.weight, stock: { $gte: item.quantity } },
+          update: { $inc: { stock: -item.quantity } },
+        },
+      }));
+
+    if (bulkOps.length > 0) {
+      const result = await Variant.bulkWrite(bulkOps, { session });
+      const notUpdated = bulkOps.length - result.modifiedCount;
+      if (notUpdated > 0) {
+        logger.warn(`[Order] ${notUpdated} item(s) had insufficient stock during COD order ${orderNumber} — stock guard prevented decrement`);
+      }
+    }
+  }
+
+  /**
+   * Record coupon usage within a transaction session (for COD orders)
+   */
+  async recordCouponUsageSession(couponCode, userId, orderId, session) {
+    const coupon = await Coupon.findOne({ code: couponCode });
+    if (coupon) {
+      await CouponUsage.create([{
+        coupon: coupon._id,
+        user: userId,
+        order: orderId,
+      }], { session });
+      await Coupon.findByIdAndUpdate(
+        coupon._id,
+        { $inc: { usageCount: 1 } },
+        { session }
+      );
     }
   }
 
@@ -379,63 +429,81 @@ class OrderService {
   }
 
   /**
-   * Cancel order (user-initiated)
+   * Cancel order (user-initiated) — fully transactional
    */
   async cancelOrder(userId, orderNumber) {
-    const order = await Order.findOne({ orderNumber, user: userId });
-    if (!order) throw ApiError.notFound('Order not found');
+    const session = await mongoose.startSession();
+    session.startTransaction();
 
-    const cancellableStatuses = [ORDER_STATUSES.PENDING, ORDER_STATUSES.CONFIRMED];
-    if (!cancellableStatuses.includes(order.status)) {
-      throw ApiError.badRequest('Order cannot be cancelled at this stage');
-    }
+    try {
+      const order = await Order.findOne({ orderNumber, user: userId }).session(session);
+      if (!order) throw ApiError.notFound('Order not found');
 
-    order.status = ORDER_STATUSES.CANCELLED;
-    order.statusHistory.push({
-      status: ORDER_STATUSES.CANCELLED,
-      timestamp: new Date(),
-      note: 'Cancelled by customer',
-    });
-    await order.save();
+      const cancellableStatuses = [ORDER_STATUSES.PENDING, ORDER_STATUSES.CONFIRMED];
+      if (!cancellableStatuses.includes(order.status)) {
+        throw ApiError.badRequest('Order cannot be cancelled at this stage');
+      }
 
-    // ── Refund redeemed loyalty points (if any) ──────────────────────────
-    if (order.pointsRedeemed > 0 && order.user) {
-      try {
-        await User.findByIdAndUpdate(order.user, { $inc: { loyaltyPoints: order.pointsRedeemed } });
-        await LoyaltyPoints.create({
+      order.status = ORDER_STATUSES.CANCELLED;
+      order.statusHistory.push({
+        status: ORDER_STATUSES.CANCELLED,
+        timestamp: new Date(),
+        note: 'Cancelled by customer',
+      });
+      await order.save({ session });
+
+      // ── Refund redeemed loyalty points (inside transaction) ──────────────
+      if (order.pointsRedeemed > 0 && order.user) {
+        await User.findByIdAndUpdate(
+          order.user,
+          { $inc: { loyaltyPoints: order.pointsRedeemed } },
+          { session }
+        );
+        await LoyaltyPoints.create([{
           user: order.user,
           type: 'adjusted',
           points: order.pointsRedeemed,
           source: 'order',
           referenceId: order._id,
           description: `Points refunded for cancelled order ${order.orderNumber}`,
-        });
-      } catch (lpErr) {
-        logger.warn('[Order] Loyalty points refund failed:', lpErr.message);
+        }], { session });
       }
+
+      // ── FIX: Bulk stock restore (was N+1 sequential queries) ─────────────
+      const bulkOps = order.items
+        .filter((item) => item.product)
+        .map((item) => ({
+          updateOne: {
+            filter: { product: item.product, weight: item.weight },
+            update: { $inc: { stock: item.quantity } },
+          },
+        }));
+
+      if (bulkOps.length > 0) {
+        await Variant.bulkWrite(bulkOps, { session });
+      }
+
+      await session.commitTransaction();
+
+      // Send cancellation notification (fire-and-forget, outside transaction)
+      setImmediate(async () => {
+        try {
+          const notificationService = require('../notifications/notification.service');
+          await notificationService.sendStatusUpdate(order, 'cancelled');
+        } catch (err) {
+          logger.warn('[Order] Cancel notification failed:', err.message);
+        }
+      });
+
+      return order;
+    } catch (error) {
+      await session.abortTransaction();
+      if (error instanceof ApiError) throw error;
+      logger.error('[Order] cancelOrder transaction failed:', error);
+      throw ApiError.internal('Failed to cancel order. Please try again.');
+    } finally {
+      session.endSession();
     }
-
-    // Send cancellation notification (fire-and-forget)
-    setImmediate(async () => {
-      try {
-        const notificationService = require('../notifications/notification.service');
-        await notificationService.sendStatusUpdate(order, 'cancelled');
-      } catch (err) {
-        logger.warn('[Order] Cancel notification failed:', err.message);
-      }
-    });
-
-    // Restore stock — target specific variant by product AND weight
-    for (const item of order.items) {
-      if (item.product) {
-        await Variant.updateOne(
-          { product: item.product, weight: item.weight },
-          { $inc: { stock: item.quantity } }
-        );
-      }
-    }
-
-    return order;
   }
 
   /**

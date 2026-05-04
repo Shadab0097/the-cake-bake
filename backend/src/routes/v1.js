@@ -32,19 +32,46 @@ router.use('/admin', require('../modules/admin/admin.routes'));
 // WhatsApp chatbot webhook — public, no auth (called by Meta Cloud API)
 router.use('/chatbot', require('../modules/chatbot/chatbot.routes'));
 
-// Enhanced health check — verifies DB connectivity
-router.get('/health', (req, res) => {
+// Enhanced health check — verifies DB + all critical config
+router.get('/health', async (req, res) => {
   const dbState = mongoose.connection.readyState;
   const dbStates = { 0: 'disconnected', 1: 'connected', 2: 'connecting', 3: 'disconnecting' };
-  const isHealthy = dbState === 1;
+  const isDbHealthy = dbState === 1;
+
+  // Check external dependency configuration (not connectivity, avoids external calls)
+  const checks = {
+    database: {
+      status: isDbHealthy ? 'ok' : 'degraded',
+      state: dbStates[dbState] || 'unknown',
+    },
+    razorpay: {
+      status: (process.env.RAZORPAY_KEY_ID && process.env.RAZORPAY_KEY_SECRET) ? 'ok' : 'misconfigured',
+    },
+    smtp: {
+      status: process.env.ENABLE_EMAIL_NOTIFICATIONS === 'true'
+        ? (process.env.SMTP_USER ? 'ok' : 'misconfigured')
+        : 'disabled',
+    },
+    whatsapp: {
+      status: process.env.ENABLE_WHATSAPP_NOTIFICATIONS === 'true'
+        ? (process.env.WHATSAPP_ACCESS_TOKEN && process.env.WHATSAPP_PHONE_NUMBER_ID ? 'ok' : 'misconfigured')
+        : 'disabled',
+    },
+  };
+
+  const isHealthy = isDbHealthy;
+  const hasWarnings = Object.values(checks).some((c) => c.status === 'misconfigured');
 
   const healthData = {
     success: isHealthy,
-    message: isHealthy ? 'The Cake Bake API is running' : 'Service degraded',
+    message: isHealthy
+      ? (hasWarnings ? 'API running with configuration warnings' : 'The Cake Bake API is running')
+      : 'Service degraded — database unavailable',
     timestamp: new Date().toISOString(),
-    uptime: process.uptime(),
+    uptime: `${Math.floor(process.uptime())}s`,
     version: '1.0.0',
-    database: dbStates[dbState] || 'unknown',
+    environment: process.env.NODE_ENV || 'development',
+    checks,
     memory: {
       heapUsed: `${Math.round(process.memoryUsage().heapUsed / 1024 / 1024)}MB`,
       heapTotal: `${Math.round(process.memoryUsage().heapTotal / 1024 / 1024)}MB`,
@@ -55,5 +82,6 @@ router.get('/health', (req, res) => {
 
   res.status(isHealthy ? 200 : 503).json(healthData);
 });
+
 
 module.exports = router;

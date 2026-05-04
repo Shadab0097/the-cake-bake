@@ -2,11 +2,11 @@ const rateLimit = require('express-rate-limit');
 
 /**
  * General API rate limiter
- * 200 requests per 15 minutes per IP
+ * 300 requests per 15 minutes per IP
  */
 const apiLimiter = rateLimit({
   windowMs: 15 * 60 * 1000, // 15 minutes
-  max: 1000,
+  max: 300,
   standardHeaders: true,
   legacyHeaders: false,
   message: {
@@ -17,11 +17,11 @@ const apiLimiter = rateLimit({
 
 /**
  * Stricter limiter for auth routes (login, register, forgot-password)
- * Prevents brute-force attacks — 20 attempts per 15 minutes
+ * Prevents brute-force attacks — 20 attempts per 15 minutes per IP
  */
 const authLimiter = rateLimit({
   windowMs: 15 * 60 * 1000,
-  max: 1000,
+  max: 20,
   standardHeaders: true,
   legacyHeaders: false,
   skipSuccessfulRequests: true, // Only count failed attempts
