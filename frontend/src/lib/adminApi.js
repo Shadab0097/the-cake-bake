@@ -107,7 +107,7 @@ const adminApi = {
 
 // Constants shared across admin pages
 export const ORDER_STATUSES = ['pending', 'confirmed', 'preparing', 'packed', 'dispatched', 'out_for_delivery', 'delivered', 'cancelled', 'refunded'];
-export const PAYMENT_STATUSES = ['pending', 'paid', 'failed', 'refunded'];
+export const PAYMENT_STATUSES = ['pending', 'paid', 'failed', 'expired', 'refunded'];
 export const INQUIRY_STATUSES = ['new', 'contacted', 'quoted', 'confirmed', 'completed', 'cancelled'];
 export const COUPON_TYPES = ['percentage', 'flat'];
 export const ADDON_CATEGORIES = ['candles', 'flowers', 'cards', 'balloons', 'gifts', 'decorations'];

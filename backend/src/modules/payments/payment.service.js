@@ -1,19 +1,222 @@
 const crypto = require('crypto');
-const mongoose = require('mongoose');
 const Payment = require('../../models/Payment');
 const Order = require('../../models/Order');
 const Cart = require('../../models/Cart');
 const Variant = require('../../models/Variant');
 const Product = require('../../models/Product');
 const User = require('../../models/User');
+const LoyaltyPoints = require('../../models/LoyaltyPoints');
 const Coupon = require('../../models/Coupon');
 const CouponUsage = require('../../models/CouponUsage');
 const ApiError = require('../../utils/ApiError');
 const { env } = require('../../config/env');
 const { ORDER_STATUSES, PAYMENT_STATUSES } = require('../../utils/constants');
 const logger = require('../../middleware/logger');
+const cache = require('../../utils/cache');
+
+const CAPTURE_READY_PAYMENT_STATUSES = [
+  PAYMENT_STATUSES.CREATED,
+  PAYMENT_STATUSES.PENDING,
+  PAYMENT_STATUSES.AUTHORIZED,
+  PAYMENT_STATUSES.FAILED,
+  PAYMENT_STATUSES.EXPIRED,
+];
+
+const RECOVERABLE_ORDER_PAYMENT_STATUSES = ['pending', 'failed', 'expired'];
+const RECOVERABLE_CANCELLED_NOTES = [
+  /^Payment failed/i,
+  /^Online payment failed/i,
+  /^Online payment expired/i,
+];
 
 class PaymentService {
+  wasOrderAutoCancelledForPayment(order, payment) {
+    if (!order || order.status !== ORDER_STATUSES.CANCELLED) return false;
+
+    const hasExplicitCancelEvent = payment?.webhookEvents?.some((entry) => (
+      entry.event === 'admin.cancel_unpaid_online_order' ||
+      entry.event === 'customer.cancel_unpaid_online_order'
+    ));
+    if (hasExplicitCancelEvent) return false;
+
+    const hasRecoverablePaymentEvent = payment?.webhookEvents?.some((entry) => (
+      entry.event === 'payment.failed' ||
+      entry.event === 'order.payment_expired'
+    ));
+
+    const latestCancelledHistory = [...(order.statusHistory || [])]
+      .reverse()
+      .find((entry) => entry.status === ORDER_STATUSES.CANCELLED);
+    const cancelledNote = latestCancelledHistory?.note || '';
+
+    return (
+      hasRecoverablePaymentEvent &&
+      RECOVERABLE_CANCELLED_NOTES.some((pattern) => pattern.test(cancelledNote))
+    );
+  }
+
+  canFinalizeCapturedOrder(order, payment) {
+    if (!order || order.paymentMethod !== 'online') return false;
+    if (order.paymentStatus === 'paid') return true;
+    if (!RECOVERABLE_ORDER_PAYMENT_STATUSES.includes(order.paymentStatus)) return false;
+    if (order.status === ORDER_STATUSES.PENDING) return true;
+    return this.wasOrderAutoCancelledForPayment(order, payment);
+  }
+
+  async reapplyRedeemedPointsIfRestored(order) {
+    if (!order.user || !order.pointsRedeemed || order.pointsRedeemed <= 0) return;
+
+    const restored = await LoyaltyPoints.findOne({
+      user: order.user,
+      referenceId: order._id,
+      type: 'adjusted',
+      points: order.pointsRedeemed,
+      description: /^Refunded /,
+    }).lean();
+
+    if (!restored) return;
+
+    const alreadyReapplied = await LoyaltyPoints.findOne({
+      user: order.user,
+      referenceId: order._id,
+      type: 'adjusted',
+      points: -order.pointsRedeemed,
+      description: /^Re-applied /,
+    }).lean();
+
+    if (alreadyReapplied) return;
+
+    await User.findByIdAndUpdate(order.user, { $inc: { loyaltyPoints: -order.pointsRedeemed } });
+    await LoyaltyPoints.create({
+      user: order.user,
+      type: 'adjusted',
+      points: -order.pointsRedeemed,
+      source: 'order',
+      referenceId: order._id,
+      description: `Re-applied ${order.pointsRedeemed} points after captured payment for order ${order.orderNumber}`,
+    });
+  }
+
+  async runPostCaptureTasks(order, payment, userId, options = {}) {
+    const { clearCart = false, sendNotification = false } = options;
+
+    await this.decrementStock(order);
+
+    if (order.couponCode) {
+      await this.recordCouponUsage(order);
+    }
+
+    cache.del('admin:dashboard');
+
+    setImmediate(async () => {
+      try {
+        if (clearCart && userId) {
+          await Cart.findOneAndUpdate(
+            { user: userId },
+            { items: [], appliedCoupon: null, deliveryNotes: '' }
+          );
+        }
+
+        const bulkOps = order.items
+          .filter((item) => item.product)
+          .map((item) => ({
+            updateOne: {
+              filter: { _id: item.product },
+              update: { $inc: { totalOrders: item.quantity } },
+            },
+          }));
+        if (bulkOps.length > 0) {
+          await Product.bulkWrite(bulkOps);
+        }
+
+        if (sendNotification) {
+          const notificationService = require('../notifications/notification.service');
+          await notificationService.sendOrderConfirmation(order, payment);
+        }
+      } catch (asyncErr) {
+        logger.warn('Non-critical post-payment task failed:', asyncErr.message);
+      }
+    });
+  }
+
+  async flagCapturedPaymentForManualReview(payment, reason) {
+    const order = await Order.findById(payment.order);
+    if (!order) return;
+
+    const note = `Payment captured but needs manual review: ${reason}`;
+    const alreadyFlagged = [...(order.statusHistory || [])]
+      .reverse()
+      .some((entry) => entry.note === note);
+    if (alreadyFlagged) return;
+
+    order.statusHistory.push({
+      status: order.status,
+      timestamp: new Date(),
+      note,
+    });
+    await order.save();
+    cache.del('admin:dashboard');
+  }
+
+  async confirmCapturedPayment(payment, options = {}) {
+    const { userId, note = 'Payment captured', clearCart = false, sendNotification = false } = options;
+
+    const currentOrder = await Order.findById(payment.order);
+    if (!currentOrder) throw ApiError.notFound('Order not found for payment');
+
+    if (!this.canFinalizeCapturedOrder(currentOrder, payment)) {
+      await this.flagCapturedPaymentForManualReview(payment, 'order is not in a recoverable payment state');
+      throw ApiError.badRequest('This order cannot be confirmed automatically. Please contact support.');
+    }
+
+    if (currentOrder.paymentStatus === 'paid') {
+      return { order: currentOrder, finalized: false };
+    }
+
+    const order = await Order.findOneAndUpdate(
+      {
+        _id: currentOrder._id,
+        paymentMethod: 'online',
+        paymentStatus: currentOrder.paymentStatus,
+        status: currentOrder.status,
+        updatedAt: currentOrder.updatedAt,
+      },
+      {
+        $set: {
+          paymentStatus: 'paid',
+          status: ORDER_STATUSES.CONFIRMED,
+        },
+        $push: {
+          statusHistory: {
+            status: ORDER_STATUSES.CONFIRMED,
+            timestamp: new Date(),
+            note,
+          },
+        },
+      },
+      { new: true }
+    );
+
+    if (!order) {
+      const existingOrder = await Order.findById(payment.order).lean();
+      if (existingOrder?.paymentStatus === 'paid') {
+        return { order: existingOrder, finalized: false };
+      }
+
+      await this.flagCapturedPaymentForManualReview(payment, 'order changed before confirmation');
+      throw ApiError.badRequest('This payment was captured but the order changed before confirmation. Please contact support.');
+    }
+
+    try {
+      await this.reapplyRedeemedPointsIfRestored(order);
+    } catch (pointsErr) {
+      logger.warn(`[Payment] Loyalty points re-apply failed for ${order.orderNumber}: ${pointsErr.message}`);
+    }
+
+    await this.runPostCaptureTasks(order, payment, userId, { clearCart, sendNotification });
+    return { order, finalized: true };
+  }
+
   /**
    * Verify Razorpay payment signature (client-side verification)
    */
@@ -26,16 +229,17 @@ class PaymentService {
       .digest('hex');
 
     if (expectedSignature !== razorpaySignature) {
-      throw ApiError.badRequest('Payment verification failed — invalid signature');
+      throw ApiError.badRequest('Payment verification failed - invalid signature');
     }
 
-    // FIX: Atomic idempotency check-and-set using findOneAndUpdate
-    // This prevents the race condition where two simultaneous requests both
-    // pass the status check before either saves, causing double processing.
     const payment = await Payment.findOneAndUpdate(
       {
         razorpayOrderId,
-        status: { $ne: PAYMENT_STATUSES.CAPTURED }, // Only update if not already captured
+        user: userId,
+        $or: [
+          { status: { $in: CAPTURE_READY_PAYMENT_STATUSES } },
+          { status: PAYMENT_STATUSES.CAPTURED, razorpayPaymentId },
+        ],
       },
       {
         $set: {
@@ -47,12 +251,16 @@ class PaymentService {
       { new: true }
     );
 
-    // If no document was updated, payment was already captured (idempotent return)
+    // If no active payment was found, allow only true idempotent captured returns.
     if (!payment) {
-      const existingPayment = await Payment.findOne({ razorpayOrderId });
+      const existingPayment = await Payment.findOne({ razorpayOrderId, user: userId });
       if (!existingPayment) throw ApiError.notFound('Payment record not found');
 
       const existingOrder = await Order.findById(existingPayment.order).lean();
+      if (existingPayment.status !== PAYMENT_STATUSES.CAPTURED || existingOrder?.paymentStatus !== 'paid') {
+        throw ApiError.badRequest('This payment session is no longer active. Please start checkout again.');
+      }
+
       logger.info(`Payment already captured for order ${existingOrder?.orderNumber} (idempotent return)`);
       return {
         success: true,
@@ -61,60 +269,20 @@ class PaymentService {
       };
     }
 
-    // Update order — CRITICAL PATH
-    const order = await Order.findById(payment.order);
-    if (order && order.status !== ORDER_STATUSES.CONFIRMED) {
-      order.paymentStatus = 'paid';
-      order.status = ORDER_STATUSES.CONFIRMED;
-      order.statusHistory.push({
-        status: ORDER_STATUSES.CONFIRMED,
-        timestamp: new Date(),
-        note: 'Payment verified',
-      });
-      await order.save();
+    // Update order - critical path.
+    const order = await Order.findOne({ _id: payment.order, user: userId, paymentMethod: 'online' });
+    if (!order) throw ApiError.notFound('Order not found for payment');
 
-      // Decrement stock — CRITICAL: check result
-      await this.decrementStock(order);
-
-      // Record coupon usage — CRITICAL
-      if (order.couponCode) {
-        await this.recordCouponUsage(order);
-      }
-
-      // NON-CRITICAL operations — fire-and-forget async to reduce response latency
-      setImmediate(async () => {
-        try {
-          // Clear cart
-          await Cart.findOneAndUpdate(
-            { user: userId },
-            { items: [], appliedCoupon: null, deliveryNotes: '' }
-          );
-
-          // Update product order counts
-          const bulkOps = order.items
-            .filter((item) => item.product)
-            .map((item) => ({
-              updateOne: {
-                filter: { _id: item.product },
-                update: { $inc: { totalOrders: item.quantity } },
-              },
-            }));
-          if (bulkOps.length > 0) {
-            await Product.bulkWrite(bulkOps);
-          }
-
-          // Send confirmation notification
-          const notificationService = require('../notifications/notification.service');
-          await notificationService.sendOrderConfirmation(order, payment);
-        } catch (asyncErr) {
-          logger.warn('Non-critical post-payment task failed:', asyncErr.message);
-        }
-      });
-    }
+    const finalized = await this.confirmCapturedPayment(payment, {
+      userId,
+      note: 'Payment verified',
+      clearCart: true,
+      sendNotification: true,
+    });
 
     return {
       success: true,
-      orderNumber: order?.orderNumber,
+      orderNumber: finalized.order?.orderNumber,
       paymentId: razorpayPaymentId,
     };
   }
@@ -144,17 +312,19 @@ class PaymentService {
         const razorpayOrderId = paymentEntity.order_id;
         const razorpayPaymentId = paymentEntity.id;
 
-        // FIX: Atomic idempotency — findOneAndUpdate with $ne guard
         const payment = await Payment.findOneAndUpdate(
           {
             razorpayOrderId,
-            status: { $ne: PAYMENT_STATUSES.CAPTURED },
+            $or: [
+              { status: { $in: CAPTURE_READY_PAYMENT_STATUSES } },
+              { status: PAYMENT_STATUSES.CAPTURED, razorpayPaymentId },
+            ],
           },
           {
             $set: {
               razorpayPaymentId,
               status: PAYMENT_STATUSES.CAPTURED,
-              method: paymentEntity.method,
+              method: paymentEntity.method || 'online',
             },
             $push: {
               webhookEvents: {
@@ -168,23 +338,23 @@ class PaymentService {
         );
 
         if (!payment) {
-          logger.info(`Webhook skipped — payment ${razorpayPaymentId} already captured or not found`);
+          logger.info(`Webhook skipped - payment ${razorpayPaymentId} was not found or is not capturable`);
           break;
         }
 
-        // Update order if not already confirmed
-        const order = await Order.findById(payment.order);
-        if (order && order.status === ORDER_STATUSES.PENDING) {
-          order.paymentStatus = 'paid';
-          order.status = ORDER_STATUSES.CONFIRMED;
-          order.statusHistory.push({
-            status: ORDER_STATUSES.CONFIRMED,
-            timestamp: new Date(),
+        try {
+          await this.confirmCapturedPayment(payment, {
+            userId: payment.user,
             note: 'Payment confirmed via webhook',
+            clearCart: true,
+            sendNotification: true,
           });
-          await order.save();
-          await this.decrementStock(order);
-          if (order.couponCode) await this.recordCouponUsage(order);
+        } catch (error) {
+          if (error instanceof ApiError && error.statusCode < 500) {
+            logger.error(`[Payment] Captured webhook needs manual review for ${razorpayOrderId}: ${error.message}`);
+            break;
+          }
+          throw error;
         }
         break;
       }
@@ -193,10 +363,16 @@ class PaymentService {
         const paymentEntity = event.payload.payment.entity;
         const razorpayOrderId = paymentEntity.order_id;
 
-        const payment = await Payment.findOneAndUpdate(
-          { razorpayOrderId, status: { $ne: PAYMENT_STATUSES.CAPTURED } },
+        await Payment.findOneAndUpdate(
           {
-            $set: { status: PAYMENT_STATUSES.FAILED },
+            razorpayOrderId,
+            status: { $in: CAPTURE_READY_PAYMENT_STATUSES },
+          },
+          {
+            $set: {
+              razorpayPaymentId: paymentEntity.id,
+              ...(paymentEntity.method ? { method: paymentEntity.method } : {}),
+            },
             $push: {
               webhookEvents: {
                 event: eventType,
@@ -204,17 +380,8 @@ class PaymentService {
                 receivedAt: new Date(),
               },
             },
-          },
-          { new: true }
-        );
-
-        if (payment) {
-          const order = await Order.findById(payment.order);
-          if (order) {
-            order.paymentStatus = 'failed';
-            await order.save();
           }
-        }
+        );
         break;
       }
 
@@ -242,7 +409,7 @@ class PaymentService {
       const result = await Variant.bulkWrite(bulkOps);
       const notUpdated = bulkOps.length - result.modifiedCount;
       if (notUpdated > 0) {
-        logger.warn(`[Payment] ${notUpdated} item(s) had insufficient stock during order ${order.orderNumber} — stock guard prevented decrement`);
+        logger.warn(`[Payment] ${notUpdated} item(s) had insufficient stock during order ${order.orderNumber} - stock guard prevented decrement`);
       }
     }
   }

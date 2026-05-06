@@ -17,6 +17,7 @@ const STATUS_ICON = {
   dispatched: '🚚', out_for_delivery: '🛵', delivered: '🎉',
   cancelled: '❌', refunded: '💸',
 };
+const UNPAID_ONLINE_ALLOWED_STATUSES = new Set(['cancelled']);
 
 function InfoRow({ label, value, highlight }) {
   if (!value && value !== 0) return null;
@@ -72,6 +73,7 @@ export default function AdminOrderDetailPage({ params }) {
 
   const addr = order.shippingAddress || {};
   const isCancelled = order.status === 'cancelled' || order.status === 'refunded';
+  const isUnpaidOnline = order.paymentMethod === 'online' && order.paymentStatus !== 'paid';
   const currentIdx = STATUS_STEPS.indexOf(order.status);
   // Sort history newest-first
   const history = [...(order.statusHistory || [])].sort((a, b) => new Date(b.timestamp) - new Date(a.timestamp));
@@ -161,7 +163,7 @@ export default function AdminOrderDetailPage({ params }) {
 
                     {item.cakeMessage && (
                       <div style={{ fontSize: '0.8125rem', color: 'var(--admin-text-secondary)', background: 'var(--admin-surface)', padding: '0.375rem 0.625rem', borderRadius: 6, borderLeft: '3px solid var(--admin-accent)', marginBottom: '0.375rem' }}>
-                        🎂 Message: <em>"{item.cakeMessage}"</em>
+                        🎂 Message: <em>{item.cakeMessage}</em>
                       </div>
                     )}
 
@@ -220,7 +222,7 @@ export default function AdminOrderDetailPage({ params }) {
                         <StatusBadge status={h.status} />
                         <span style={{ fontSize: '0.75rem', color: 'var(--admin-text-muted)' }}>{formatDateTime(h.timestamp)}</span>
                       </div>
-                      {h.note && <div style={{ fontSize: '0.8125rem', color: 'var(--admin-text-secondary)', marginTop: '0.25rem', fontStyle: 'italic' }}>"{h.note}"</div>}
+                      {h.note && <div style={{ fontSize: '0.8125rem', color: 'var(--admin-text-secondary)', marginTop: '0.25rem', fontStyle: 'italic' }}>{h.note}</div>}
                     </div>
                   </div>
                 ))}
@@ -240,7 +242,7 @@ export default function AdminOrderDetailPage({ params }) {
               <select className="admin-input admin-select" value={newStatus} onChange={(e) => setNewStatus(e.target.value)}>
                 <option value="">Select status...</option>
                 {ORDER_STATUSES.map(s => (
-                  <option key={s} value={s} disabled={s === order.status}>
+                  <option key={s} value={s} disabled={s === order.status || (isUnpaidOnline && !UNPAID_ONLINE_ALLOWED_STATUSES.has(s))}>
                     {STATUS_ICON[s]} {s.replace(/_/g, ' ')} {s === order.status ? '(current)' : ''}
                   </option>
                 ))}

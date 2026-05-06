@@ -3,6 +3,7 @@ const User = require('../../models/User');
 const Product = require('../../models/Product');
 const Payment = require('../../models/Payment');
 const { startOfDay, endOfDay, escapeRegex } = require('../../utils/helpers');
+const { ORDER_STATUSES } = require('../../utils/constants');
 const cache = require('../../utils/cache');
 
 class AdminService {
@@ -19,6 +20,19 @@ class AdminService {
     // This month
     const monthStart = new Date(now.getFullYear(), now.getMonth(), 1);
     const monthEnd = new Date(now.getFullYear(), now.getMonth() + 1, 0, 23, 59, 59);
+    const actionableOrderFilter = {
+      status: { $in: [ORDER_STATUSES.PENDING, ORDER_STATUSES.CONFIRMED] },
+      $or: [
+        { paymentMethod: 'cod' },
+        { paymentMethod: 'online', paymentStatus: 'paid' },
+      ],
+    };
+    const dashboardOrderFilter = {
+      $or: [
+        { paymentMethod: 'cod' },
+        { paymentStatus: 'paid' },
+      ],
+    };
 
     const [
       totalOrders,
@@ -52,10 +66,10 @@ class AdminService {
 
       User.countDocuments({ role: 'customer' }),
       Product.countDocuments({ isActive: true }),
-      Order.countDocuments({ status: { $in: ['pending', 'confirmed'] } }),
+      Order.countDocuments(actionableOrderFilter),
 
-      // Recent orders — show ALL orders (including guest orders with null user)
-      Order.find({})
+      // Recent dashboard orders exclude failed/expired online attempts; those remain filterable in Orders.
+      Order.find(dashboardOrderFilter)
         .populate('user', 'name email phone')
         .sort({ createdAt: -1 })
         .limit(10)
@@ -63,6 +77,7 @@ class AdminService {
         .lean(),
 
       Order.aggregate([
+        { $match: dashboardOrderFilter },
         { $group: { _id: '$status', count: { $sum: 1 } } },
       ]),
     ]);

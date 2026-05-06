@@ -17,6 +17,10 @@ import api from '@/lib/api';
 
 const STEPS_GUEST  = ['How to Checkout', 'Your Details', 'Delivery', 'Payment'];
 const STEPS_AUTHED = ['Delivery Address', 'Delivery Time', 'Payment'];
+const RAZORPAY_SCRIPT_ID = 'razorpay-checkout-script';
+const RAZORPAY_CHECKOUT_SRC = 'https://checkout.razorpay.com/v1/checkout.js';
+
+let razorpayScriptPromise = null;
 
 const DELIVERY_SLOTS = [
   '10:00 AM – 12:00 PM',
@@ -46,7 +50,55 @@ function getCheckoutErrorMessage(err, fallback) {
     return firstError.field ? `${firstError.field}: ${firstError.message}` : firstError.message;
   }
 
-  return data?.message || fallback;
+  return data?.message || err?.message || fallback;
+}
+
+function loadRazorpayCheckoutScript() {
+  if (typeof window === 'undefined') {
+    return Promise.reject(new Error('Payment gateway is unavailable in this environment'));
+  }
+
+  if (window.Razorpay) {
+    return Promise.resolve();
+  }
+
+  if (razorpayScriptPromise) {
+    return razorpayScriptPromise;
+  }
+
+  razorpayScriptPromise = new Promise((resolve, reject) => {
+    const existingScript = document.getElementById(RAZORPAY_SCRIPT_ID);
+
+    const handleLoad = () => {
+      if (window.Razorpay) {
+        resolve();
+      } else {
+        razorpayScriptPromise = null;
+        reject(new Error('Payment gateway failed to initialize. Please try again.'));
+      }
+    };
+
+    const handleError = () => {
+      razorpayScriptPromise = null;
+      reject(new Error('Payment gateway failed to load. Please check your internet connection and try again.'));
+    };
+
+    if (existingScript) {
+      existingScript.addEventListener('load', handleLoad, { once: true });
+      existingScript.addEventListener('error', handleError, { once: true });
+      return;
+    }
+
+    const script = document.createElement('script');
+    script.id = RAZORPAY_SCRIPT_ID;
+    script.src = RAZORPAY_CHECKOUT_SRC;
+    script.async = true;
+    script.onload = handleLoad;
+    script.onerror = handleError;
+    document.body.appendChild(script);
+  });
+
+  return razorpayScriptPromise;
 }
 
 export default function CheckoutPage() {
@@ -389,9 +441,13 @@ export default function CheckoutPage() {
         return;
       } else {
         // Razorpay online
+        await loadRazorpayCheckoutScript();
         const res = await api.post('/checkout/create-order', { ...orderPayload, paymentMethod: 'online' });
         const paymentParams = res.data?.data?.paymentParams || {};
         const orderId = res.data?.data?.order?._id;
+        if (!paymentParams.key_id || !paymentParams.amount || !paymentParams.order_id) {
+          throw new Error('Payment gateway returned incomplete order details. Please try again.');
+        }
         const options = {
           key: paymentParams.key_id,
           amount: paymentParams.amount,
@@ -400,15 +456,35 @@ export default function CheckoutPage() {
           description: paymentParams.description || 'Delicious cake order',
           order_id: paymentParams.order_id,
           handler: async (response) => {
-            await api.post('/payments/verify', response);
-            dispatch(addToast({ message: 'Payment successful! 🎂', type: 'success' }));
-            dispatch(resetCart());
-            dispatch(clearPendingAddOns());
-            const onlineOrderNum = res.data?.data?.order?.orderNumber;
-            router.push(onlineOrderNum
-              ? `/order-confirmation?orderNumber=${onlineOrderNum}`
-              : `/order-confirmation?orderId=${orderId}`);
-            return;
+            try {
+              await api.post('/payments/verify', {
+                razorpayOrderId: response.razorpay_order_id,
+                razorpayPaymentId: response.razorpay_payment_id,
+                razorpaySignature: response.razorpay_signature,
+              });
+              dispatch(addToast({ message: 'Payment successful!', type: 'success' }));
+              dispatch(resetCart());
+              dispatch(clearPendingAddOns());
+              const onlineOrderNum = res.data?.data?.order?.orderNumber;
+              router.push(onlineOrderNum
+                ? `/order-confirmation?orderNumber=${onlineOrderNum}`
+                : `/order-confirmation?orderId=${orderId}`);
+              return;
+            } catch (verifyErr) {
+              dispatch(addToast({
+                message: getCheckoutErrorMessage(verifyErr, 'Payment verification failed. Please contact support if money was debited.'),
+                type: 'error',
+                duration: 7000,
+              }));
+            }
+          },
+          modal: {
+            ondismiss: () => {
+              dispatch(addToast({
+                message: 'Payment was cancelled. You can try again from checkout.',
+                type: 'info',
+              }));
+            },
           },
           prefill: paymentParams.prefill || { name: user?.name, email: user?.email, contact: user?.phone },
           theme: { color: '#D81B60' },

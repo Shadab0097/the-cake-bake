@@ -17,6 +17,8 @@ const { ORDER_STATUSES, PAYMENT_STATUSES } = require('../../utils/constants');
 const { getRazorpayInstance } = require('../../config/razorpay');
 const { env } = require('../../config/env');
 const logger = require('../../middleware/logger');
+const cache = require('../../utils/cache');
+const { canMoveOnlineOrderToStatus, cancelUnpaidOnlineOrder } = require('./order.lifecycle');
 
 class OrderService {
   /**
@@ -249,8 +251,8 @@ class OrderService {
         }], { session });
       }
 
-      // Clear ordered items from cart
-      if (cart && cart.items.length > 0 && orderItems.length > 0) {
+      // Clear COD cart immediately. Online cart is cleared after payment verification.
+      if (paymentMethod === 'cod' && cart && cart.items.length > 0 && orderItems.length > 0) {
         // Remove items from cart that were ordered (match by product + variant)
         cart.items = cart.items.filter((item) => {
           return !orderItems.some((orderedItem) => {
@@ -288,6 +290,7 @@ class OrderService {
         }
 
         await session.commitTransaction();
+        cache.del('admin:dashboard');
 
         // Send order confirmation notification for COD orders (fire-and-forget)
         setImmediate(async () => {
@@ -444,6 +447,35 @@ class OrderService {
         throw ApiError.badRequest('Order cannot be cancelled at this stage');
       }
 
+      if (order.paymentMethod === 'online' && order.paymentStatus !== 'paid') {
+        const result = await cancelUnpaidOnlineOrder(order, {
+          session,
+          paymentStatus: 'failed',
+          paymentRecordStatus: PAYMENT_STATUSES.FAILED,
+          note: 'Cancelled by customer before payment completion',
+          paymentEvent: 'customer.cancel_unpaid_online_order',
+          paymentPayload: { userId },
+        });
+
+        if (!result.changed) {
+          throw ApiError.badRequest('Order is no longer awaiting online payment');
+        }
+
+        await session.commitTransaction();
+        const cancelledOrder = result.order;
+
+        setImmediate(async () => {
+          try {
+            const notificationService = require('../notifications/notification.service');
+            await notificationService.sendStatusUpdate(cancelledOrder, 'cancelled');
+          } catch (err) {
+            logger.warn('[Order] Cancel notification failed:', err.message);
+          }
+        });
+
+        return cancelledOrder;
+      }
+
       order.status = ORDER_STATUSES.CANCELLED;
       order.statusHistory.push({
         status: ORDER_STATUSES.CANCELLED,
@@ -513,6 +545,41 @@ class OrderService {
     const order = await Order.findById(orderId);
     if (!order) throw ApiError.notFound('Order not found');
 
+    if (!canMoveOnlineOrderToStatus(order, status)) {
+      throw ApiError.badRequest('Unpaid online orders can only be cancelled');
+    }
+
+    if (order.paymentMethod === 'online' && order.paymentStatus !== 'paid' && status === ORDER_STATUSES.CANCELLED) {
+      const session = await mongoose.startSession();
+      let cancelledOrderId = null;
+
+      try {
+        await session.withTransaction(async () => {
+          const sessionOrder = await Order.findById(orderId).session(session);
+          if (!sessionOrder) throw ApiError.notFound('Order not found');
+
+          const result = await cancelUnpaidOnlineOrder(sessionOrder, {
+            session,
+            paymentStatus: 'failed',
+            paymentRecordStatus: PAYMENT_STATUSES.FAILED,
+            note: note || 'Cancelled by admin before payment completion',
+            paymentEvent: 'admin.cancel_unpaid_online_order',
+            paymentPayload: { adminId },
+          });
+
+          if (!result.changed) {
+            throw ApiError.badRequest('Order is no longer awaiting online payment');
+          }
+
+          cancelledOrderId = sessionOrder._id;
+        });
+      } finally {
+        session.endSession();
+      }
+
+      return Order.findById(cancelledOrderId);
+    }
+
     order.status = status;
     order.statusHistory.push({
       status,
@@ -547,6 +614,7 @@ class OrderService {
     }
 
     await order.save();
+    cache.del('admin:dashboard');
     return order;
   }
 

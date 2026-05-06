@@ -23,6 +23,8 @@ const STATUS_ICON = {
   cancelled: '❌', refunded: '💸',
 };
 
+const UNPAID_ONLINE_ALLOWED_STATUSES = new Set(['cancelled']);
+
 // Small address modal content
 function AddressModal({ order, onClose }) {
   if (!order) return null;
@@ -230,6 +232,7 @@ export default function AdminOrdersPage() {
                     const firstItem = order.items?.[0];
                     const moreItems = (order.items?.length || 1) - 1;
                     const isNew = (Date.now() - new Date(order.createdAt).getTime()) < 60 * 60 * 1000;
+                    const isUnpaidOnline = order.paymentMethod === 'online' && order.paymentStatus !== 'paid';
                     return (
                       <tr key={order._id}>
                         <td>
@@ -310,7 +313,7 @@ export default function AdminOrdersPage() {
                               }}
                             >
                               {ORDER_STATUSES.map(s => (
-                                <option key={s} value={s}>
+                                <option key={s} value={s} disabled={isUnpaidOnline && !UNPAID_ONLINE_ALLOWED_STATUSES.has(s)}>
                                   {STATUS_ICON[s]} {STATUS_LABELS[s] || s}
                                 </option>
                               ))}

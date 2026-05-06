@@ -255,7 +255,7 @@
 .badge-dispatched { background: #1A3A2A; color: #6EE7B7; }
 .badge-out_for_delivery { background: var(--admin-success-soft); color: var(--admin-success); }
 .badge-delivered, .badge-completed { background: var(--admin-success-soft); color: var(--admin-success); }
-.badge-cancelled, .badge-failed { background: var(--admin-danger-soft); color: var(--admin-danger); }
+.badge-cancelled, .badge-failed, .badge-expired { background: var(--admin-danger-soft); color: var(--admin-danger); }
 .badge-refunded { background: #3B1F3D; color: #F0ABFC; }
 .badge-new { background: var(--admin-accent-soft); color: var(--admin-accent-hover); }
 .badge-active { background: var(--admin-success-soft); color: var(--admin-success); }

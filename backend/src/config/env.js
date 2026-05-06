@@ -3,6 +3,11 @@ const path = require('path');
 
 dotenv.config({ path: path.join(__dirname, '../../.env') });
 
+const parsePositiveInt = (value, fallback) => {
+  const parsed = parseInt(value, 10);
+  return Number.isFinite(parsed) && parsed > 0 ? parsed : fallback;
+};
+
 const requiredEnvVars = [
   'MONGODB_URI',
   'JWT_SECRET',
@@ -71,6 +76,13 @@ const env = {
     apiKey: process.env.CLOUDINARY_API_KEY || '',
     apiSecret: process.env.CLOUDINARY_API_SECRET || '',
     folder: process.env.CLOUDINARY_FOLDER || 'the-cake-bake',
+  },
+
+  orders: {
+    expiryJobEnabled: process.env.ENABLE_ORDER_EXPIRY_JOB !== 'false',
+    onlinePaymentExpiryMinutes: parsePositiveInt(process.env.ORDER_PAYMENT_EXPIRY_MINUTES, 30),
+    expiryJobIntervalMinutes: parsePositiveInt(process.env.ORDER_EXPIRY_JOB_INTERVAL_MINUTES, 5),
+    expiryBatchSize: parsePositiveInt(process.env.ORDER_EXPIRY_BATCH_SIZE, 100),
   },
 
   app: {

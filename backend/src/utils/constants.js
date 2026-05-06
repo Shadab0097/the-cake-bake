@@ -16,6 +16,7 @@ const PAYMENT_STATUSES = {
   AUTHORIZED: 'authorized',
   CAPTURED: 'captured',
   FAILED: 'failed',
+  EXPIRED: 'expired',
   REFUNDED: 'refunded',
 };
 

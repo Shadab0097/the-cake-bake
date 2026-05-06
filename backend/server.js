@@ -6,6 +6,7 @@ validateEnv();
 const app = require('./src/app');
 const connectDB = require('./src/config/db');
 const logger = require('./src/middleware/logger');
+const orderExpiryJob = require('./src/jobs/orderExpiry.job');
 
 const startServer = async () => {
   try {
@@ -27,10 +28,12 @@ const startServer = async () => {
   ╚══════════════════════════════════════════════╝
       `);
     });
+    const stopOrderExpiryJob = orderExpiryJob.start();
 
     // Graceful shutdown
     const gracefulShutdown = (signal) => {
       logger.info(`${signal} received. Shutting down gracefully...`);
+      stopOrderExpiryJob();
       server.close(() => {
         logger.info('Server closed');
         process.exit(0);
