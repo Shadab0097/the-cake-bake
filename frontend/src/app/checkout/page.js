@@ -19,6 +19,8 @@ const STEPS_GUEST  = ['How to Checkout', 'Your Details', 'Delivery', 'Payment'];
 const STEPS_AUTHED = ['Delivery Address', 'Delivery Time', 'Payment'];
 const RAZORPAY_SCRIPT_ID = 'razorpay-checkout-script';
 const RAZORPAY_CHECKOUT_SRC = 'https://checkout.razorpay.com/v1/checkout.js';
+const CHECKOUT_IDEMPOTENCY_STORAGE_KEY = 'cakebake_checkout_idempotency_key';
+const CHECKOUT_IDEMPOTENCY_TTL_MS = 30 * 60 * 1000;
 
 let razorpayScriptPromise = null;
 
@@ -40,6 +42,20 @@ function normalizeCheckoutPhone(value) {
   const trimmed = (value || '').trim();
   const digits = trimmed.replace(/\D/g, '');
   return trimmed.startsWith('+') ? `+${digits}` : digits;
+}
+
+function createCheckoutIdempotencyKey() {
+  if (typeof window !== 'undefined' && window.crypto?.randomUUID) {
+    return window.crypto.randomUUID();
+  }
+
+  if (typeof window !== 'undefined' && window.crypto?.getRandomValues) {
+    const values = new Uint32Array(4);
+    window.crypto.getRandomValues(values);
+    return Array.from(values, (value) => value.toString(16)).join('-');
+  }
+
+  return `${Date.now()}-${Math.random().toString(16).slice(2)}`;
 }
 
 function getCheckoutErrorMessage(err, fallback) {
@@ -206,6 +222,65 @@ export default function CheckoutPage() {
   const [placing, setPlacing] = useState(false);
   const [savingAddress, setSavingAddress] = useState(false);
   const orderInProgressRef = useRef(false);
+  const checkoutIdempotencyKeyRef = useRef(null);
+  const checkoutIdempotencyFingerprintRef = useRef('');
+  const checkoutIdempotencyCreatedAtRef = useRef(0);
+
+  const getCheckoutIdempotencyKey = (payload) => {
+    const fingerprint = JSON.stringify(payload || {});
+
+    if (
+      checkoutIdempotencyKeyRef.current &&
+      checkoutIdempotencyFingerprintRef.current === fingerprint &&
+      Date.now() - checkoutIdempotencyCreatedAtRef.current < CHECKOUT_IDEMPOTENCY_TTL_MS
+    ) {
+      return checkoutIdempotencyKeyRef.current;
+    }
+
+    if (typeof window !== 'undefined') {
+      try {
+        const existing = JSON.parse(window.sessionStorage.getItem(CHECKOUT_IDEMPOTENCY_STORAGE_KEY) || 'null');
+        if (
+          existing?.key &&
+          existing?.fingerprint === fingerprint &&
+          Date.now() - Number(existing.createdAt || 0) < CHECKOUT_IDEMPOTENCY_TTL_MS
+        ) {
+          checkoutIdempotencyKeyRef.current = existing.key;
+          checkoutIdempotencyFingerprintRef.current = fingerprint;
+          checkoutIdempotencyCreatedAtRef.current = Number(existing.createdAt || 0);
+          return existing.key;
+        }
+      } catch (_) {
+        window.sessionStorage.removeItem(CHECKOUT_IDEMPOTENCY_STORAGE_KEY);
+      }
+    }
+
+    const newKey = createCheckoutIdempotencyKey();
+    const createdAt = Date.now();
+    checkoutIdempotencyKeyRef.current = newKey;
+    checkoutIdempotencyFingerprintRef.current = fingerprint;
+    checkoutIdempotencyCreatedAtRef.current = createdAt;
+
+    if (typeof window !== 'undefined') {
+      window.sessionStorage.setItem(CHECKOUT_IDEMPOTENCY_STORAGE_KEY, JSON.stringify({
+        key: newKey,
+        fingerprint,
+        createdAt,
+      }));
+    }
+
+    return newKey;
+  };
+
+  const clearCheckoutIdempotencyKey = () => {
+    checkoutIdempotencyKeyRef.current = null;
+    checkoutIdempotencyFingerprintRef.current = '';
+    checkoutIdempotencyCreatedAtRef.current = 0;
+
+    if (typeof window !== 'undefined') {
+      window.sessionStorage.removeItem(CHECKOUT_IDEMPOTENCY_STORAGE_KEY);
+    }
+  };
 
 
   // Subtotals
@@ -369,14 +444,18 @@ export default function CheckoutPage() {
           deliverySlot,
         };
 
-        const res = await api.post('/guest-checkout', guestPayload);
+        const res = await api.post('/guest-checkout', guestPayload, {
+          headers: { 'Idempotency-Key': getCheckoutIdempotencyKey(guestPayload) },
+        });
         const guestOrderNum = res.data?.data?.order?.orderNumber;
         const guestOrderId  = res.data?.data?.order?._id;
+        const guestTrackingToken = res.data?.data?.trackingToken || '';
         dispatch(addToast({ message: 'Order placed successfully! 🎉', type: 'success' }));
         dispatch(clearGuestCart());
         dispatch(clearPendingAddOns());
+        clearCheckoutIdempotencyKey();
         router.push(guestOrderNum
-          ? `/order-confirmation?orderNumber=${guestOrderNum}`
+          ? `/order-confirmation?orderNumber=${guestOrderNum}${guestTrackingToken ? `&trackingToken=${encodeURIComponent(guestTrackingToken)}` : ''}`
           : `/order-confirmation?orderId=${guestOrderId}`);
         return;
       }
@@ -429,12 +508,15 @@ export default function CheckoutPage() {
       }
 
       if (paymentMethod === 'cod') {
-        const res = await api.post('/checkout/create-order', orderPayload);
+        const res = await api.post('/checkout/create-order', orderPayload, {
+          headers: { 'Idempotency-Key': getCheckoutIdempotencyKey(orderPayload) },
+        });
         const orderNum = res.data?.data?.order?.orderNumber;
         const orderId  = res.data?.data?.order?._id;
         dispatch(addToast({ message: 'Order placed! 🎂', type: 'success' }));
         dispatch(resetCart());
         dispatch(clearPendingAddOns());
+        clearCheckoutIdempotencyKey();
         router.push(orderNum
           ? `/order-confirmation?orderNumber=${orderNum}`
           : `/order-confirmation?orderId=${orderId}`);
@@ -442,7 +524,11 @@ export default function CheckoutPage() {
       } else {
         // Razorpay online
         await loadRazorpayCheckoutScript();
-        const res = await api.post('/checkout/create-order', { ...orderPayload, paymentMethod: 'online' });
+        const onlineOrderPayload = { ...orderPayload, paymentMethod: 'online' };
+        const onlineOrderIdempotencyKey = getCheckoutIdempotencyKey(onlineOrderPayload);
+        const res = await api.post('/checkout/create-order', onlineOrderPayload, {
+          headers: { 'Idempotency-Key': onlineOrderIdempotencyKey },
+        });
         const paymentParams = res.data?.data?.paymentParams || {};
         const orderId = res.data?.data?.order?._id;
         if (!paymentParams.key_id || !paymentParams.amount || !paymentParams.order_id) {
@@ -461,10 +547,13 @@ export default function CheckoutPage() {
                 razorpayOrderId: response.razorpay_order_id,
                 razorpayPaymentId: response.razorpay_payment_id,
                 razorpaySignature: response.razorpay_signature,
+              }, {
+                headers: { 'Idempotency-Key': `${onlineOrderIdempotencyKey}:verify` },
               });
               dispatch(addToast({ message: 'Payment successful!', type: 'success' }));
               dispatch(resetCart());
               dispatch(clearPendingAddOns());
+              clearCheckoutIdempotencyKey();
               const onlineOrderNum = res.data?.data?.order?.orderNumber;
               router.push(onlineOrderNum
                 ? `/order-confirmation?orderNumber=${onlineOrderNum}`

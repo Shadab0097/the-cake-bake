@@ -8,9 +8,9 @@ export const login = createAsyncThunk(
   async ({ email, password }, { rejectWithValue }) => {
     try {
       const res = await api.post('/auth/login', { email, password });
-      const { accessToken, refreshToken, user } = res.data.data;
+      const { accessToken, user } = res.data.data;
       localStorage.setItem('accessToken', accessToken);
-      localStorage.setItem('refreshToken', refreshToken);
+      localStorage.removeItem('refreshToken');
       return user;
     } catch (err) {
       return rejectWithValue(err.response?.data?.message || 'Login failed');
@@ -23,9 +23,9 @@ export const register = createAsyncThunk(
   async ({ name, email, phone, password }, { rejectWithValue }) => {
     try {
       const res = await api.post('/auth/register', { name, email, phone, password });
-      const { accessToken, refreshToken, user } = res.data.data;
+      const { accessToken, user } = res.data.data;
       localStorage.setItem('accessToken', accessToken);
-      localStorage.setItem('refreshToken', refreshToken);
+      localStorage.removeItem('refreshToken');
       return user;
     } catch (err) {
       return rejectWithValue(err.response?.data?.message || 'Registration failed');
@@ -50,7 +50,7 @@ export const logout = createAsyncThunk(
   'auth/logout',
   async (_, { rejectWithValue }) => {
     try {
-      await api.post('/auth/logout');
+      await api.post('/auth/logout', { scope: 'customer' });
     } catch {
       // Ignore logout errors
     } finally {

@@ -4,8 +4,8 @@ const API_BASE_URL = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:5000/a
 
 /**
  * Separate axios instance for admin panel.
- * Uses `adminAccessToken` / `adminRefreshToken` in localStorage,
- * so admin sessions don't collide with customer sessions.
+ * Uses a localStorage access token and an HttpOnly admin refresh cookie,
+ * so admin refresh sessions don't collide with customer sessions.
  */
 const adminApiClient = axios.create({
   baseURL: API_BASE_URL,
@@ -45,12 +45,20 @@ const processQueue = (error, token = null) => {
   failedQueue = [];
 };
 
+const shouldSkipRefresh = (url = '') => (
+  url.includes('/auth/login') ||
+  url.includes('/auth/register') ||
+  url.includes('/auth/refresh') ||
+  url.includes('/auth/forgot-password') ||
+  url.includes('/auth/reset-password')
+);
+
 adminApiClient.interceptors.response.use(
   (response) => response,
   async (error) => {
     const originalRequest = error.config;
 
-    if (error.response?.status === 401 && !originalRequest._retry) {
+    if (error.response?.status === 401 && !originalRequest._retry && !shouldSkipRefresh(originalRequest.url || '')) {
       if (isRefreshing) {
         return new Promise((resolve, reject) => {
           failedQueue.push({ resolve, reject });
@@ -66,18 +74,15 @@ adminApiClient.interceptors.response.use(
       isRefreshing = true;
 
       try {
-        const refreshToken = localStorage.getItem('adminRefreshToken');
-        if (!refreshToken) {
-          throw new Error('No admin refresh token');
-        }
+        const res = await axios.post(
+          `${API_BASE_URL}/auth/refresh`,
+          { scope: 'admin' },
+          { withCredentials: true }
+        );
 
-        const res = await axios.post(`${API_BASE_URL}/auth/refresh`, {
-          refreshToken,
-        });
-
-        const { accessToken, refreshToken: newRefreshToken } = res.data.data;
+        const { accessToken } = res.data.data;
         localStorage.setItem('adminAccessToken', accessToken);
-        localStorage.setItem('adminRefreshToken', newRefreshToken);
+        localStorage.removeItem('adminRefreshToken');
 
         processQueue(null, accessToken);
         originalRequest.headers.Authorization = `Bearer ${accessToken}`;

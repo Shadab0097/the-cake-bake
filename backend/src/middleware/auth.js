@@ -18,7 +18,7 @@ const auth = async (req, res, next) => {
 
     const decoded = jwt.verify(token, env.jwt.secret);
 
-    const user = await User.findById(decoded.id).select('-passwordHash -refreshToken');
+    const user = await User.findById(decoded.id).select('-passwordHash -refreshToken -adminRefreshToken');
 
     if (!user) {
       throw ApiError.unauthorized('User not found');
@@ -47,7 +47,7 @@ const optionalAuth = async (req, res, next) => {
     if (authHeader && authHeader.startsWith('Bearer ')) {
       const token = authHeader.split(' ')[1];
       const decoded = jwt.verify(token, env.jwt.secret);
-      const user = await User.findById(decoded.id).select('-passwordHash -refreshToken');
+      const user = await User.findById(decoded.id).select('-passwordHash -refreshToken -adminRefreshToken');
       if (user) {
         req.user = user;
       }

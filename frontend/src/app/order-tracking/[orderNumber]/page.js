@@ -1,7 +1,7 @@
 'use client';
 
 import { useEffect, useState, useCallback } from 'react';
-import { useParams, useRouter } from 'next/navigation';
+import { useParams, useRouter, useSearchParams } from 'next/navigation';
 import { useSelector, useDispatch } from 'react-redux';
 import Link from 'next/link';
 import { motion, AnimatePresence } from 'framer-motion';
@@ -73,8 +73,11 @@ function Skeleton() {
 export default function OrderTrackingPage() {
   const { orderNumber } = useParams();
   const router = useRouter();
+  const searchParams = useSearchParams();
   const dispatch = useDispatch();
   const { isAuthenticated, isSessionLoading } = useSelector((s) => s.auth);
+  const trackingToken = searchParams.get('token') || '';
+  const isGuestTracking = Boolean(trackingToken);
 
   const [order, setOrder] = useState(null);
   const [loading, setLoading] = useState(true);
@@ -87,7 +90,9 @@ export default function OrderTrackingPage() {
     if (!silent) setLoading(true);
     else setRefreshing(true);
     try {
-      const res = await api.get(`/orders/${orderNumber}`);
+      const res = isGuestTracking
+        ? await api.get(`/guest-orders/${orderNumber}`, { params: { token: trackingToken } })
+        : await api.get(`/orders/${orderNumber}`);
       setOrder(res.data?.data || null);
       setError('');
     } catch (err) {
@@ -96,16 +101,21 @@ export default function OrderTrackingPage() {
       setLoading(false);
       setRefreshing(false);
     }
-  }, [orderNumber]);
+  }, [isGuestTracking, orderNumber, trackingToken]);
 
   useEffect(() => {
+    if (isGuestTracking) {
+      fetchOrder();
+      return;
+    }
+
     if (isSessionLoading) return;
     if (!isAuthenticated) {
       router.replace(`/login?next=/order-tracking/${orderNumber}`);
       return;
     }
     fetchOrder();
-  }, [isSessionLoading, isAuthenticated, fetchOrder, orderNumber, router]);
+  }, [isGuestTracking, isSessionLoading, isAuthenticated, fetchOrder, orderNumber, router]);
 
   const handleCancel = async () => {
     setCancelling(true);
@@ -121,7 +131,7 @@ export default function OrderTrackingPage() {
     }
   };
 
-  if (isSessionLoading || loading) return <Skeleton />;
+  if ((!isGuestTracking && isSessionLoading) || loading) return <Skeleton />;
 
   if (error || !order) {
     return (
@@ -130,8 +140,8 @@ export default function OrderTrackingPage() {
           <FiPackage className="w-14 h-14 text-outline/30 mx-auto mb-4" />
           <h2 className="text-xl font-bold text-dark mb-2">Order Not Found</h2>
           <p className="text-sm text-outline mb-6">{error || 'This order does not exist or belongs to another account.'}</p>
-          <Link href="/account" className="inline-flex items-center gap-2 px-6 py-2.5 rounded-full gradient-primary text-white text-sm font-semibold">
-            <FiArrowLeft className="w-4 h-4" /> Back to My Orders
+          <Link href={isGuestTracking ? '/products' : '/account'} className="inline-flex items-center gap-2 px-6 py-2.5 rounded-full gradient-primary text-white text-sm font-semibold">
+            <FiArrowLeft className="w-4 h-4" /> {isGuestTracking ? 'Continue Shopping' : 'Back to My Orders'}
           </Link>
         </div>
       </AppShell>
@@ -156,10 +166,10 @@ export default function OrderTrackingPage() {
         {/* Back + Refresh */}
         <div className="flex items-center justify-between mb-6">
           <Link
-            href="/account"
+            href={isGuestTracking ? '/products' : '/account'}
             className="flex items-center gap-1.5 text-sm text-outline hover:text-pink-deep transition-colors"
           >
-            <FiArrowLeft className="w-4 h-4" /> My Orders
+            <FiArrowLeft className="w-4 h-4" /> {isGuestTracking ? 'Continue Shopping' : 'My Orders'}
           </Link>
           <button
             onClick={() => fetchOrder(true)}
@@ -208,7 +218,7 @@ export default function OrderTrackingPage() {
           </div>
 
           {/* Cancel button */}
-          {isCancellable(order.status) && (
+          {!isGuestTracking && isCancellable(order.status) && (
             <div className="mt-4 pt-4 border-t border-outline-variant/10">
               <button
                 onClick={() => setShowCancelModal(true)}
@@ -351,7 +361,7 @@ export default function OrderTrackingPage() {
                     <span className="text-xs text-outline">Qty: {item.quantity}</span>
                   </div>
                   {item.cakeMessage && (
-                    <p className="text-xs text-outline mt-1 italic">"{item.cakeMessage}"</p>
+                    <p className="text-xs text-outline mt-1 italic">&quot;{item.cakeMessage}&quot;</p>
                   )}
                   {item.addOns?.length > 0 && (
                     <div className="flex flex-wrap gap-1 mt-1.5">

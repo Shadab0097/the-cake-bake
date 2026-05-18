@@ -18,6 +18,13 @@ const requiredEnvVars = [
 
 const validateEnv = () => {
   const missing = requiredEnvVars.filter((key) => !process.env[key]);
+  if (process.env.NODE_ENV === 'production' && !process.env.WHATSAPP_APP_SECRET) {
+    missing.push('WHATSAPP_APP_SECRET');
+  }
+  if (process.env.NODE_ENV === 'production' && !process.env.REDIS_URL) {
+    missing.push('REDIS_URL');
+  }
+
   if (missing.length > 0) {
     throw new Error(`Missing required environment variables: ${missing.join(', ')}`);
   }
@@ -31,7 +38,7 @@ const env = {
 
   jwt: {
     secret: process.env.JWT_SECRET,
-    expire: process.env.JWT_EXPIRE || '7d',
+    expire: process.env.JWT_EXPIRE || '15m',
     refreshSecret: process.env.JWT_REFRESH_SECRET,
     refreshExpire: process.env.JWT_REFRESH_EXPIRE || '30d',
   },
@@ -49,6 +56,8 @@ const env = {
     businessAccountId: process.env.WHATSAPP_BUSINESS_ACCOUNT_ID,
     // Token you set in Meta Developer Console → Webhook → Verify Token
     verifyToken: process.env.WHATSAPP_VERIFY_TOKEN || '',
+    // App Secret from Meta Developer Console, used to verify X-Hub-Signature-256
+    appSecret: process.env.WHATSAPP_APP_SECRET || '',
   },
 
   // ── WhatsApp Chatbot ────────────────────────────────────────────────────
@@ -83,6 +92,36 @@ const env = {
     onlinePaymentExpiryMinutes: parsePositiveInt(process.env.ORDER_PAYMENT_EXPIRY_MINUTES, 30),
     expiryJobIntervalMinutes: parsePositiveInt(process.env.ORDER_EXPIRY_JOB_INTERVAL_MINUTES, 5),
     expiryBatchSize: parsePositiveInt(process.env.ORDER_EXPIRY_BATCH_SIZE, 100),
+  },
+
+  redis: {
+    url: process.env.REDIS_URL || '',
+    tls: process.env.REDIS_TLS === 'true',
+    keyPrefix: process.env.REDIS_KEY_PREFIX || 'the-cake-bake',
+  },
+
+  cache: {
+    store: process.env.NODE_ENV === 'production' ? 'redis' : (process.env.CACHE_STORE || 'memory'),
+    defaultTtlSeconds: parsePositiveInt(process.env.CACHE_DEFAULT_TTL_SECONDS, 60),
+  },
+
+  rateLimit: {
+    store: process.env.NODE_ENV === 'production' ? 'redis' : (process.env.RATE_LIMIT_STORE || 'memory'),
+  },
+
+  jobs: {
+    queueMode: process.env.NODE_ENV === 'production'
+      ? 'bullmq'
+      : (process.env.JOB_QUEUE_MODE || (process.env.REDIS_URL ? 'bullmq' : 'inline')),
+    workerEnabled: process.env.ENABLE_JOB_WORKER !== 'false',
+    defaultAttempts: parsePositiveInt(process.env.JOB_DEFAULT_ATTEMPTS, 3),
+    backoffMs: parsePositiveInt(process.env.JOB_BACKOFF_MS, 5000),
+    removeOnCompleteAgeSeconds: parsePositiveInt(process.env.JOB_REMOVE_ON_COMPLETE_AGE_SECONDS, 86400),
+    removeOnFailAgeSeconds: parsePositiveInt(process.env.JOB_REMOVE_ON_FAIL_AGE_SECONDS, 604800),
+  },
+
+  health: {
+    checkToken: process.env.HEALTH_CHECK_TOKEN || '',
   },
 
   app: {

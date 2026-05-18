@@ -53,13 +53,23 @@ app.use(cors({
   origin: env.corsOrigin.split(',').map(o => o.trim()),
   credentials: true,
   methods: ['GET', 'POST', 'PUT', 'PATCH', 'DELETE', 'OPTIONS'],
-  allowedHeaders: ['Content-Type', 'Authorization'],
+  allowedHeaders: ['Content-Type', 'Authorization', 'Idempotency-Key', 'X-Idempotency-Key'],
 }));
 
+const matchesRoutePath = (req, pathName) => {
+  const url = req.originalUrl || '';
+  return url === pathName || url.startsWith(`${pathName}?`) || url.startsWith(`${pathName}/`);
+};
+
+const requiresRawBody = (req) => (
+  matchesRoutePath(req, '/api/v1/payments/webhook') ||
+  matchesRoutePath(req, '/api/v1/chatbot/webhook')
+);
+
 // ---- Body Parsing ----
-// CRITICAL: Skip JSON parsing for webhook route — it needs raw body for signature verification
+// CRITICAL: Skip JSON parsing for webhook routes because signatures need raw bytes.
 app.use((req, res, next) => {
-  if (req.originalUrl === '/api/v1/payments/webhook') {
+  if (requiresRawBody(req)) {
     return next();
   }
   express.json({ limit: '10mb' })(req, res, next);

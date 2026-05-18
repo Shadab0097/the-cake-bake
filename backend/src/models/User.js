@@ -75,6 +75,18 @@ const userSchema = new mongoose.Schema(
       type: String,
       select: false,
     },
+    adminRefreshToken: {
+      type: String,
+      select: false,
+    },
+    refreshTokenReuseDetectedAt: {
+      type: Date,
+      select: false,
+    },
+    adminRefreshTokenReuseDetectedAt: {
+      type: Date,
+      select: false,
+    },
     resetPasswordToken: {
       type: String,
       select: false,

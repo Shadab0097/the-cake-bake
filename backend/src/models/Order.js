@@ -60,6 +60,15 @@ const orderSchema = new mongoose.Schema(
       email: { type: String, default: '' },
       phone: { type: String, default: '' },
     },
+    guestTrackingTokenHash: {
+      type: String,
+      default: '',
+      select: false,
+    },
+    guestTrackingTokenIssuedAt: {
+      type: Date,
+      select: false,
+    },
     items: [orderItemSchema],
     shippingAddress: {
       fullName: { type: String, required: true },
@@ -162,5 +171,13 @@ orderSchema.index({ status: 1, deliveryDate: 1 });
 orderSchema.index({ deliveryCity: 1, deliveryDate: 1 });
 orderSchema.index({ paymentStatus: 1 });
 orderSchema.index({ createdAt: -1 });
+orderSchema.index(
+  { guestTrackingTokenHash: 1 },
+  {
+    unique: true,
+    sparse: true,
+    partialFilterExpression: { guestTrackingTokenHash: { $type: 'string', $gt: '' } },
+  }
+);
 
 module.exports = mongoose.model('Order', orderSchema);

@@ -8,36 +8,58 @@ const logger = require('../../middleware/logger');
 const { NOTIFICATION_CHANNELS, NOTIFICATION_TYPES } = require('../../utils/constants');
 const { parsePagination, paginatedResponse } = require('../../utils/pagination');
 const { env } = require('../../config/env');
+const notificationQueue = require('../../jobs/notificationQueue');
 
 class NotificationService {
 
   // ───────────────────────────────────────────────────────────────────────────
   // Internal: log a notification result to the database
   // ───────────────────────────────────────────────────────────────────────────
-  async _log({ userId, channel, type, recipient, templateName, result }) {
+  async _log({ userId, channel, type, recipient, templateName, result, idempotencyKey = '' }) {
     try {
-      await NotificationLog.create({
+      const payload = {
         user: userId || null,
         channel,
         type,
         recipient,
         templateName: templateName || '',
+        idempotencyKey,
         status: result.success ? 'sent' : 'failed',
         externalId: result.messageId || '',
         errorMessage: result.error || result.reason || '',
         sentAt: new Date(),
-      });
+      };
+
+      if (idempotencyKey) {
+        await NotificationLog.findOneAndUpdate(
+          { idempotencyKey },
+          { $set: payload },
+          { upsert: true, setDefaultsOnInsert: true }
+        );
+        return;
+      }
+
+      await NotificationLog.create(payload);
     } catch (logErr) {
       logger.warn('[NotificationLog] Failed to write log entry:', logErr.message);
     }
   }
 
+  async _alreadySent(idempotencyKey) {
+    if (!idempotencyKey) return false;
+    const existing = await NotificationLog.findOne({ idempotencyKey, status: 'sent' }).select('_id').lean();
+    return Boolean(existing);
+  }
+
   // ───────────────────────────────────────────────────────────────────────────
   // Internal: send via WhatsApp and log
   // ───────────────────────────────────────────────────────────────────────────
-  async _sendWhatsApp({ userId, type, phone, templateKey, templateParams }) {
+  async _sendWhatsApp({ userId, type, phone, templateKey, templateParams, idempotencyKey = '' }) {
     if (!env.notifications.whatsappEnabled) return;
     if (!phone) return;
+    if (await this._alreadySent(idempotencyKey)) {
+      return { success: true, skipped: true };
+    }
 
     const result = await whatsappService.sendTemplateMessage(phone, templateKey, templateParams);
     await this._log({
@@ -48,16 +70,23 @@ class NotificationService {
       templateName: templateKey,
       templateParams,
       result,
+      idempotencyKey,
     });
+    if (result && result.success === false) {
+      throw new Error(result.error || result.reason || 'WhatsApp notification failed');
+    }
     return result;
   }
 
   // ───────────────────────────────────────────────────────────────────────────
   // Internal: send via Email and log
   // ───────────────────────────────────────────────────────────────────────────
-  async _sendEmail({ userId, type, email, templateKey, templateData }) {
+  async _sendEmail({ userId, type, email, templateKey, templateData, idempotencyKey = '' }) {
     if (!env.notifications.emailEnabled) return;
     if (!email) return;
+    if (await this._alreadySent(idempotencyKey)) {
+      return { success: true, skipped: true };
+    }
 
     const result = await emailService.sendTemplateMail(email, templateKey, templateData);
     await this._log({
@@ -68,8 +97,36 @@ class NotificationService {
       templateName: templateKey,
       templateParams: templateData,
       result,
+      idempotencyKey,
     });
+    if (result && result.success === false) {
+      throw new Error(result.error || result.reason || 'Email notification failed');
+    }
     return result;
+  }
+
+  async _queueWhatsApp({ userId, type, phone, templateKey, templateParams, dedupeKey, delay = 0 }) {
+    if (!env.notifications.whatsappEnabled || !phone || !templateKey) return;
+
+    return notificationQueue.enqueueWhatsApp({
+      userId: userId ? String(userId) : null,
+      type,
+      recipient: phone,
+      templateName: templateKey,
+      templateParams,
+    }, { dedupeKey, delay });
+  }
+
+  async _queueEmail({ userId, type, email, templateKey, templateData, dedupeKey, delay = 0 }) {
+    if (!env.notifications.emailEnabled || !email || !templateKey) return;
+
+    return notificationQueue.enqueueEmail({
+      userId: userId ? String(userId) : null,
+      type,
+      recipient: email,
+      templateName: templateKey,
+      templateData,
+    }, { dedupeKey, delay });
   }
 
   // ───────────────────────────────────────────────────────────────────────────
@@ -77,15 +134,30 @@ class NotificationService {
   // ───────────────────────────────────────────────────────────────────────────
   async _fanOut({ userId, type, phone, email,
                   waTemplateKey, waParams,
-                  emailTemplateKey, emailData }) {
+                  emailTemplateKey, emailData,
+                  dedupeKey = '' }) {
     const tasks = [];
 
     if (env.notifications.whatsappEnabled && phone && waTemplateKey) {
-      tasks.push(this._sendWhatsApp({ userId, type, phone, templateKey: waTemplateKey, templateParams: waParams }));
+      tasks.push(this._queueWhatsApp({
+        userId,
+        type,
+        phone,
+        templateKey: waTemplateKey,
+        templateParams: waParams,
+        dedupeKey: dedupeKey ? `${dedupeKey}:whatsapp:${waTemplateKey}` : undefined,
+      }));
     }
 
     if (env.notifications.emailEnabled && email && emailTemplateKey) {
-      tasks.push(this._sendEmail({ userId, type, email, templateKey: emailTemplateKey, templateData: emailData }));
+      tasks.push(this._queueEmail({
+        userId,
+        type,
+        email,
+        templateKey: emailTemplateKey,
+        templateData: emailData,
+        dedupeKey: dedupeKey ? `${dedupeKey}:email:${emailTemplateKey}` : undefined,
+      }));
     }
 
     if (tasks.length === 0) {
@@ -96,7 +168,7 @@ class NotificationService {
     const results = await Promise.allSettled(tasks);
     results.forEach((r, i) => {
       if (r.status === 'rejected') {
-        logger.warn(`[Notification] Channel send failed (task ${i}):`, r.reason?.message || r.reason);
+        logger.warn(`[Notification] Channel enqueue failed (task ${i}):`, r.reason?.message || r.reason);
       }
     });
   }
@@ -175,26 +247,24 @@ class NotificationService {
     const email       = await this._resolveOrderEmail(order);
     const phone       = this._resolveOrderPhone(order);
     const customerName = order.shippingAddress?.fullName || order.guestInfo?.name || 'Customer';
+    const orderKey = `order:${order._id || order.orderNumber}:confirmation`;
 
     // ── WhatsApp ──
     if (env.notifications.whatsappEnabled && phone) {
       const waConfirmedParams = WA_TEMPLATES.order_confirmed.buildParams(order, payment);
-      await this._sendWhatsApp({
+      await this._queueWhatsApp({
         userId, type: NOTIFICATION_TYPES.ORDER_CONFIRMED,
         phone, templateKey: 'order_confirmed', templateParams: waConfirmedParams,
+        dedupeKey: `${orderKey}:whatsapp:confirmed`,
       });
 
-      setTimeout(async () => {
-        try {
-          const waDetailsParams = WA_TEMPLATES.order_details.buildParams(order);
-          await this._sendWhatsApp({
-            userId, type: NOTIFICATION_TYPES.ORDER_DETAILS,
-            phone, templateKey: 'order_details', templateParams: waDetailsParams,
-          });
-        } catch (e) {
-          logger.warn('[Notification] WhatsApp order_details delayed send failed:', e.message);
-        }
-      }, 2000);
+      const waDetailsParams = WA_TEMPLATES.order_details.buildParams(order);
+      await this._queueWhatsApp({
+        userId, type: NOTIFICATION_TYPES.ORDER_DETAILS,
+        phone, templateKey: 'order_details', templateParams: waDetailsParams,
+        dedupeKey: `${orderKey}:whatsapp:details`,
+        delay: 2000,
+      });
     }
 
     // ── Email ──
@@ -208,13 +278,14 @@ class NotificationService {
         paymentMethod: order.paymentMethod || 'cod',
         total:         `₹${(order.total / 100).toFixed(2)}`,
       };
-      await this._sendEmail({
+      await this._queueEmail({
         userId, type: NOTIFICATION_TYPES.ORDER_CONFIRMED,
         email, templateKey: 'order_confirmed', templateData: emailData,
+        dedupeKey: `${orderKey}:email:confirmed`,
       });
 
       // Follow-up itemised breakdown (3s delay)
-      setTimeout(async () => {
+      {
         try {
           const itemsList = order.items
             .map((item) => `${item.name} (${item.weight || ''}) x${item.quantity}`)
@@ -230,14 +301,16 @@ class NotificationService {
             deliveryDate:   new Date(order.deliveryDate).toLocaleDateString('en-IN'),
             deliverySlot:   order.deliverySlot?.label || 'Standard',
           };
-          await this._sendEmail({
+          await this._queueEmail({
             userId, type: NOTIFICATION_TYPES.ORDER_DETAILS,
             email, templateKey: 'order_details', templateData: detailsData,
+            dedupeKey: `${orderKey}:email:details`,
+            delay: 3000,
           });
         } catch (e) {
           logger.warn('[Notification] Email order_details delayed send failed:', e.message);
         }
-      }, 3000);
+      }
     }
   }
 
@@ -258,12 +331,14 @@ class NotificationService {
       paymentId:   payment?.razorpayPaymentId || '',
       method:      payment?.method || 'Online',
     };
+    const paymentKey = payment?._id || payment?.razorpayPaymentId || payment?.razorpayOrderId || order._id || order.orderNumber;
 
     return this._fanOut({
       userId, type: NOTIFICATION_TYPES.PAYMENT_SUCCESS,
       phone, email,
       waTemplateKey: 'payment_success', waParams,
       emailTemplateKey: 'payment_success', emailData,
+      dedupeKey: `payment:${paymentKey}:success`,
     });
   }
 
@@ -288,6 +363,7 @@ class NotificationService {
       phone, email,
       waTemplateKey: 'payment_failed', waParams,
       emailTemplateKey: 'payment_failed', emailData,
+      dedupeKey: `order:${order._id || order.orderNumber}:payment_failed`,
     });
   }
 
@@ -314,6 +390,12 @@ class NotificationService {
 
     const waTemplate = WA_TEMPLATES[entry.tpl];
     const waParams   = waTemplate ? waTemplate.buildParams(order) : {};
+    const latestStatusEntry = [...(order.statusHistory || [])]
+      .reverse()
+      .find((historyEntry) => historyEntry.status === newStatus);
+    const statusTimestamp = latestStatusEntry?.timestamp
+      ? new Date(latestStatusEntry.timestamp).getTime()
+      : (order.updatedAt ? new Date(order.updatedAt).getTime() : '');
 
     const emailData = {
       customerName,
@@ -327,6 +409,7 @@ class NotificationService {
       phone, email,
       waTemplateKey:    entry.tpl, waParams,
       emailTemplateKey: entry.tpl, emailData,
+      dedupeKey: `order:${order._id || order.orderNumber}:status:${newStatus}:${statusTimestamp}`,
     });
   }
 
@@ -335,15 +418,17 @@ class NotificationService {
    */
   async sendWelcomeNotification(user) {
     const tasks = [];
+    const welcomeKey = `user:${user._id || user.email || user.phone}:welcome`;
 
     if (env.notifications.emailEnabled && user.email) {
       tasks.push(
-        this._sendEmail({
+        this._queueEmail({
           userId:       user._id,
           type:         NOTIFICATION_TYPES.WELCOME,
           email:        user.email,
           templateKey:  'welcome',
           templateData: { name: user.name },
+          dedupeKey:    `${welcomeKey}:email`,
         })
       );
     }
@@ -351,12 +436,13 @@ class NotificationService {
     if (env.notifications.whatsappEnabled && user.phone) {
       const waParams = WA_TEMPLATES.welcome.buildParams(user);
       tasks.push(
-        this._sendWhatsApp({
+        this._queueWhatsApp({
           userId:        user._id,
           type:          NOTIFICATION_TYPES.WELCOME,
           phone:         user.phone,
           templateKey:   'welcome',
           templateParams: waParams,
+          dedupeKey:     `${welcomeKey}:whatsapp`,
         })
       );
     }
@@ -369,7 +455,7 @@ class NotificationService {
     const results = await Promise.allSettled(tasks);
     results.forEach((r, i) => {
       if (r.status === 'rejected') {
-        logger.warn(`[Notification] Welcome send failed (task ${i}):`, r.reason?.message);
+        logger.warn(`[Notification] Welcome enqueue failed (task ${i}):`, r.reason?.message);
       }
     });
   }
@@ -387,7 +473,7 @@ class NotificationService {
       return;
     }
 
-    return this._sendEmail({
+    return this._queueEmail({
       userId:       user._id,
       type:         NOTIFICATION_TYPES.PASSWORD_RESET,
       email:        user.email,
@@ -418,12 +504,13 @@ class NotificationService {
     };
 
     if (env.notifications.emailEnabled && adminEmails.length > 0) {
-      await this._sendEmail({
+      await this._queueEmail({
         userId:       null,
         type:         NOTIFICATION_TYPES.INQUIRY_ALERT,
         email:        adminEmails,
         templateKey:  'inquiry_alert',
         templateData: emailData,
+        dedupeKey:    inquiry._id ? `inquiry:${inquiry._id}:${inquiryType}` : undefined,
       });
     } else {
       logger.info('[Notification] Email disabled or no admin emails — inquiry alert skipped');
@@ -434,6 +521,32 @@ class NotificationService {
   // ═══════════════════════════════════════════════════════════════════════════
   // READ / ADMIN QUERIES
   // ═══════════════════════════════════════════════════════════════════════════
+
+  async processQueuedNotification(jobName, data) {
+    if (jobName === notificationQueue.JOBS.SEND_EMAIL) {
+      return this._sendEmail({
+        userId:         data.userId || null,
+        type:           data.type,
+        email:          data.recipient,
+        templateKey:    data.templateName,
+        templateData:   data.templateData,
+        idempotencyKey: data.idempotencyKey || '',
+      });
+    }
+
+    if (jobName === notificationQueue.JOBS.SEND_WHATSAPP) {
+      return this._sendWhatsApp({
+        userId:         data.userId || null,
+        type:           data.type,
+        phone:          data.recipient,
+        templateKey:    data.templateName,
+        templateParams: data.templateParams,
+        idempotencyKey: data.idempotencyKey || '',
+      });
+    }
+
+    throw new Error(`Unknown notification job: ${jobName}`);
+  }
 
   async getUserNotifications(userId, query) {
     const { page, limit, skip } = parsePagination(query);

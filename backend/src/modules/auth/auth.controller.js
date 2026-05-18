@@ -1,24 +1,42 @@
 const authService = require('./auth.service');
+const authSecurityService = require('./authSecurity.service');
 const asyncHandler = require('../../utils/asyncHandler');
 const ApiResponse = require('../../utils/ApiResponse');
 
 const register = asyncHandler(async (req, res) => {
   const result = await authService.register(req.body);
-  ApiResponse.created(result, 'Registration successful').send(res);
+  authService.setRefreshCookie(res, result.refreshScope, result.refreshToken);
+  ApiResponse.created(authService.buildAuthResponse(result), 'Registration successful').send(res);
 });
 
 const login = asyncHandler(async (req, res) => {
-  const result = await authService.login(req.body);
-  ApiResponse.ok(result, 'Login successful').send(res);
+  try {
+    const result = await authService.login(req.body);
+    if (result.refreshScope === 'admin') {
+      await authSecurityService.recordAdminLoginSuccess(req, result.user);
+    }
+    authService.setRefreshCookie(res, result.refreshScope, result.refreshToken);
+    ApiResponse.ok(authService.buildAuthResponse(result), 'Login successful').send(res);
+  } catch (error) {
+    if (authSecurityService.isAdminLoginRequest(req.body)) {
+      await authSecurityService.recordAdminLoginFailure(req, error);
+    }
+    throw error;
+  }
 });
 
 const refreshToken = asyncHandler(async (req, res) => {
-  const tokens = await authService.refreshAccessToken(req.body.refreshToken);
-  ApiResponse.ok(tokens, 'Token refreshed').send(res);
+  const scope = req.body.scope || 'customer';
+  const refreshTokenValue = authService.getRefreshTokenFromRequest(req, scope);
+  const tokens = await authService.refreshAccessToken(refreshTokenValue, scope);
+  authService.setRefreshCookie(res, tokens.refreshScope, tokens.refreshToken);
+  ApiResponse.ok({ accessToken: tokens.accessToken }, 'Token refreshed').send(res);
 });
 
 const logout = asyncHandler(async (req, res) => {
-  await authService.logout(req.user._id);
+  const scope = req.body.scope || (authService.isAdminUser(req.user) ? 'admin' : 'customer');
+  await authService.logout(req.user._id, scope);
+  authService.clearRefreshCookie(res, scope);
   ApiResponse.ok(null, 'Logged out successfully').send(res);
 });
 

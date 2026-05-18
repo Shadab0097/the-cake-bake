@@ -16,6 +16,9 @@ const { ORDER_STATUSES, PAYMENT_STATUSES } = require('../../utils/constants');
 const { sanitize } = require('../../utils/xssSanitizer');
 const cache = require('../../utils/cache');
 const logger = require('../../middleware/logger');
+const idempotencyService = require('./idempotency.service');
+const inventoryReservationService = require('./inventoryReservation.service');
+const guestTrackingService = require('./guestTracking.service');
 
 // ── Joi validation schema for guest checkout ──────────────────────────────────
 const guestCheckoutSchema = Joi.object({
@@ -96,6 +99,12 @@ router.post(
     shippingAddress.state = sanitize(shippingAddress.state);
     shippingAddress.landmark = sanitize(shippingAddress.landmark || '');
 
+    const result = await idempotencyService.execute({
+      key: idempotencyService.getKeyFromRequest(req),
+      scope: 'guest_checkout',
+      guestFingerprint: idempotencyService.guestFingerprint(guestInfo),
+      payload: value,
+      handler: async () => {
     // ── Delivery zone check ──────────────────────────────────────────────────
     const escapeRegex = require('../../utils/helpers').escapeRegex;
     const zone = await DeliveryZone.findOne({
@@ -215,13 +224,23 @@ router.post(
         couponCode: '',
         tax: 0,
         total,
-        status: ORDER_STATUSES.PENDING,
+        status: ORDER_STATUSES.CONFIRMED,
         paymentMethod: 'cod',
         paymentStatus: 'pending',
-        statusHistory: [{ status: ORDER_STATUSES.PENDING, timestamp: new Date(), note: 'Guest order created' }],
+        statusHistory: [{ status: ORDER_STATUSES.CONFIRMED, timestamp: new Date(), note: 'Guest COD order confirmed' }],
       }], { session });
 
       const createdOrder = order[0];
+
+      await inventoryReservationService.reserveForOrder({
+        order: createdOrder,
+        items: orderItems,
+        user: null,
+        guestInfo,
+        status: 'confirmed',
+        reason: 'Guest COD order confirmed',
+        session,
+      });
 
       // ── Create COD payment record ────────────────────────────────────────
       await Payment.create([{
@@ -233,23 +252,7 @@ router.post(
         method: 'cod',
       }], { session });
 
-      // ── Decrement stock for all ordered items ────────────────────────────
-      const bulkOps = orderItems
-        .filter((item) => item.variant)
-        .map((item) => ({
-          updateOne: {
-            filter: { _id: item.variant, stock: { $gte: item.quantity } },
-            update: { $inc: { stock: -item.quantity } },
-          },
-        }));
-
-      if (bulkOps.length > 0) {
-        const result = await Variant.bulkWrite(bulkOps, { session });
-        const notUpdated = bulkOps.length - result.modifiedCount;
-        if (notUpdated > 0) {
-          logger.warn(`[GuestCheckout] ${notUpdated} item(s) had insufficient stock during guest order ${orderNumber}`);
-        }
-      }
+      const tracking = await guestTrackingService.attachTokenToOrder(createdOrder, session);
 
       await session.commitTransaction();
 
@@ -266,7 +269,11 @@ router.post(
         }
       });
 
-      return ApiResponse.created({ order: createdOrder }, 'Guest order placed successfully').send(res);
+      return {
+        order: guestTrackingService.buildPublicOrder(createdOrder),
+        trackingToken: tracking.token,
+        trackingUrl: tracking.trackingUrl,
+      };
     } catch (error) {
       await session.abortTransaction();
       logger.error('[GuestCheckout] Transaction failed:', error);
@@ -275,6 +282,10 @@ router.post(
     } finally {
       session.endSession();
     }
+      },
+    });
+
+    return ApiResponse.created(result, 'Guest order placed successfully').send(res);
   })
 );
 

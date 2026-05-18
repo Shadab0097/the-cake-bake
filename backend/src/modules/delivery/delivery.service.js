@@ -100,23 +100,25 @@ class DeliveryService {
 
   // Admin CRUD — invalidate cache on changes
   async createSlot(data) {
-    cache.invalidatePattern('delivery:');
-    return DeliverySlot.create(data);
+    const slot = await DeliverySlot.create(data);
+    await cache.invalidatePattern('delivery:');
+    return slot;
   }
   async updateSlot(id, data) {
     const slot = await DeliverySlot.findByIdAndUpdate(id, data, { new: true });
     if (!slot) throw ApiError.notFound('Slot not found');
-    cache.invalidatePattern('delivery:');
+    await cache.invalidatePattern('delivery:');
     return slot;
   }
   async createZone(data) {
-    cache.invalidatePattern('delivery:');
-    return DeliveryZone.create(data);
+    const zone = await DeliveryZone.create(data);
+    await cache.invalidatePattern('delivery:');
+    return zone;
   }
   async updateZone(id, data) {
     const zone = await DeliveryZone.findByIdAndUpdate(id, data, { new: true });
     if (!zone) throw ApiError.notFound('Zone not found');
-    cache.invalidatePattern('delivery:');
+    await cache.invalidatePattern('delivery:');
     return zone;
   }
   async adminGetSlots() { return DeliverySlot.find().sort({ sortOrder: 1 }).lean(); }
@@ -124,4 +126,3 @@ class DeliveryService {
 }
 
 module.exports = new DeliveryService();
-

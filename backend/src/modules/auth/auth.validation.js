@@ -17,12 +17,14 @@ const login = {
   body: Joi.object({
     email: Joi.string().email().lowercase().trim().required(),
     password: Joi.string().required(),
+    scope: Joi.string().valid('customer', 'admin').default('customer'),
   }),
 };
 
 const refreshToken = {
   body: Joi.object({
-    refreshToken: Joi.string().required(),
+    refreshToken: Joi.string().optional(),
+    scope: Joi.string().valid('customer', 'admin').default('customer'),
   }),
 };
 
@@ -50,4 +52,3 @@ const verifyPhone = {
 };
 
 module.exports = { register, login, refreshToken, forgotPassword, resetPassword, verifyPhone };
-

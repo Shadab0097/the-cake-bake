@@ -14,9 +14,6 @@ export default function AdminLoginPage() {
 
   // Check if already logged in as admin
   useEffect(() => {
-    const token = localStorage.getItem('adminAccessToken');
-    if (!token) { setChecking(false); return; }
-
     adminApiClient.get('/users/me')
       .then((res) => {
         const user = res.data.data;
@@ -35,8 +32,8 @@ export default function AdminLoginPage() {
     setLoading(true);
 
     try {
-      const res = await adminApiClient.post('/auth/login', { email, password });
-      const { accessToken, refreshToken, user } = res.data.data;
+      const res = await adminApiClient.post('/auth/login', { email, password, scope: 'admin' });
+      const { accessToken, user } = res.data.data;
 
       if (user.role !== 'admin' && user.role !== 'superadmin') {
         setError('Access denied. Admin credentials required.');
@@ -45,7 +42,7 @@ export default function AdminLoginPage() {
       }
 
       localStorage.setItem('adminAccessToken', accessToken);
-      localStorage.setItem('adminRefreshToken', refreshToken);
+      localStorage.removeItem('adminRefreshToken');
       router.replace('/admin');
     } catch (err) {
       setError(err.response?.data?.message || 'Login failed. Please try again.');

@@ -3,13 +3,8 @@ const Order = require('../../models/Order');
 const Payment = require('../../models/Payment');
 const Cart = require('../../models/Cart');
 const Variant = require('../../models/Variant');
-const Product = require('../../models/Product');
-const Coupon = require('../../models/Coupon');
-const CouponUsage = require('../../models/CouponUsage');
 const DeliveryZone = require('../../models/DeliveryZone');
 const Address = require('../../models/Address');
-const User = require('../../models/User');
-const LoyaltyPoints = require('../../models/LoyaltyPoints');
 const ApiError = require('../../utils/ApiError');
 const { generateOrderNumber, escapeRegex } = require('../../utils/helpers');
 const { parsePagination, paginatedResponse } = require('../../utils/pagination');
@@ -19,25 +14,44 @@ const { env } = require('../../config/env');
 const logger = require('../../middleware/logger');
 const cache = require('../../utils/cache');
 const { canMoveOnlineOrderToStatus, cancelUnpaidOnlineOrder } = require('./order.lifecycle');
+const inventoryReservationService = require('./inventoryReservation.service');
+const couponUsageService = require('../coupons/couponUsage.service');
+const loyaltyService = require('../loyalty/loyalty.service');
 
 class OrderService {
   /**
    * Resolve address: either from DB (addressId) or inline (shippingAddress)
    * Optionally saves inline address to DB if userId provided
    */
-  async resolveAddress(userId, addressId, shippingAddress) {
+  async resolveAddress(userId, addressId, shippingAddress, options = {}) {
+    const { saveInline = false, session = null } = options;
+
     if (addressId) {
-      const address = await Address.findOne({ _id: addressId, user: userId });
+      const addressQuery = Address.findOne({ _id: addressId, user: userId });
+      const address = session ? await addressQuery.session(session) : await addressQuery;
       if (!address) throw ApiError.badRequest('Invalid delivery address');
       return address;
     }
 
     if (shippingAddress) {
+      if (!saveInline) {
+        return {
+          fullName: shippingAddress.fullName,
+          phone: shippingAddress.phone,
+          addressLine1: shippingAddress.addressLine1,
+          addressLine2: shippingAddress.addressLine2 || '',
+          city: shippingAddress.city,
+          state: shippingAddress.state,
+          pincode: shippingAddress.pincode,
+          landmark: shippingAddress.landmark || '',
+        };
+      }
+
       const address = new Address({
         user: userId,
         ...shippingAddress,
       });
-      await address.save();
+      await address.save({ session });
       return address;
     }
 
@@ -79,7 +93,7 @@ class OrderService {
 
     // Check delivery zone
     const zone = await DeliveryZone.findOne({
-      city: { $regex: new RegExp(`^${address.city}$`, 'i') },
+      city: { $regex: new RegExp(`^${escapeRegex(address.city)}$`, 'i') },
       isActive: true,
     });
 
@@ -92,6 +106,47 @@ class OrderService {
     }
 
     return { cart, address, zone };
+  }
+
+  calculateCouponDiscount(coupon, subtotal) {
+    return couponUsageService.calculateDiscount(coupon, subtotal);
+  }
+
+  async validateCouponForCheckoutSession(couponCode, userId, subtotal, session) {
+    return couponUsageService.validateForCheckout({
+      couponCode,
+      userId,
+      subtotal,
+      session,
+    });
+  }
+
+  async consumeCouponUsageSession(coupon, userId, orderId, session) {
+    return couponUsageService.consumeForOrder({
+      coupon,
+      userId,
+      orderId,
+      session,
+    });
+  }
+
+  async calculateLoyaltyRedemptionSession(userId, redeemPoints, prePointsTotal, session) {
+    return loyaltyService.calculateRedemption({
+      userId,
+      redeemPoints,
+      prePointsTotal,
+      session,
+    });
+  }
+
+  async deductRedeemedPointsSession(userId, pointsRedeemed, orderId, orderNumber, session) {
+    return loyaltyService.redeemForOrder({
+      userId,
+      pointsRedeemed,
+      orderId,
+      orderNumber,
+      session,
+    });
   }
 
   /**
@@ -171,27 +226,10 @@ class OrderService {
       }
     }
 
-    // ── Loyalty Points Redemption ──────────────────────────────────────────
     let pointsRedeemed = 0;
     let pointsDiscount = 0;
 
-    if (redeemPoints && userId) {
-      const loyaltyConfig = env.loyalty;
-      const user = await User.findById(userId).select('loyaltyPoints');
-      const userBalance = user?.loyaltyPoints || 0;
-
-      if (userBalance >= loyaltyConfig.minRedeem) {
-        // Max discount from points = maxRedeemPercent% of (subtotal + deliveryCharge - couponDiscount)
-        const prePointsTotal = subtotal + deliveryCharge - discount;
-        const maxPointsDiscount = Math.floor(prePointsTotal * loyaltyConfig.maxRedeemPercent / 100);
-        // Max points the user can redeem (capped by balance and discount ceiling)
-        const maxRedeemablePoints = Math.floor(maxPointsDiscount / loyaltyConfig.pointValue);
-        pointsRedeemed = Math.min(userBalance, maxRedeemablePoints);
-        pointsDiscount = pointsRedeemed * loyaltyConfig.pointValue; // paise
-      }
-    }
-
-    const total = subtotal + deliveryCharge - discount - pointsDiscount;
+    let total = subtotal + deliveryCharge - discount - pointsDiscount;
     if (total <= 0) throw ApiError.badRequest('Invalid order total');
 
     // Generate order number
@@ -202,23 +240,46 @@ class OrderService {
     session.startTransaction();
 
     try {
+      let appliedCoupon = null;
+      if (couponCode) {
+        const couponResult = await this.validateCouponForCheckoutSession(couponCode, userId, subtotal, session);
+        appliedCoupon = couponResult.coupon;
+        discount = couponResult.discount;
+      }
+
+      const loyaltyResult = await this.calculateLoyaltyRedemptionSession(
+        userId,
+        redeemPoints,
+        subtotal + deliveryCharge - discount,
+        session
+      );
+      pointsRedeemed = loyaltyResult.pointsRedeemed;
+      pointsDiscount = loyaltyResult.pointsDiscount;
+      total = subtotal + deliveryCharge - discount - pointsDiscount;
+      if (total <= 0) throw ApiError.badRequest('Invalid order total');
+
+      let orderAddress = address;
+      if (!addressId && shippingAddress && checkoutData.saveAddress) {
+        orderAddress = await this.resolveAddress(userId, null, shippingAddress, { saveInline: true, session });
+      }
+
       const order = await Order.create([{
         orderNumber,
         user: userId,
         items: orderItems,
         shippingAddress: {
-          fullName: address.fullName,
-          phone: address.phone,
-          addressLine1: address.addressLine1,
-          addressLine2: address.addressLine2,
-          city: address.city,
-          state: address.state,
-          pincode: address.pincode,
-          landmark: address.landmark,
+          fullName: orderAddress.fullName,
+          phone: orderAddress.phone,
+          addressLine1: orderAddress.addressLine1,
+          addressLine2: orderAddress.addressLine2,
+          city: orderAddress.city,
+          state: orderAddress.state,
+          pincode: orderAddress.pincode,
+          landmark: orderAddress.landmark,
         },
         deliveryDate: new Date(deliveryDate),
         deliverySlot: deliverySlot || {},
-        deliveryCity: address.city,
+        deliveryCity: orderAddress.city,
         subtotal,
         deliveryCharge,
         discount,
@@ -227,10 +288,14 @@ class OrderService {
         pointsDiscount,
         tax: 0,
         total,
-        status: ORDER_STATUSES.PENDING,
+        status: paymentMethod === 'cod' ? ORDER_STATUSES.CONFIRMED : ORDER_STATUSES.PENDING,
         paymentMethod: paymentMethod || 'cod',
         paymentStatus: 'pending',
-        statusHistory: [{ status: ORDER_STATUSES.PENDING, timestamp: new Date(), note: 'Order created' }],
+        statusHistory: [{
+          status: paymentMethod === 'cod' ? ORDER_STATUSES.CONFIRMED : ORDER_STATUSES.PENDING,
+          timestamp: new Date(),
+          note: paymentMethod === 'cod' ? 'COD order confirmed' : 'Order created',
+        }],
         specialInstructions: specialInstructions || '',
         isGift: isGift || false,
         giftMessage: giftMessage || '',
@@ -238,17 +303,25 @@ class OrderService {
 
       const createdOrder = order[0];
 
+      const reservationExpiresAt = paymentMethod === 'online'
+        ? new Date(Date.now() + env.orders.onlinePaymentExpiryMinutes * 60 * 1000)
+        : null;
+
+      await inventoryReservationService.reserveForOrder({
+        order: createdOrder,
+        items: orderItems,
+        user: userId,
+        status: paymentMethod === 'cod' ? 'confirmed' : 'reserved',
+        expiresAt: reservationExpiresAt,
+        reason: paymentMethod === 'cod' ? 'COD order confirmed' : 'Awaiting online payment',
+        session,
+      });
+
       // ── Deduct loyalty points (inside transaction for atomicity) ──────────
-      if (pointsRedeemed > 0 && userId) {
-        await User.findByIdAndUpdate(userId, { $inc: { loyaltyPoints: -pointsRedeemed } }, { session });
-        await LoyaltyPoints.create([{
-          user: userId,
-          type: 'redeemed',
-          points: -pointsRedeemed,
-          source: 'order',
-          referenceId: createdOrder._id,
-          description: `Redeemed ${pointsRedeemed} points for order ${orderNumber}`,
-        }], { session });
+      await this.deductRedeemedPointsSession(userId, pointsRedeemed, createdOrder._id, orderNumber, session);
+
+      if (appliedCoupon) {
+        await this.consumeCouponUsageSession(appliedCoupon, userId, createdOrder._id, session);
       }
 
       // Clear COD cart immediately. Online cart is cleared after payment verification.
@@ -280,14 +353,6 @@ class OrderService {
           status: PAYMENT_STATUSES.PENDING,
           method: 'cod',
         }], { session });
-
-        // FIX: Decrement stock for COD orders (was missing — caused overselling)
-        await this.decrementStockSession(orderItems, session, createdOrder.orderNumber);
-
-        // FIX: Record coupon usage for COD orders (was missing — allowed unlimited reuse)
-        if (couponCode) {
-          await this.recordCouponUsageSession(couponCode, userId, createdOrder._id, session);
-        }
 
         await session.commitTransaction();
         cache.del('admin:dashboard');
@@ -344,8 +409,8 @@ class OrderService {
           description: `Order ${orderNumber}`,
           order_id: razorpayOrder.id,
           prefill: {
-            name: address.fullName,
-            contact: address.phone,
+            name: orderAddress.fullName,
+            contact: orderAddress.phone,
           },
         },
       };
@@ -386,19 +451,12 @@ class OrderService {
    * Record coupon usage within a transaction session (for COD orders)
    */
   async recordCouponUsageSession(couponCode, userId, orderId, session) {
-    const coupon = await Coupon.findOne({ code: couponCode });
-    if (coupon) {
-      await CouponUsage.create([{
-        coupon: coupon._id,
-        user: userId,
-        order: orderId,
-      }], { session });
-      await Coupon.findByIdAndUpdate(
-        coupon._id,
-        { $inc: { usageCount: 1 } },
-        { session }
-      );
-    }
+    return couponUsageService.consumeForOrder({
+      couponCode,
+      userId,
+      orderId,
+      session,
+    });
   }
 
   /**
@@ -484,37 +542,16 @@ class OrderService {
       });
       await order.save({ session });
 
+      await inventoryReservationService.releaseForOrder(order, session, {
+        reason: 'Cancelled by customer',
+      });
+
       // ── Refund redeemed loyalty points (inside transaction) ──────────────
-      if (order.pointsRedeemed > 0 && order.user) {
-        await User.findByIdAndUpdate(
-          order.user,
-          { $inc: { loyaltyPoints: order.pointsRedeemed } },
-          { session }
-        );
-        await LoyaltyPoints.create([{
-          user: order.user,
-          type: 'adjusted',
-          points: order.pointsRedeemed,
-          source: 'order',
-          referenceId: order._id,
-          description: `Points refunded for cancelled order ${order.orderNumber}`,
-        }], { session });
-      }
-
-      // ── FIX: Bulk stock restore (was N+1 sequential queries) ─────────────
-      const bulkOps = order.items
-        .filter((item) => item.product)
-        .map((item) => ({
-          updateOne: {
-            filter: { product: item.product, weight: item.weight },
-            update: { $inc: { stock: item.quantity } },
-          },
-        }));
-
-      if (bulkOps.length > 0) {
-        await Variant.bulkWrite(bulkOps, { session });
-      }
-
+      await loyaltyService.restoreForOrder(order, {
+        session,
+        eventType: loyaltyService.EVENTS.ORDER_CANCELLED_RESTORE,
+        reason: `Points refunded for cancelled order ${order.orderNumber}`,
+      });
       await session.commitTransaction();
 
       // Send cancellation notification (fire-and-forget, outside transaction)
@@ -542,14 +579,14 @@ class OrderService {
    * Admin: Update order status
    */
   async updateOrderStatus(orderId, status, note, adminId) {
-    const order = await Order.findById(orderId);
-    if (!order) throw ApiError.notFound('Order not found');
+    const initialOrder = await Order.findById(orderId);
+    if (!initialOrder) throw ApiError.notFound('Order not found');
 
-    if (!canMoveOnlineOrderToStatus(order, status)) {
+    if (!canMoveOnlineOrderToStatus(initialOrder, status)) {
       throw ApiError.badRequest('Unpaid online orders can only be cancelled');
     }
 
-    if (order.paymentMethod === 'online' && order.paymentStatus !== 'paid' && status === ORDER_STATUSES.CANCELLED) {
+    if (initialOrder.paymentMethod === 'online' && initialOrder.paymentStatus !== 'paid' && status === ORDER_STATUSES.CANCELLED) {
       const session = await mongoose.startSession();
       let cancelledOrderId = null;
 
@@ -580,42 +617,39 @@ class OrderService {
       return Order.findById(cancelledOrderId);
     }
 
-    order.status = status;
-    order.statusHistory.push({
-      status,
-      timestamp: new Date(),
-      note: note || `Status changed to ${status}`,
-      updatedBy: adminId,
-    });
+    const session = await mongoose.startSession();
+    let updatedOrderId = null;
 
-    if (status === ORDER_STATUSES.DELIVERED && order.user) {
-      // Award loyalty points — uses env config, with idempotency guard
-      try {
-        // Idempotency: skip if points were already awarded for this order
-        const existingAward = await LoyaltyPoints.findOne({ referenceId: order._id, type: 'earned' });
-        if (!existingAward) {
-          const totalInRupees = order.total / 100; // paise → rupees
-          const pointsEarned = Math.floor(totalInRupees * env.loyalty.pointsPerRupee);
-          if (pointsEarned > 0) {
-            await LoyaltyPoints.create({
-              user: order.user,
-              type: 'earned',
-              points: pointsEarned,
-              source: 'order',
-              referenceId: order._id,
-              description: `Points earned for order ${order.orderNumber}`,
-            });
-            await User.findByIdAndUpdate(order.user, { $inc: { loyaltyPoints: pointsEarned } });
-          }
+    try {
+      await session.withTransaction(async () => {
+        const order = await Order.findById(orderId).session(session);
+        if (!order) throw ApiError.notFound('Order not found');
+
+        if (!canMoveOnlineOrderToStatus(order, status)) {
+          throw ApiError.badRequest('Unpaid online orders can only be cancelled');
         }
-      } catch (lpErr) {
-        logger.warn('Loyalty points award failed:', lpErr.message);
-      }
+
+        order.status = status;
+        order.statusHistory.push({
+          status,
+          timestamp: new Date(),
+          note: note || `Status changed to ${status}`,
+          updatedBy: adminId,
+        });
+
+        if (status === ORDER_STATUSES.DELIVERED && order.user) {
+          await loyaltyService.earnForDeliveredOrder(order, { session });
+        }
+
+        await order.save({ session });
+        updatedOrderId = order._id;
+      });
+    } finally {
+      session.endSession();
     }
 
-    await order.save();
     cache.del('admin:dashboard');
-    return order;
+    return Order.findById(updatedOrderId);
   }
 
   /**

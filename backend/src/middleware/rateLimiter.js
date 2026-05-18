@@ -1,42 +1,123 @@
 const rateLimit = require('express-rate-limit');
+const authSecurityService = require('../modules/auth/authSecurity.service');
+const { createRateLimitStore } = require('./rateLimitStore');
 
-/**
- * General API rate limiter
- * 300 requests per 15 minutes per IP
- */
-const apiLimiter = rateLimit({
-  windowMs: 15 * 60 * 1000, // 15 minutes
+const FIFTEEN_MINUTES = 15 * 60 * 1000;
+const ONE_HOUR = 60 * 60 * 1000;
+const ONE_MINUTE = 60 * 1000;
+
+const createLimiter = (name, options) => {
+  const store = createRateLimitStore(name);
+  return rateLimit({
+    ...options,
+    ...(store && { store, passOnStoreError: false }),
+  });
+};
+
+const matchesRoutePath = (req, pathName) => {
+  const url = req.originalUrl || '';
+  return url === pathName || url.startsWith(`${pathName}?`) || url.startsWith(`${pathName}/`);
+};
+
+const isWhatsAppWebhookPost = (req) => (
+  req.method === 'POST' &&
+  matchesRoutePath(req, '/api/v1/chatbot/webhook')
+);
+
+const isHealthRoute = (req) => (
+  req.method === 'GET' && (
+    matchesRoutePath(req, '/api/v1/health') ||
+    matchesRoutePath(req, '/api/v1/health/readiness')
+  )
+);
+
+const apiLimiter = createLimiter('api', {
+  windowMs: FIFTEEN_MINUTES,
   max: 300,
   standardHeaders: true,
   legacyHeaders: false,
+  skip: (req) => isWhatsAppWebhookPost(req) || isHealthRoute(req),
   message: {
     success: false,
     message: 'Too many requests, please try again after 15 minutes',
   },
 });
 
-/**
- * Stricter limiter for auth routes (login, register, forgot-password)
- * Prevents brute-force attacks — 20 attempts per 15 minutes per IP
- */
-const authLimiter = rateLimit({
-  windowMs: 15 * 60 * 1000,
+const authLimiter = createLimiter('auth-general', {
+  windowMs: FIFTEEN_MINUTES,
   max: 20,
   standardHeaders: true,
   legacyHeaders: false,
-  skipSuccessfulRequests: true, // Only count failed attempts
+  skipSuccessfulRequests: true,
   message: {
     success: false,
     message: 'Too many authentication attempts, please try again after 15 minutes',
   },
 });
 
-/**
- * Limiter for payment routes
- * Prevents payment abuse — 10 per minute
- */
-const paymentLimiter = rateLimit({
-  windowMs: 1 * 60 * 1000, // 1 minute
+const loginLimiter = createLimiter('auth-login', {
+  windowMs: FIFTEEN_MINUTES,
+  max: 10,
+  standardHeaders: true,
+  legacyHeaders: false,
+  skipSuccessfulRequests: true,
+  message: {
+    success: false,
+    message: 'Too many login attempts, please try again after 15 minutes',
+  },
+});
+
+const registrationLimiter = createLimiter('auth-register', {
+  windowMs: ONE_HOUR,
+  max: 5,
+  standardHeaders: true,
+  legacyHeaders: false,
+  message: {
+    success: false,
+    message: 'Too many registration attempts, please try again later',
+  },
+});
+
+const passwordResetLimiter = createLimiter('auth-password-reset', {
+  windowMs: FIFTEEN_MINUTES,
+  max: 5,
+  standardHeaders: true,
+  legacyHeaders: false,
+  message: {
+    success: false,
+    message: 'Too many password reset attempts, please try again after 15 minutes',
+  },
+});
+
+const phoneVerificationLimiter = createLimiter('auth-phone-verification', {
+  windowMs: FIFTEEN_MINUTES,
+  max: 5,
+  standardHeaders: true,
+  legacyHeaders: false,
+  message: {
+    success: false,
+    message: 'Too many phone verification attempts, please try again after 15 minutes',
+  },
+});
+
+const adminLoginLimiter = createLimiter('auth-admin-login', {
+  windowMs: FIFTEEN_MINUTES,
+  max: 5,
+  standardHeaders: true,
+  legacyHeaders: false,
+  skipSuccessfulRequests: true,
+  skip: (req) => !authSecurityService.isAdminLoginRequest(req.body),
+  handler: async (req, res) => {
+    await authSecurityService.recordAdminLoginRateLimited(req);
+    return res.status(429).json({
+      success: false,
+      message: 'Too many admin login attempts, please try again after 15 minutes',
+    });
+  },
+});
+
+const paymentLimiter = createLimiter('payments', {
+  windowMs: ONE_MINUTE,
   max: 10,
   standardHeaders: true,
   legacyHeaders: false,
@@ -46,12 +127,19 @@ const paymentLimiter = rateLimit({
   },
 });
 
-/**
- * Limiter for search and listing endpoints
- * Prevents scraping — 60 requests per minute
- */
-const searchLimiter = rateLimit({
-  windowMs: 1 * 60 * 1000, // 1 minute
+const whatsappWebhookLimiter = createLimiter('webhook-whatsapp', {
+  windowMs: ONE_MINUTE,
+  max: 1000,
+  standardHeaders: true,
+  legacyHeaders: false,
+  message: {
+    success: false,
+    message: 'Too many webhook requests, please slow down',
+  },
+});
+
+const searchLimiter = createLimiter('search', {
+  windowMs: ONE_MINUTE,
   max: 60,
   standardHeaders: true,
   legacyHeaders: false,
@@ -61,12 +149,8 @@ const searchLimiter = rateLimit({
   },
 });
 
-/**
- * Limiter for inquiry/contact form submissions
- * Prevents spam — 5 submissions per 15 minutes
- */
-const inquiryLimiter = rateLimit({
-  windowMs: 15 * 60 * 1000,
+const inquiryLimiter = createLimiter('inquiries', {
+  windowMs: FIFTEEN_MINUTES,
   max: 5,
   standardHeaders: true,
   legacyHeaders: false,
@@ -76,12 +160,8 @@ const inquiryLimiter = rateLimit({
   },
 });
 
-/**
- * Limiter for order creation
- * Prevents bot abuse — 10 orders per 15 minutes
- */
-const orderLimiter = rateLimit({
-  windowMs: 15 * 60 * 1000,
+const orderLimiter = createLimiter('orders', {
+  windowMs: FIFTEEN_MINUTES,
   max: 10,
   standardHeaders: true,
   legacyHeaders: false,
@@ -91,11 +171,29 @@ const orderLimiter = rateLimit({
   },
 });
 
+const couponLimiter = createLimiter('coupons', {
+  windowMs: FIFTEEN_MINUTES,
+  max: 30,
+  standardHeaders: true,
+  legacyHeaders: false,
+  message: {
+    success: false,
+    message: 'Too many coupon attempts, please try again later',
+  },
+});
+
 module.exports = {
   apiLimiter,
   authLimiter,
+  loginLimiter,
+  registrationLimiter,
+  passwordResetLimiter,
+  phoneVerificationLimiter,
+  adminLoginLimiter,
   paymentLimiter,
+  whatsappWebhookLimiter,
   searchLimiter,
   inquiryLimiter,
   orderLimiter,
+  couponLimiter,
 };

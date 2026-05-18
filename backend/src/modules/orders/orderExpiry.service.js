@@ -7,6 +7,7 @@ const { getRazorpayInstance } = require('../../config/razorpay');
 const { ORDER_STATUSES, PAYMENT_STATUSES } = require('../../utils/constants');
 const logger = require('../../middleware/logger');
 const { cancelUnpaidOnlineOrder } = require('./order.lifecycle');
+const paymentService = require('../payments/payment.service');
 
 const JOB_LOCK_NAME = 'expire-stale-online-orders';
 const STALE_PAYMENT_STATUSES = ['pending', 'failed'];
@@ -56,14 +57,16 @@ class OrderExpiryService {
     );
   }
 
-  async hasCapturedProviderPayment(payment) {
+  async getProviderPaymentForReconciliation(payment) {
     if (!payment?.razorpayOrderId) return false;
 
     try {
       const razorpay = getRazorpayInstance();
       const result = await razorpay.orders.fetchPayments(payment.razorpayOrderId);
       const payments = Array.isArray(result?.items) ? result.items : [];
-      return payments.some((item) => item.status === 'captured' || item.status === 'authorized');
+      return payments.find((item) => item.status === 'captured') ||
+        payments.find((item) => item.status === 'authorized') ||
+        null;
     } catch (error) {
       logger.warn(`[OrderExpiry] Razorpay reconciliation skipped for ${payment.razorpayOrderId}: ${error.message}`);
       return true;
@@ -76,7 +79,31 @@ class OrderExpiryService {
       return { expired: false, reason: 'already_captured' };
     }
 
-    if (await this.hasCapturedProviderPayment(payment)) {
+    const providerPayment = await this.getProviderPaymentForReconciliation(payment);
+    if (providerPayment?.status === 'captured') {
+      const repair = await paymentService.reconcileCapturedProviderPayment(payment, providerPayment);
+      return {
+        expired: false,
+        reason: repair.reason || 'provider_captured_reconciliation_checked',
+        orderNumber: repair.orderNumber,
+      };
+    }
+
+    if (providerPayment?.status === 'authorized') {
+      await Payment.findOneAndUpdate(
+        { _id: payment._id, status: { $ne: PAYMENT_STATUSES.CAPTURED } },
+        {
+          $set: {
+            status: PAYMENT_STATUSES.AUTHORIZED,
+            razorpayPaymentId: providerPayment.id || payment.razorpayPaymentId || '',
+            method: providerPayment.method || payment.method || 'online',
+          },
+        }
+      );
+      return { expired: false, reason: 'provider_payment_authorized' };
+    }
+
+    if (providerPayment === true) {
       return { expired: false, reason: 'provider_reconciliation_pending' };
     }
 

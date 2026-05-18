@@ -99,21 +99,19 @@ class ProductService {
    */
   async getProductBySlug(slug) {
     const cacheKey = `products:slug:${slug}`;
-    const cached = cache.get(cacheKey);
-    if (cached) return cached;
+    return cache.getOrSet(cacheKey, async () => {
+      const product = await Product.findOne({ slug, isActive: true })
+        .populate('category', 'name slug')
+        .populate({
+          path: 'variants',
+          match: { isActive: true },
+          options: { sort: { price: 1 } },
+        })
+        .lean();
 
-    const product = await Product.findOne({ slug, isActive: true })
-      .populate('category', 'name slug')
-      .populate({
-        path: 'variants',
-        match: { isActive: true },
-        options: { sort: { price: 1 } },
-      })
-      .lean();
-
-    if (!product) throw ApiError.notFound('Product not found');
-    cache.set(cacheKey, product, 120); // Cache 2 minutes
-    return product;
+      if (!product) throw ApiError.notFound('Product not found');
+      return product;
+    }, 120); // Cache 2 minutes
   }
 
   /**
@@ -165,18 +163,27 @@ class ProductService {
     const { page, limit, skip } = parsePagination(query);
     const filter = { isActive: true, occasions: occasion };
 
-    const [products, total] = await Promise.all([
-      Product.find(filter)
-        .populate('category', 'name slug')
-        .populate({ path: 'variants', match: { isActive: true }, options: { sort: { price: 1 } } })
-        .sort({ totalOrders: -1 })
-        .skip(skip)
-        .limit(limit)
-        .lean(),
-      Product.countDocuments(filter),
-    ]);
+    const cacheKey = cache.buildKey('products:occasion', {
+      occasion,
+      page,
+      limit,
+      sort: query.sort,
+    });
 
-    return paginatedResponse(products, total, page, limit);
+    return cache.getOrSet(cacheKey, async () => {
+      const [products, total] = await Promise.all([
+        Product.find(filter)
+          .populate('category', 'name slug')
+          .populate({ path: 'variants', match: { isActive: true }, options: { sort: { price: 1 } } })
+          .sort({ totalOrders: -1 })
+          .skip(skip)
+          .limit(limit)
+          .lean(),
+        Product.countDocuments(filter),
+      ]);
+
+      return paginatedResponse(products, total, page, limit);
+    }, 60);
   }
 
   /**
@@ -205,7 +212,7 @@ class ProductService {
     }
 
     // Invalidate product caches
-    cache.invalidatePattern('products:');
+    await cache.invalidatePattern('products:');
 
     return product;
   }
@@ -237,7 +244,7 @@ class ProductService {
       uploadService.deleteImages(stalePublicIds);
     }
 
-    cache.invalidatePattern('products:');
+    await cache.invalidatePattern('products:');
     return product;
   }
 
@@ -247,7 +254,7 @@ class ProductService {
   async deleteProduct(productId) {
     const product = await Product.findByIdAndUpdate(productId, { isActive: false }, { new: true });
     if (!product) throw ApiError.notFound('Product not found');
-    cache.invalidatePattern('products:');
+    await cache.invalidatePattern('products:');
     return product;
   }
 
@@ -258,7 +265,9 @@ class ProductService {
     const product = await Product.findById(productId);
     if (!product) throw ApiError.notFound('Product not found');
 
-    return Variant.create({ ...data, product: productId });
+    const variant = await Variant.create({ ...data, product: productId });
+    await cache.invalidatePattern('products:');
+    return variant;
   }
 
   /**
@@ -271,6 +280,7 @@ class ProductService {
       { new: true, runValidators: true }
     );
     if (!variant) throw ApiError.notFound('Variant not found');
+    await cache.invalidatePattern('products:');
     return variant;
   }
 

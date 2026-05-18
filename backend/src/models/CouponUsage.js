@@ -11,8 +11,20 @@ const couponUsageSchema = new mongoose.Schema(
     user: {
       type: mongoose.Schema.Types.ObjectId,
       ref: 'User',
-      required: true,
+      required: false,
+      default: null,
       index: true,
+    },
+    guestEmail: {
+      type: String,
+      default: '',
+      lowercase: true,
+      trim: true,
+    },
+    guestPhone: {
+      type: String,
+      default: '',
+      trim: true,
     },
     order: {
       type: mongoose.Schema.Types.ObjectId,
@@ -28,5 +40,12 @@ const couponUsageSchema = new mongoose.Schema(
 );
 
 couponUsageSchema.index({ coupon: 1, user: 1 });
+couponUsageSchema.index({ coupon: 1, order: 1 }, { unique: true });
+couponUsageSchema.index(
+  { coupon: 1, user: 1, order: 1 },
+  { unique: true, partialFilterExpression: { user: { $type: 'objectId' } } }
+);
+couponUsageSchema.index({ coupon: 1, guestEmail: 1 });
+couponUsageSchema.index({ coupon: 1, guestPhone: 1 });
 
 module.exports = mongoose.model('CouponUsage', couponUsageSchema);

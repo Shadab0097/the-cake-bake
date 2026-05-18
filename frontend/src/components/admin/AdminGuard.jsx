@@ -9,12 +9,6 @@ export default function AdminGuard({ children }) {
   const router = useRouter();
 
   useEffect(() => {
-    const token = localStorage.getItem('adminAccessToken');
-    if (!token) {
-      router.replace('/admin-login');
-      return;
-    }
-
     adminApiClient.get('/users/me')
       .then((res) => {
         const user = res.data.data;

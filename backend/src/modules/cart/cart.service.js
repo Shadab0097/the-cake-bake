@@ -2,9 +2,8 @@ const Cart = require('../../models/Cart');
 const Product = require('../../models/Product');
 const Variant = require('../../models/Variant');
 const AddOn = require('../../models/AddOn');
-const Coupon = require('../../models/Coupon');
-const CouponUsage = require('../../models/CouponUsage');
 const ApiError = require('../../utils/ApiError');
+const couponUsageService = require('../coupons/couponUsage.service');
 
 class CartService {
   /**
@@ -128,29 +127,17 @@ class CartService {
    * Apply coupon to cart
    */
   async applyCoupon(userId, couponCode) {
-    const coupon = await Coupon.findOne({
-      code: couponCode.toUpperCase(),
-      isActive: true,
-      validFrom: { $lte: new Date() },
-      validUntil: { $gte: new Date() },
-    });
-
-    if (!coupon) throw ApiError.badRequest('Invalid or expired coupon');
-
-    // Check usage limits
-    if (coupon.usageLimit > 0 && coupon.usageCount >= coupon.usageLimit) {
-      throw ApiError.badRequest('Coupon usage limit reached');
-    }
-
-    const userUsage = await CouponUsage.countDocuments({ coupon: coupon._id, user: userId });
-    if (userUsage >= coupon.perUserLimit) {
-      throw ApiError.badRequest('You have already used this coupon');
-    }
-
     const cart = await Cart.findOne({ user: userId });
     if (!cart || cart.items.length === 0) {
       throw ApiError.badRequest('Cart is empty');
     }
+
+    const populatedCart = await this.getCart(userId);
+    const { coupon } = await couponUsageService.validateForCheckout({
+      couponCode,
+      userId,
+      subtotal: populatedCart.subtotal,
+    });
 
     cart.appliedCoupon = coupon._id;
     await cart.save();

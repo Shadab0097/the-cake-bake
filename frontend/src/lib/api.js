@@ -40,12 +40,20 @@ const processQueue = (error, token = null) => {
   failedQueue = [];
 };
 
+const shouldSkipRefresh = (url = '') => (
+  url.includes('/auth/login') ||
+  url.includes('/auth/register') ||
+  url.includes('/auth/refresh') ||
+  url.includes('/auth/forgot-password') ||
+  url.includes('/auth/reset-password')
+);
+
 api.interceptors.response.use(
   (response) => response,
   async (error) => {
     const originalRequest = error.config;
 
-    if (error.response?.status === 401 && !originalRequest._retry) {
+    if (error.response?.status === 401 && !originalRequest._retry && !shouldSkipRefresh(originalRequest.url || '')) {
       if (isRefreshing) {
         return new Promise((resolve, reject) => {
           failedQueue.push({ resolve, reject });
@@ -61,18 +69,15 @@ api.interceptors.response.use(
       isRefreshing = true;
 
       try {
-        const refreshToken = localStorage.getItem('refreshToken');
-        if (!refreshToken) {
-          throw new Error('No refresh token');
-        }
+        const res = await axios.post(
+          `${API_BASE_URL}/auth/refresh`,
+          { scope: 'customer' },
+          { withCredentials: true }
+        );
 
-        const res = await axios.post(`${API_BASE_URL}/auth/refresh`, {
-          refreshToken,
-        });
-
-        const { accessToken, refreshToken: newRefreshToken } = res.data.data;
+        const { accessToken } = res.data.data;
         localStorage.setItem('accessToken', accessToken);
-        localStorage.setItem('refreshToken', newRefreshToken);
+        localStorage.removeItem('refreshToken');
 
         processQueue(null, accessToken);
         originalRequest.headers.Authorization = `Bearer ${accessToken}`;

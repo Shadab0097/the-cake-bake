@@ -26,6 +26,10 @@ const notificationLogSchema = new mongoose.Schema(
       type: String,
       default: '',
     },
+    idempotencyKey: {
+      type: String,
+      default: '',
+    },
     // templateParams intentionally omitted — not needed for audit, reduces doc size
     status: {
       type: String,
@@ -50,6 +54,10 @@ const notificationLogSchema = new mongoose.Schema(
 
 notificationLogSchema.index({ user: 1, createdAt: -1 });
 notificationLogSchema.index({ channel: 1, type: 1, createdAt: -1 });
+notificationLogSchema.index(
+  { idempotencyKey: 1 },
+  { unique: true, partialFilterExpression: { idempotencyKey: { $type: 'string', $gt: '' } } }
+);
 
 // TTL index — MongoDB auto-deletes notification logs older than 24 hours
 // (runs as a background task every ~60s, zero app-level maintenance needed)

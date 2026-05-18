@@ -56,6 +56,7 @@ const paymentSchema = new mongoose.Schema(
     },
     webhookEvents: [
       {
+        eventId: { type: String, default: '' },
         event: { type: String },
         payload: { type: mongoose.Schema.Types.Mixed },
         receivedAt: { type: Date, default: Date.now },
@@ -68,5 +69,6 @@ const paymentSchema = new mongoose.Schema(
 paymentSchema.index({ razorpayOrderId: 1 });
 paymentSchema.index({ razorpayPaymentId: 1 });
 paymentSchema.index({ status: 1 });
+paymentSchema.index({ 'webhookEvents.eventId': 1 });
 
 module.exports = mongoose.model('Payment', paymentSchema);

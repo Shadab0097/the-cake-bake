@@ -1,3 +1,4 @@
+const mongoose = require('mongoose');
 const Order = require('../../models/Order');
 const User = require('../../models/User');
 const Product = require('../../models/Product');
@@ -5,6 +6,7 @@ const Payment = require('../../models/Payment');
 const { startOfDay, endOfDay, escapeRegex } = require('../../utils/helpers');
 const { ORDER_STATUSES } = require('../../utils/constants');
 const cache = require('../../utils/cache');
+const loyaltyService = require('../loyalty/loyalty.service');
 
 class AdminService {
   /**
@@ -212,33 +214,29 @@ class AdminService {
    * @param {string} adminId - who performed the action
    */
   async adjustCustomerPoints(customerId, points, reason, adminId) {
-    const LoyaltyPoints = require('../../models/LoyaltyPoints');
     const ApiError = require('../../utils/ApiError');
+    const session = await mongoose.startSession();
+    let result = null;
 
-    const customer = await User.findById(customerId);
-    if (!customer) throw ApiError.notFound('Customer not found');
+    try {
+      await session.withTransaction(async () => {
+        const customer = await User.findById(customerId).select('_id').session(session);
+        if (!customer) throw ApiError.notFound('Customer not found');
 
-    // Prevent negative balance
-    const newBalance = (customer.loyaltyPoints || 0) + points;
-    if (newBalance < 0) {
-      throw ApiError.badRequest(`Cannot deduct ${Math.abs(points)} points. Customer only has ${customer.loyaltyPoints || 0} points.`);
+        result = await loyaltyService.adjustBalance({
+          userId: customerId,
+          points,
+          source: 'admin',
+          referenceId: adminId,
+          description: reason,
+          session,
+        });
+      });
+    } finally {
+      session.endSession();
     }
 
-    // Update balance
-    customer.loyaltyPoints = newBalance;
-    await customer.save();
-
-    // Create transaction record
-    await LoyaltyPoints.create({
-      user: customerId,
-      type: 'adjusted',
-      points,
-      source: 'admin',
-      referenceId: adminId,
-      description: reason,
-    });
-
-    return { loyaltyPoints: newBalance };
+    return result;
   }
 }
 

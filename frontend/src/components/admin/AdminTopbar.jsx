@@ -2,14 +2,21 @@
 
 import { useRouter } from 'next/navigation';
 import { HiOutlineBars3, HiOutlineArrowRightStartOnRectangle } from 'react-icons/hi2';
+import adminApiClient from '@/lib/adminApiClient';
 
 export default function AdminTopbar({ user, onMenuToggle }) {
   const router = useRouter();
 
-  const handleLogout = () => {
-    localStorage.removeItem('adminAccessToken');
-    localStorage.removeItem('adminRefreshToken');
-    router.replace('/admin-login');
+  const handleLogout = async () => {
+    try {
+      await adminApiClient.post('/auth/logout', { scope: 'admin' });
+    } catch {
+      // Client cleanup below still removes local access if the server session already expired.
+    } finally {
+      localStorage.removeItem('adminAccessToken');
+      localStorage.removeItem('adminRefreshToken');
+      router.replace('/admin-login');
+    }
   };
 
   return (

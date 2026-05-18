@@ -54,7 +54,7 @@ const updateAvatar = asyncHandler(async (req, res) => {
       req.user._id,
       { avatar: uploaded.url, avatarPublicId: uploaded.publicId },
       { new: true }
-    ).select('-passwordHash -refreshToken');
+    ).select('-passwordHash -refreshToken -adminRefreshToken');
 
     await uploadService.deleteImage(currentUser?.avatarPublicId);
     ApiResponse.ok({ avatar: user.avatar, avatarPublicId: user.avatarPublicId }, 'Avatar updated').send(res);

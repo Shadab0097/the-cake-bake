@@ -1,9 +1,10 @@
 const Payment = require('../../models/Payment');
-const User = require('../../models/User');
-const LoyaltyPoints = require('../../models/LoyaltyPoints');
 const { ORDER_STATUSES, PAYMENT_STATUSES } = require('../../utils/constants');
 const cache = require('../../utils/cache');
 const { sanitize } = require('../../utils/xssSanitizer');
+const inventoryReservationService = require('./inventoryReservation.service');
+const couponUsageService = require('../coupons/couponUsage.service');
+const loyaltyService = require('../loyalty/loyalty.service');
 
 const canMoveOnlineOrderToStatus = (order, nextStatus) => {
   if (order.paymentMethod !== 'online') return true;
@@ -11,23 +12,12 @@ const canMoveOnlineOrderToStatus = (order, nextStatus) => {
   return nextStatus === ORDER_STATUSES.CANCELLED;
 };
 
-const restoreRedeemedPoints = async (order, session, reason) => {
-  if (!order.user || !order.pointsRedeemed || order.pointsRedeemed <= 0) return;
-
-  await User.findByIdAndUpdate(
-    order.user,
-    { $inc: { loyaltyPoints: order.pointsRedeemed } },
-    { session }
-  );
-
-  await LoyaltyPoints.create([{
-    user: order.user,
-    type: 'adjusted',
-    points: order.pointsRedeemed,
-    source: 'order',
-    referenceId: order._id,
-    description: reason,
-  }], { session });
+const restoreRedeemedPoints = async (order, session, reason, eventType = '') => {
+  return loyaltyService.restoreForOrder(order, {
+    session,
+    reason,
+    eventType: eventType || loyaltyService.EVENTS.ORDER_PAYMENT_RESTORE,
+  });
 };
 
 const cancelUnpaidOnlineOrder = async (order, options = {}) => {
@@ -38,6 +28,7 @@ const cancelUnpaidOnlineOrder = async (order, options = {}) => {
     note = 'Online payment failed',
     paymentEvent = 'payment.failed',
     paymentPayload = {},
+    paymentEventId = '',
     razorpayPaymentId = '',
     paymentMethod = '',
   } = options;
@@ -57,11 +48,15 @@ const cancelUnpaidOnlineOrder = async (order, options = {}) => {
     payment.status = paymentRecordStatus;
     if (razorpayPaymentId) payment.razorpayPaymentId = razorpayPaymentId;
     payment.method = paymentMethod || payment.method || 'online';
-    payment.webhookEvents.push({
-      event: paymentEvent,
-      payload: paymentPayload,
-      receivedAt: new Date(),
-    });
+    const hasEvent = paymentEventId && payment.webhookEvents.some((entry) => entry.eventId === paymentEventId);
+    if (!hasEvent) {
+      payment.webhookEvents.push({
+        eventId: paymentEventId,
+        event: paymentEvent,
+        payload: paymentPayload,
+        receivedAt: new Date(),
+      });
+    }
     await payment.save({ session });
   }
 
@@ -76,8 +71,16 @@ const cancelUnpaidOnlineOrder = async (order, options = {}) => {
   await restoreRedeemedPoints(
     order,
     session,
-    `Refunded ${order.pointsRedeemed || 0} points for ${safeNote.toLowerCase()} (${order.orderNumber})`
+    `Refunded ${order.pointsRedeemed || 0} points for ${safeNote.toLowerCase()} (${order.orderNumber})`,
+    loyaltyService.EVENTS.ORDER_PAYMENT_RESTORE
   );
+
+  await couponUsageService.releaseForOrder(order, session);
+
+  await inventoryReservationService.releaseForOrder(order, session, {
+    status: paymentStatus === 'expired' ? 'expired' : 'released',
+    reason: safeNote,
+  });
 
   await order.save({ session });
   cache.del('admin:dashboard');

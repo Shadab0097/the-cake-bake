@@ -2,19 +2,26 @@ const AddOn = require('../../models/AddOn');
 const ApiError = require('../../utils/ApiError');
 const { generateSlug } = require('../../utils/helpers');
 const uploadService = require('../media/upload.service');
+const cache = require('../../utils/cache');
 
 class AddOnService {
   async listAddOns() {
-    return AddOn.find({ isActive: true }).sort({ category: 1, sortOrder: 1 }).lean();
+    return cache.getOrSet('addons:list', () => {
+      return AddOn.find({ isActive: true }).sort({ category: 1, sortOrder: 1 }).lean();
+    }, 300);
   }
 
   async getByCategory(category) {
-    return AddOn.find({ category, isActive: true }).sort({ sortOrder: 1 }).lean();
+    return cache.getOrSet(`addons:category:${category}`, () => {
+      return AddOn.find({ category, isActive: true }).sort({ sortOrder: 1 }).lean();
+    }, 300);
   }
 
   async createAddOn(data) {
     data.slug = generateSlug(data.name);
-    return AddOn.create(data);
+    const addon = await AddOn.create(data);
+    await cache.invalidatePattern('addons:');
+    return addon;
   }
 
   async updateAddOn(id, data) {
@@ -27,12 +34,14 @@ class AddOnService {
     if (existingAddOn?.imagePublicId && existingAddOn.imagePublicId !== addon.imagePublicId) {
       uploadService.deleteImage(existingAddOn.imagePublicId);
     }
+    await cache.invalidatePattern('addons:');
     return addon;
   }
 
   async deleteAddOn(id) {
     const addon = await AddOn.findByIdAndUpdate(id, { isActive: false }, { new: true });
     if (!addon) throw ApiError.notFound('Add-on not found');
+    await cache.invalidatePattern('addons:');
     return addon;
   }
 }

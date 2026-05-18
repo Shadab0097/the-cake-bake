@@ -11,6 +11,10 @@ function OrderConfirmationContent() {
   // Accept both orderId (legacy) and orderNumber (preferred)
   const orderNumber = searchParams.get('orderNumber');
   const orderId = searchParams.get('orderId');
+  const trackingToken = searchParams.get('trackingToken');
+  const trackingHref = orderNumber
+    ? `/order-tracking/${orderNumber}${trackingToken ? `?token=${encodeURIComponent(trackingToken)}` : ''}`
+    : '';
 
   return (
     <div className="min-h-screen flex items-center justify-center bg-surface px-4 py-12">
@@ -63,7 +67,7 @@ function OrderConfirmationContent() {
         >
           {orderNumber ? (
             <Link
-              href={`/order-tracking/${orderNumber}`}
+              href={trackingHref}
               className="inline-flex items-center justify-center gap-2 px-6 py-3 rounded-full gradient-primary text-white font-semibold text-sm hover:opacity-90 transition-opacity"
             >
               <FiPackage className="w-4 h-4" />

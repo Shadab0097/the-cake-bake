@@ -7,6 +7,7 @@ const addonService = require('../addons/addon.service');
 const inquiryService = require('../inquiries/inquiry.service');
 const reviewService = require('../reviews/review.service');
 const notificationService = require('../notifications/notification.service');
+const adminAuditService = require('./adminAudit.service');
 const Banner = require('../../models/Banner');
 const Category = require('../../models/Category');
 const AddOn = require('../../models/AddOn');
@@ -14,6 +15,7 @@ const asyncHandler = require('../../utils/asyncHandler');
 const ApiResponse = require('../../utils/ApiResponse');
 const ApiError = require('../../utils/ApiError');
 const uploadService = require('../media/upload.service');
+const cache = require('../../utils/cache');
 
 const normalizeBannerPayload = (payload = {}) => {
   const data = { ...payload };
@@ -40,6 +42,11 @@ const getDashboard = asyncHandler(async (req, res) => {
 const getAnalytics = asyncHandler(async (req, res) => {
   const data = await adminService.getAnalytics(req.query);
   ApiResponse.ok(data).send(res);
+});
+
+const getAuditLogs = asyncHandler(async (req, res) => {
+  const result = await adminAuditService.list(req.query);
+  ApiResponse.ok(result).send(res);
 });
 
 // ---- Products ----
@@ -263,6 +270,7 @@ const getBanners = asyncHandler(async (req, res) => {
 
 const createBanner = asyncHandler(async (req, res) => {
   const banner = await Banner.create(normalizeBannerPayload(req.body));
+  await cache.invalidatePattern('banners:');
   ApiResponse.created(banner, 'Banner created').send(res);
 });
 
@@ -279,6 +287,7 @@ const updateBanner = asyncHandler(async (req, res) => {
     banner.imagePublicId?.mobile,
   ].filter(Boolean));
   uploadService.deleteImages(oldPublicIds.filter((publicId) => !nextPublicIds.has(publicId)));
+  await cache.invalidatePattern('banners:');
   ApiResponse.ok(banner, 'Banner updated').send(res);
 });
 
@@ -289,6 +298,7 @@ const deleteBanner = asyncHandler(async (req, res) => {
     banner.imagePublicId?.desktop,
     banner.imagePublicId?.mobile,
   ]);
+  await cache.invalidatePattern('banners:');
   ApiResponse.ok(null, 'Banner deleted').send(res);
 });
 
@@ -359,7 +369,7 @@ const getChatbotStats = asyncHandler(async (req, res) => {
 });
 
 module.exports = {
-  getDashboard, getAnalytics,
+  getDashboard, getAnalytics, getAuditLogs,
   listProducts, createProduct, updateProduct, deleteProduct, addVariant, updateVariant, bulkImportProducts,
   listCategories, createCategory, updateCategory, deleteCategory,
   getOrders, getOrderDetail, updateOrderStatus,

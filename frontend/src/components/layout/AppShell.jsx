@@ -3,7 +3,7 @@
 import { useEffect, useRef } from 'react';
 import { useDispatch, useSelector } from 'react-redux';
 import { usePathname } from 'next/navigation';
-import { fetchProfile, setSessionLoaded, setUser } from '@/store/slices/authSlice';
+import { fetchProfile, setUser } from '@/store/slices/authSlice';
 import { fetchCart } from '@/store/slices/cartSlice';
 import { fetchWishlist } from '@/store/slices/wishlistSlice';
 import { fetchCategories } from '@/store/slices/categoriesSlice';
@@ -35,23 +35,16 @@ export default function AppShell({ children }) {
     if (sessionInitStarted) return;
     sessionInitStarted = true;
 
-    if (typeof window !== 'undefined') {
-      const token = localStorage.getItem('accessToken');
-      if (token) {
-        // Fetch profile then filter out admin users from the customer site
-        dispatch(fetchProfile()).then((action) => {
-          const user = action.payload;
-          if (user && (user.role === 'admin' || user.role === 'superadmin')) {
-            // Admin token found — don't show admin as a logged-in customer.
-            // Reset auth state: user=null, isAuthenticated=false, isSessionLoading=false
-            dispatch(setUser(null));
-          }
-        });
-      } else {
-        // No token — mark session as resolved immediately
-        dispatch(setSessionLoaded());
+    // Fetch profile then filter out admin users from the customer site.
+    // If only the HttpOnly refresh cookie exists, the API interceptor refreshes once.
+    dispatch(fetchProfile()).then((action) => {
+      const user = action.payload;
+      if (user && (user.role === 'admin' || user.role === 'superadmin')) {
+        // Admin token found — don't show admin as a logged-in customer.
+        // Reset auth state: user=null, isAuthenticated=false, isSessionLoading=false
+        dispatch(setUser(null));
       }
-    }
+    });
   }, [dispatch]);
 
   // Fetch cart + wishlist once when authenticated

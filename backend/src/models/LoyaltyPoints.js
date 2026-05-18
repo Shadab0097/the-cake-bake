@@ -26,6 +26,11 @@ const loyaltyPointsSchema = new mongoose.Schema(
     referenceId: {
       type: mongoose.Schema.Types.ObjectId,
     },
+    eventType: {
+      type: String,
+      default: '',
+      index: true,
+    },
     description: {
       type: String,
       default: '',
@@ -36,5 +41,9 @@ const loyaltyPointsSchema = new mongoose.Schema(
 
 loyaltyPointsSchema.index({ user: 1, createdAt: -1 });
 loyaltyPointsSchema.index({ type: 1 });
+loyaltyPointsSchema.index(
+  { user: 1, referenceId: 1, eventType: 1 },
+  { unique: true, partialFilterExpression: { eventType: { $exists: true, $gt: '' } } }
+);
 
 module.exports = mongoose.model('LoyaltyPoints', loyaltyPointsSchema);
