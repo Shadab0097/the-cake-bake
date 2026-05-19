@@ -2,6 +2,7 @@ const orderService = require('./order.service');
 const asyncHandler = require('../../utils/asyncHandler');
 const ApiResponse = require('../../utils/ApiResponse');
 const idempotencyService = require('./idempotency.service');
+const codAbuseService = require('./codAbuse.service');
 
 const validateCheckout = asyncHandler(async (req, res) => {
   const result = await orderService.validateCheckout(req.user._id, req.body);
@@ -9,12 +10,13 @@ const validateCheckout = asyncHandler(async (req, res) => {
 });
 
 const createOrder = asyncHandler(async (req, res) => {
+  const requestContext = codAbuseService.buildRequestContext(req);
   const result = await idempotencyService.execute({
     key: idempotencyService.getKeyFromRequest(req),
     scope: 'checkout',
     user: req.user._id,
     payload: req.body,
-    handler: () => orderService.createOrder(req.user._id, req.body),
+    handler: () => orderService.createOrder(req.user._id, req.body, { requestContext }),
   });
 
   ApiResponse.created(result, 'Order created').send(res);

@@ -37,37 +37,51 @@ export default function ProductDetailPage() {
 
   // Fetch product
   useEffect(() => {
-    setLoading(true);
-    api.get(`/products/${slug}`)
-      .then((res) => {
+    let cancelled = false;
+
+    const loadProduct = async () => {
+      setLoading(true);
+      setProduct(null);
+      setRelatedProducts([]);
+      setReviews([]);
+
+      try {
+        const res = await api.get(`/products/${slug}`);
+        if (cancelled) return;
+
         const p = res.data?.data;
         setProduct(p);
-        // Fetch related
-        if (p?.category?._id) {
-          api.get(`/products?category=${p.category._id}&limit=5`)
-            .then((r) => {
-              const d = r.data?.data;
-              const list = Array.isArray(d) ? d : (d?.items || d?.docs || []);
-              setRelatedProducts(list.filter((item) => item._id !== p._id));
-            })
-            .catch(() => {});
-        }
-        // Fetch reviews
-        api.get(`/reviews?product=${p?._id}&limit=5`)
-          .then((r) => {
-            const d = r.data?.data;
-            setReviews(Array.isArray(d) ? d : (d?.items || d?.docs || []));
-          })
-          .catch(() => {});
-      })
-      .catch(() => setProduct(null))
-      .finally(() => setLoading(false));
+
+        const [relatedRes, reviewsRes] = await Promise.all([
+          p?.category?._id ? api.get(`/products?category=${p.category._id}&limit=5`).catch(() => null) : null,
+          p?._id ? api.get(`/reviews?product=${p._id}&limit=5`).catch(() => null) : null,
+        ]);
+        if (cancelled) return;
+
+        const relatedData = relatedRes?.data?.data;
+        const relatedList = Array.isArray(relatedData) ? relatedData : (relatedData?.items || relatedData?.docs || []);
+        setRelatedProducts(relatedList.filter((item) => item._id !== p?._id));
+
+        const reviewData = reviewsRes?.data?.data;
+        setReviews(Array.isArray(reviewData) ? reviewData : (reviewData?.items || reviewData?.docs || []));
+      } catch {
+        if (!cancelled) setProduct(null);
+      } finally {
+        if (!cancelled) setLoading(false);
+      }
+    };
+
+    Promise.resolve().then(loadProduct);
+
+    return () => {
+      cancelled = true;
+    };
   }, [slug]);
 
   const handleAddToCart = async () => {
     if (!isAuthenticated) {
       // Guest: store item in local cart with all customization options
-      const imageUrl = getProductImage(product);
+      const imageUrl = getProductImage(product, selectedImage, 'productCard');
 
       dispatch(addGuestItem({
         product: product._id,
@@ -160,7 +174,7 @@ export default function ProductDetailPage() {
               className="relative aspect-square bg-surface-container-low rounded-2xl overflow-hidden mb-3"
             >
               <Image
-                src={getProductImage(product, selectedImage)}
+                src={getProductImage(product, selectedImage, 'productDetail')}
                 alt={product.name}
                 fill
                 className="object-cover"
@@ -186,7 +200,7 @@ export default function ProductDetailPage() {
                     }`}
                   >
                     <Image
-                      src={getProductImage(product, i)}
+                      src={getProductImage(product, i, 'thumbnail')}
                       alt={`${product.name} view ${i + 1}`}
                       width={64}
                       height={64}

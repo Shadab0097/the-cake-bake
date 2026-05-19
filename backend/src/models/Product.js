@@ -155,8 +155,8 @@ productSchema.index({ isActive: 1, averageRating: -1 });
 productSchema.index({ isActive: 1, createdAt: -1 });
 productSchema.index({ tags: 1, isActive: 1 });
 productSchema.index({ occasions: 1, isActive: 1 });
-productSchema.index({ flavors: 1 });
-productSchema.index({ cities: 1 });
+productSchema.index({ flavors: 1, isActive: 1 });
+productSchema.index({ cities: 1, isActive: 1 });
 productSchema.index({ name: 'text', description: 'text', tags: 'text' });
 
 module.exports = mongoose.model('Product', productSchema);

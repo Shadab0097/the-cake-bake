@@ -257,6 +257,10 @@
 .badge-delivered, .badge-completed { background: var(--admin-success-soft); color: var(--admin-success); }
 .badge-cancelled, .badge-failed, .badge-expired { background: var(--admin-danger-soft); color: var(--admin-danger); }
 .badge-refunded { background: #3B1F3D; color: #F0ABFC; }
+.badge-requested, .badge-approved, .badge-processing { background: var(--admin-warning-soft); color: var(--admin-warning); }
+.badge-critical { background: var(--admin-danger-soft); color: var(--admin-danger); }
+.badge-warning { background: var(--admin-warning-soft); color: var(--admin-warning); }
+.badge-info { background: var(--admin-info-soft); color: var(--admin-info); }
 .badge-new { background: var(--admin-accent-soft); color: var(--admin-accent-hover); }
 .badge-active { background: var(--admin-success-soft); color: var(--admin-success); }
 .badge-inactive { background: var(--admin-danger-soft); color: var(--admin-danger); }

@@ -1,5 +1,6 @@
 const logger = require('./logger');
 const ApiError = require('../utils/ApiError');
+const operationalAlertService = require('../modules/monitoring/operationalAlert.service');
 
 /**
  * Global error handler middleware
@@ -30,6 +31,24 @@ const errorHandler = (err, req, res, next) => {
       method: req.method,
       ip: req.ip,
       stack: error.stack,
+    });
+    setImmediate(() => {
+      operationalAlertService.recordAlert({
+        type: 'api_5xx_error',
+        severity: 'critical',
+        source: 'api',
+        message: `${error.statusCode} ${error.message}`,
+        dedupeKey: `api_5xx:${req.method}:${req.route?.path || req.originalUrl}:${error.message}`,
+        metadata: {
+          statusCode: error.statusCode,
+          method: req.method,
+          url: req.originalUrl,
+          requestId: req.id || req.requestId || req.headers?.['x-request-id'] || '',
+          ip: req.ip,
+        },
+      }).catch((alertError) => {
+        logger.warn(`[OperationalAlert] Failed to record API error alert: ${alertError.message}`);
+      });
     });
   } else {
     logger.warn(`${error.statusCode} - ${error.message}`, {

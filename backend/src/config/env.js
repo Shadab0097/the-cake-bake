@@ -120,8 +120,50 @@ const env = {
     removeOnFailAgeSeconds: parsePositiveInt(process.env.JOB_REMOVE_ON_FAIL_AGE_SECONDS, 604800),
   },
 
+  paymentReconciliation: {
+    enabled: process.env.ENABLE_PAYMENT_RECONCILIATION_JOB !== 'false',
+    intervalMinutes: parsePositiveInt(process.env.PAYMENT_RECONCILIATION_INTERVAL_MINUTES, 10),
+    minAgeMinutes: parsePositiveInt(process.env.PAYMENT_RECONCILIATION_MIN_AGE_MINUTES, 5),
+    lookbackHours: parsePositiveInt(process.env.PAYMENT_RECONCILIATION_LOOKBACK_HOURS, 72),
+    batchSize: parsePositiveInt(process.env.PAYMENT_RECONCILIATION_BATCH_SIZE, 100),
+  },
+
+  stockReservationExpiry: {
+    enabled: process.env.ENABLE_STOCK_RESERVATION_EXPIRY_JOB !== 'false',
+    intervalMinutes: parsePositiveInt(process.env.STOCK_RESERVATION_EXPIRY_INTERVAL_MINUTES, 5),
+    batchSize: parsePositiveInt(process.env.STOCK_RESERVATION_EXPIRY_BATCH_SIZE, 100),
+  },
+
   health: {
     checkToken: process.env.HEALTH_CHECK_TOKEN || '',
+  },
+
+  monitoring: {
+    alertWebhookUrl: process.env.OPERATIONAL_ALERT_WEBHOOK_URL || '',
+    alertWebhookToken: process.env.OPERATIONAL_ALERT_WEBHOOK_TOKEN || '',
+    alertCooldownMinutes: parsePositiveInt(process.env.OPERATIONAL_ALERT_COOLDOWN_MINUTES, 15),
+    alertWebhookTimeoutMs: parsePositiveInt(process.env.OPERATIONAL_ALERT_WEBHOOK_TIMEOUT_MS, 3000),
+  },
+
+  codAbuse: {
+    enabled: process.env.ENABLE_COD_ABUSE_CONTROLS !== 'false',
+    maxOrderAmount: parsePositiveInt(process.env.COD_MAX_ORDER_AMOUNT, 500000),
+    reviewOrderAmount: parsePositiveInt(process.env.COD_REVIEW_ORDER_AMOUNT, 250000),
+    phoneOrderLimit: parsePositiveInt(process.env.COD_PHONE_ORDER_LIMIT, 5),
+    phoneOrderWindowHours: parsePositiveInt(process.env.COD_PHONE_ORDER_WINDOW_HOURS, 24),
+    guestIpOrderLimit: parsePositiveInt(process.env.COD_GUEST_IP_ORDER_LIMIT, 3),
+    guestIpOrderWindowHours: parsePositiveInt(process.env.COD_GUEST_IP_ORDER_WINDOW_HOURS, 1),
+    addressCancelLimit: parsePositiveInt(process.env.COD_ADDRESS_CANCEL_LIMIT, 3),
+    addressCancelWindowDays: parsePositiveInt(process.env.COD_ADDRESS_CANCEL_WINDOW_DAYS, 30),
+    disposableEmailDomains: (process.env.COD_DISPOSABLE_EMAIL_DOMAINS ||
+      'mailinator.com,tempmail.com,10minutemail.com,guerrillamail.com,yopmail.com')
+      .split(',')
+      .map((domain) => domain.trim().toLowerCase())
+      .filter(Boolean),
+  },
+
+  cancellation: {
+    customerCutoffHours: parsePositiveInt(process.env.CUSTOMER_CANCELLATION_CUTOFF_HOURS, 12),
   },
 
   app: {

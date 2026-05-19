@@ -19,7 +19,7 @@ export default function ProductCard({ product, index = 0 }) {
     (item) => item._id === product._id
   );
 
-  const imageUrl = getProductImage(product);
+  const imageUrl = getProductImage(product, 0, 'productCard');
   const hasDiscount = product.variants?.[0]?.compareAtPrice > 0;
   const basePrice = product.variants?.[0]?.price || product.basePrice;
   const comparePrice = product.variants?.[0]?.compareAtPrice;

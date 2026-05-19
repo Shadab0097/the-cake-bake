@@ -103,14 +103,20 @@ const uploadDir = path.resolve(env.upload.dir);
 if (!fs.existsSync(uploadDir)) {
   fs.mkdirSync(uploadDir, { recursive: true });
 }
-// Serve uploaded files with security headers
-app.use('/uploads', (req, res, next) => {
-  res.setHeader('X-Content-Type-Options', 'nosniff');
-  res.setHeader('Content-Disposition', 'inline');
-  next();
-}, express.static(uploadDir, {
-  maxAge: env.isProd() ? '7d' : 0,   // Cache uploads for 7 days in production
+
+const publicAssetCacheControl = env.isProd()
+  ? 'public, max-age=2592000, s-maxage=31536000, stale-while-revalidate=86400'
+  : 'no-cache';
+
+// Serve uploaded files with CDN-friendly cache headers.
+app.use('/uploads', express.static(uploadDir, {
+  maxAge: env.isProd() ? '30d' : 0,
   etag: true,
+  setHeaders: (res) => {
+    res.setHeader('X-Content-Type-Options', 'nosniff');
+    res.setHeader('Content-Disposition', 'inline');
+    res.setHeader('Cache-Control', publicAssetCacheControl);
+  },
 }));
 
 // ---- Rate Limiting ----
@@ -124,6 +130,18 @@ app.use('/api/v1/products', (req, res, next) => {
   next();
 });
 app.use('/api/v1/categories', (req, res, next) => {
+  if (req.method === 'GET') {
+    res.setHeader('Cache-Control', 'public, max-age=60, stale-while-revalidate=120');
+  }
+  next();
+});
+app.use('/api/v1/banners', (req, res, next) => {
+  if (req.method === 'GET') {
+    res.setHeader('Cache-Control', 'public, max-age=60, stale-while-revalidate=120');
+  }
+  next();
+});
+app.use('/api/v1/addons', (req, res, next) => {
   if (req.method === 'GET') {
     res.setHeader('Cache-Control', 'public, max-age=60, stale-while-revalidate=120');
   }

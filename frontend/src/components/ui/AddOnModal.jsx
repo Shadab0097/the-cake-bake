@@ -7,7 +7,7 @@ import Image from 'next/image';
 import { motion, AnimatePresence } from 'framer-motion';
 import { FiX, FiCheck, FiChevronRight, FiGift, FiShoppingBag } from 'react-icons/fi';
 import { setItemAddOns, clearPendingAddOns } from '@/store/slices/cartSlice';
-import { formatPrice } from '@/lib/utils';
+import { formatPrice, getOptimizedImageUrl } from '@/lib/utils';
 import api from '@/lib/api';
 
 const CATEGORY_META = {
@@ -36,27 +36,40 @@ export default function AddOnModal({ isOpen, onClose }) {
   /* ── Fetch add-ons when modal opens ── */
   useEffect(() => {
     if (!isOpen) return;
-    setLoadingAddons(true);
-    api.get('/addons')
-      .then((res) => {
+    let cancelled = false;
+
+    const loadAddOns = async () => {
+      setLoadingAddons(true);
+
+      const init = {};
+      cartItems.forEach((item) => {
+        const key = isAuthenticated ? item._id : item.localId;
+        if (pendingAddOns[key]) {
+          init[key] = {};
+          pendingAddOns[key].forEach((a) => { init[key][a._id] = a; });
+        }
+      });
+
+      try {
+        const res = await api.get('/addons');
+        if (cancelled) return;
         const list = res.data?.data || [];
         setAddons(list);
         if (list.length > 0) setActiveCategory(list[0].category);
-      })
-      .catch(() => {})
-      .finally(() => setLoadingAddons(false));
-
-    // Seed from existing pendingAddOns
-    const init = {};
-    cartItems.forEach((item) => {
-      const key = isAuthenticated ? item._id : item.localId;
-      if (pendingAddOns[key]) {
-        init[key] = {};
-        pendingAddOns[key].forEach((a) => { init[key][a._id] = a; });
+      } catch {
+        if (!cancelled) setAddons([]);
+      } finally {
+        if (!cancelled) {
+          setSelections(init);
+          setActiveItem(0);
+          setLoadingAddons(false);
+        }
       }
-    });
-    setSelections(init);
-    setActiveItem(0);
+    };
+
+    Promise.resolve().then(loadAddOns);
+
+    return () => { cancelled = true; };
   }, [isOpen]); // eslint-disable-line react-hooks/exhaustive-deps
 
   if (!isOpen) return null;
@@ -231,6 +244,7 @@ export default function AddOnModal({ isOpen, onClose }) {
                     {filteredAddons.map((addon) => {
                       const selected = currentItem && isSelected(currentItem, addon);
                       const meta = CATEGORY_META[addon.category] || { color: '#9E9E9E' };
+                      const addonImage = getOptimizedImageUrl(addon.image, 'addon');
                       return (
                         <motion.button
                           key={addon._id}
@@ -266,14 +280,13 @@ export default function AddOnModal({ isOpen, onClose }) {
 
                             {/* Icon / Image */}
                             <div className="w-12 h-12 rounded-xl bg-gray-100 flex items-center justify-center mb-2.5 text-2xl group-hover:scale-105 transition-transform">
-                              {addon.image ? (
+                              {addonImage ? (
                                 <Image
-                                  src={addon.image.startsWith('/') ? `${process.env.NEXT_PUBLIC_API_BASE || 'http://localhost:5000'}${addon.image}` : addon.image}
+                                  src={addonImage}
                                   alt={addon.name}
                                   width={48}
                                   height={48}
                                   className="object-cover rounded-xl"
-                                  unoptimized
                                 />
                               ) : (
                                 CATEGORY_META[addon.category]?.icon || '📦'

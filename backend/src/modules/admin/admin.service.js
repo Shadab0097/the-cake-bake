@@ -3,21 +3,48 @@ const Order = require('../../models/Order');
 const User = require('../../models/User');
 const Product = require('../../models/Product');
 const Payment = require('../../models/Payment');
+const Cart = require('../../models/Cart');
+const Coupon = require('../../models/Coupon');
+const InventoryReservation = require('../../models/InventoryReservation');
+const NotificationLog = require('../../models/NotificationLog');
+const OperationalAlert = require('../../models/OperationalAlert');
+const Refund = require('../../models/Refund');
+const Variant = require('../../models/Variant');
 const { startOfDay, endOfDay, escapeRegex } = require('../../utils/helpers');
-const { ORDER_STATUSES } = require('../../utils/constants');
+const { ORDER_STATUSES, PAYMENT_STATUSES, REFUND_STATUSES } = require('../../utils/constants');
 const cache = require('../../utils/cache');
 const loyaltyService = require('../loyalty/loyalty.service');
+
+const LOW_STOCK_THRESHOLD = 10;
+const OPERATION_WINDOW_HOURS = 24;
+const ABANDONED_CART_HOURS = 2;
+
+const countMap = (rows = [], keys = []) => {
+  const output = keys.reduce((acc, key) => {
+    acc[key] = 0;
+    return acc;
+  }, {});
+
+  rows.forEach((row) => {
+    if (!row?._id) return;
+    output[row._id] = row.count || 0;
+  });
+
+  return output;
+};
 
 class AdminService {
   /**
    * Dashboard overview — sales stats, order counts, revenue
    */
-  async getDashboard(query) {
+  async getDashboard(query = {}) {
     // Cache dashboard for 60 seconds to prevent DB overload from rapid refreshes
     return cache.getOrSet('admin:dashboard', async () => {
     const now = new Date();
     const todayStart = startOfDay(now);
     const todayEnd = endOfDay(now);
+    const windowStart = new Date(now.getTime() - (OPERATION_WINDOW_HOURS * 60 * 60 * 1000));
+    const abandonedCartCutoff = new Date(now.getTime() - (ABANDONED_CART_HOURS * 60 * 60 * 1000));
 
     // This month
     const monthStart = new Date(now.getFullYear(), now.getMonth(), 1);
@@ -35,6 +62,14 @@ class AdminService {
         { paymentStatus: 'paid' },
       ],
     };
+    const activeOrderStatuses = [
+      ORDER_STATUSES.PENDING,
+      ORDER_STATUSES.CONFIRMED,
+      ORDER_STATUSES.PREPARING,
+      ORDER_STATUSES.PACKED,
+      ORDER_STATUSES.DISPATCHED,
+      ORDER_STATUSES.OUT_FOR_DELIVERY,
+    ];
 
     const [
       totalOrders,
@@ -48,6 +83,22 @@ class AdminService {
       pendingOrders,
       recentOrders,
       statusDistribution,
+      todayStatusDistribution,
+      paymentStatusDistribution,
+      stalePendingPayments,
+      lowStockVariants,
+      lowStockVariantCount,
+      refundStatusDistribution,
+      refundQueue,
+      openAlertDistribution,
+      recentAlerts,
+      failedNotifications,
+      recentFailedNotifications,
+      highRiskCodOrders,
+      activeReservations,
+      expiringReservations,
+      abandonedCarts,
+      topCoupons,
     ] = await Promise.all([
       Order.countDocuments({ paymentStatus: 'paid' }),
       Order.countDocuments({ paymentStatus: 'paid', createdAt: { $gte: todayStart, $lte: todayEnd } }),
@@ -82,7 +133,89 @@ class AdminService {
         { $match: dashboardOrderFilter },
         { $group: { _id: '$status', count: { $sum: 1 } } },
       ]),
+      Order.aggregate([
+        { $match: { ...dashboardOrderFilter, createdAt: { $gte: todayStart, $lte: todayEnd } } },
+        { $group: { _id: '$status', count: { $sum: 1 } } },
+      ]),
+      Payment.aggregate([
+        { $match: { createdAt: { $gte: windowStart } } },
+        { $group: { _id: '$status', count: { $sum: 1 } } },
+      ]),
+      Payment.countDocuments({
+        status: { $in: [PAYMENT_STATUSES.CREATED, PAYMENT_STATUSES.PENDING, PAYMENT_STATUSES.AUTHORIZED] },
+        createdAt: { $lte: new Date(now.getTime() - (30 * 60 * 1000)) },
+      }),
+      Variant.find({ isActive: true, stock: { $lte: LOW_STOCK_THRESHOLD } })
+        .populate('product', 'name slug isActive')
+        .sort({ stock: 1, updatedAt: -1 })
+        .limit(20)
+        .lean(),
+      Variant.countDocuments({ isActive: true, stock: { $lte: LOW_STOCK_THRESHOLD } }),
+      Refund.aggregate([
+        { $match: { status: { $ne: REFUND_STATUSES.REFUNDED } } },
+        { $group: { _id: '$status', count: { $sum: 1 } } },
+      ]),
+      Refund.find({ status: { $in: [REFUND_STATUSES.REQUESTED, REFUND_STATUSES.APPROVED, REFUND_STATUSES.PROCESSING, REFUND_STATUSES.FAILED] } })
+        .populate('order', 'orderNumber')
+        .sort({ createdAt: 1 })
+        .limit(8)
+        .select('order amount status reason requestedBy createdAt failureReason')
+        .lean(),
+      OperationalAlert.aggregate([
+        { $match: { status: 'open' } },
+        { $group: { _id: '$severity', count: { $sum: 1 } } },
+      ]),
+      OperationalAlert.find({ status: 'open' })
+        .sort({ severity: 1, lastSeenAt: -1 })
+        .limit(8)
+        .select('type severity source message occurrenceCount lastSeenAt')
+        .lean(),
+      NotificationLog.countDocuments({ status: 'failed', createdAt: { $gte: windowStart } }),
+      NotificationLog.find({ status: 'failed', createdAt: { $gte: windowStart } })
+        .sort({ createdAt: -1 })
+        .limit(8)
+        .select('channel type recipient errorMessage createdAt')
+        .lean(),
+      Order.find({
+        paymentMethod: 'cod',
+        'codRisk.decision': 'review',
+        status: { $in: activeOrderStatuses },
+      })
+        .sort({ createdAt: -1 })
+        .limit(8)
+        .select('orderNumber guestInfo user total status codRisk createdAt')
+        .populate('user', 'name email phone')
+        .lean(),
+      InventoryReservation.countDocuments({ status: 'reserved' }),
+      InventoryReservation.countDocuments({
+        status: 'reserved',
+        expiresAt: { $lte: new Date(now.getTime() + (15 * 60 * 1000)) },
+      }),
+      Cart.countDocuments({
+        'items.0': { $exists: true },
+        updatedAt: { $lte: abandonedCartCutoff },
+      }),
+      Coupon.find({ isActive: true })
+        .sort({ usageCount: -1, updatedAt: -1 })
+        .limit(8)
+        .select('code usageCount usageLimit validUntil')
+        .lean(),
     ]);
+
+    const paymentStatusCounts = countMap(paymentStatusDistribution, Object.values(PAYMENT_STATUSES));
+    const refundStatusCounts = countMap(refundStatusDistribution, Object.values(REFUND_STATUSES));
+    const openAlertCounts = countMap(openAlertDistribution, ['critical', 'warning', 'info']);
+    const filteredLowStock = lowStockVariants
+      .filter((variant) => variant.product?.isActive !== false)
+      .slice(0, 8)
+      .map((variant) => ({
+        _id: variant._id,
+        product: variant.product,
+        weight: variant.weight,
+        sku: variant.sku,
+        stock: variant.stock,
+        updatedAt: variant.updatedAt,
+      }));
 
     return {
       overview: {
@@ -101,6 +234,60 @@ class AdminService {
         acc[item._id] = item.count;
         return acc;
       }, {}),
+      operations: {
+        windowHours: OPERATION_WINDOW_HOURS,
+        lowStockThreshold: LOW_STOCK_THRESHOLD,
+        todayOrdersByStatus: countMap(todayStatusDistribution, Object.values(ORDER_STATUSES)),
+        payments: {
+          pending: (
+            paymentStatusCounts[PAYMENT_STATUSES.CREATED] +
+            paymentStatusCounts[PAYMENT_STATUSES.PENDING] +
+            paymentStatusCounts[PAYMENT_STATUSES.AUTHORIZED]
+          ),
+          failed: paymentStatusCounts[PAYMENT_STATUSES.FAILED],
+          expired: paymentStatusCounts[PAYMENT_STATUSES.EXPIRED],
+          stalePending: stalePendingPayments,
+        },
+        refunds: {
+          requested: refundStatusCounts[REFUND_STATUSES.REQUESTED],
+          approved: refundStatusCounts[REFUND_STATUSES.APPROVED],
+          processing: refundStatusCounts[REFUND_STATUSES.PROCESSING],
+          failed: refundStatusCounts[REFUND_STATUSES.FAILED],
+          queue: refundQueue,
+        },
+        alerts: {
+          critical: openAlertCounts.critical,
+          warning: openAlertCounts.warning,
+          info: openAlertCounts.info,
+          recent: recentAlerts,
+        },
+        inventory: {
+          lowStockCount: lowStockVariantCount,
+          lowStockThreshold: LOW_STOCK_THRESHOLD,
+          lowStock: filteredLowStock,
+          activeReservations,
+          expiringReservations,
+        },
+        notifications: {
+          failed: failedNotifications,
+          recentFailed: recentFailedNotifications,
+        },
+        cod: {
+          highRiskCount: highRiskCodOrders.length,
+          highRiskOrders: highRiskCodOrders,
+        },
+        carts: {
+          abandoned: abandonedCarts,
+          abandonedAfterHours: ABANDONED_CART_HOURS,
+        },
+        coupons: {
+          top: topCoupons,
+          nearLimit: topCoupons.filter((coupon) => (
+            coupon.usageLimit > 0 &&
+            (coupon.usageCount / coupon.usageLimit) >= 0.8
+          )),
+        },
+      },
     };
     }, 60); // 60 second TTL
   }
@@ -241,3 +428,5 @@ class AdminService {
 }
 
 module.exports = new AdminService();
+module.exports.AdminService = AdminService;
+module.exports.countMap = countMap;

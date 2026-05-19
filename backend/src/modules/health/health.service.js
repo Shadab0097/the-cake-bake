@@ -68,6 +68,9 @@ const buildReadinessHealth = ({
         ],
       }),
     },
+    monitoring: {
+      status: envVars.OPERATIONAL_ALERT_WEBHOOK_URL ? 'ok' : 'disabled',
+    },
   };
 
   const hasWarnings = Object.values(checks).some((check) => check.status === 'misconfigured');

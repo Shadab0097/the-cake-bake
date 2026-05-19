@@ -13,7 +13,7 @@ import {
   updateGuestItem, removeGuestItem,
 } from '@/store/slices/cartSlice';
 import { addToast } from '@/store/slices/toastSlice';
-import { formatPrice, getProductImage } from '@/lib/utils';
+import { formatPrice, getOptimizedImageUrl, getProductImage } from '@/lib/utils';
 
 export default function CartPage() {
   const dispatch = useDispatch();
@@ -99,7 +99,9 @@ export default function CartPage() {
           <div className="lg:col-span-2 space-y-4">
             <AnimatePresence>
               {cartItems.map((item) => {
-                const itemImage = isAuthenticated ? getProductImage(item.product) : (item.productImage || '/images/placeholder-cake.svg');
+                const itemImage = isAuthenticated
+                  ? getProductImage(item.product, 0, 'thumbnail')
+                  : (getOptimizedImageUrl(item.productImage, 'thumbnail') || '/images/placeholder-cake.svg');
                 const itemName = isAuthenticated ? (item.snapshotName || item.product?.name) : item.productName;
                 const itemPrice = isAuthenticated ? (item.snapshotPrice || item.variant?.price || 0) : (item.price || 0);
                 const itemWeight = isAuthenticated ? item.variant?.weight : item.variantWeight;

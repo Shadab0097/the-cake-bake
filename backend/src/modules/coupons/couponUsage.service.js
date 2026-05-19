@@ -312,3 +312,4 @@ class CouponUsageService {
 }
 
 module.exports = new CouponUsageService();
+module.exports.CouponUsageService = CouponUsageService;

@@ -19,7 +19,6 @@ const paymentSchema = new mongoose.Schema(
       type: String,
       required: false,
       default: '',
-      index: true,
     },
     razorpayPaymentId: {
       type: String,
@@ -54,6 +53,18 @@ const paymentSchema = new mongoose.Schema(
       type: Number,
       default: 0,
     },
+    refundStatus: {
+      type: String,
+      enum: ['', 'requested', 'approved', 'processing', 'refunded', 'failed'],
+      default: '',
+      index: true,
+    },
+    refundRequestedAt: {
+      type: Date,
+    },
+    refundedAt: {
+      type: Date,
+    },
     webhookEvents: [
       {
         eventId: { type: String, default: '' },
@@ -66,9 +77,16 @@ const paymentSchema = new mongoose.Schema(
   { timestamps: true }
 );
 
-paymentSchema.index({ razorpayOrderId: 1 });
-paymentSchema.index({ razorpayPaymentId: 1 });
+paymentSchema.index(
+  { razorpayOrderId: 1 },
+  { partialFilterExpression: { razorpayOrderId: { $type: 'string', $gt: '' } } }
+);
+paymentSchema.index(
+  { razorpayPaymentId: 1 },
+  { partialFilterExpression: { razorpayPaymentId: { $type: 'string', $gt: '' } } }
+);
 paymentSchema.index({ status: 1 });
+paymentSchema.index({ status: 1, createdAt: 1 });
 paymentSchema.index({ 'webhookEvents.eventId': 1 });
 
 module.exports = mongoose.model('Payment', paymentSchema);

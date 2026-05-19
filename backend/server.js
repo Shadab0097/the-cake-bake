@@ -8,6 +8,8 @@ const connectDB = require('./src/config/db');
 const { closeRedisClient, connectRedisIfConfigured } = require('./src/config/redis');
 const logger = require('./src/middleware/logger');
 const orderExpiryJob = require('./src/jobs/orderExpiry.job');
+const paymentReconciliationJob = require('./src/jobs/paymentReconciliation.job');
+const inventoryReservationExpiryJob = require('./src/jobs/inventoryReservationExpiry.job');
 const jobQueue = require('./src/jobs/jobQueue.service');
 const notificationWorker = require('./src/jobs/notificationWorker');
 
@@ -33,12 +35,16 @@ const startServer = async () => {
       `);
     });
     const stopOrderExpiryJob = orderExpiryJob.start();
+    const stopPaymentReconciliationJob = paymentReconciliationJob.start();
+    const stopInventoryReservationExpiryJob = inventoryReservationExpiryJob.start();
     notificationWorker.start();
 
     // Graceful shutdown
     const gracefulShutdown = (signal) => {
       logger.info(`${signal} received. Shutting down gracefully...`);
       stopOrderExpiryJob();
+      stopPaymentReconciliationJob();
+      stopInventoryReservationExpiryJob();
       server.close(async () => {
         await jobQueue.close();
         await closeRedisClient();

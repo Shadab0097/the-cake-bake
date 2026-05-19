@@ -1,0 +1,313 @@
+const crypto = require('crypto');
+
+const Order = require('../../models/Order');
+const User = require('../../models/User');
+const ApiError = require('../../utils/ApiError');
+const { env } = require('../../config/env');
+const { ORDER_STATUSES } = require('../../utils/constants');
+const operationalAlertService = require('../monitoring/operationalAlert.service');
+
+const REPEATED_DIGIT_PATTERN = /^(\d)\1{9,}$/;
+const SEQUENTIAL_PHONE_PATTERNS = new Set(['0123456789', '1234567890', '9876543210']);
+
+const normalizePhone = (phone) => {
+  const digits = String(phone || '').replace(/\D/g, '');
+  if (digits.length > 10 && digits.startsWith('91')) {
+    return digits.slice(-10);
+  }
+  return digits;
+};
+
+const normalizeEmail = (email) => String(email || '').trim().toLowerCase();
+
+const normalizeAddressPart = (value) => String(value || '')
+  .trim()
+  .toLowerCase()
+  .replace(/[^a-z0-9]+/g, ' ')
+  .replace(/\s+/g, ' ')
+  .trim();
+
+const buildAddressHash = (address = {}) => {
+  const normalized = [
+    normalizeAddressPart(address.addressLine1),
+    normalizeAddressPart(address.addressLine2),
+    normalizeAddressPart(address.city),
+    normalizeAddressPart(address.state),
+    normalizeAddressPart(address.pincode),
+  ].join('|');
+
+  if (normalized.replace(/\|/g, '').length === 0) return '';
+  return crypto.createHash('sha256').update(normalized).digest('hex');
+};
+
+const getEmailDomain = (email) => {
+  const normalized = normalizeEmail(email);
+  const atIndex = normalized.lastIndexOf('@');
+  return atIndex >= 0 ? normalized.slice(atIndex + 1) : '';
+};
+
+const isSuspiciousPhone = (normalizedPhone) => {
+  if (!normalizedPhone || normalizedPhone.length < 10) return true;
+  if (REPEATED_DIGIT_PATTERN.test(normalizedPhone)) return true;
+  return SEQUENTIAL_PHONE_PATTERNS.has(normalizedPhone.slice(-10));
+};
+
+const unique = (values) => [...new Set(values.filter(Boolean))];
+
+class CodAbuseService {
+  constructor(deps = {}) {
+    this.OrderModel = deps.OrderModel || Order;
+    this.UserModel = deps.UserModel || User;
+    this.operationalAlertService = deps.operationalAlertService || operationalAlertService;
+    this.config = deps.config || env.codAbuse;
+  }
+
+  buildRequestContext(req = {}) {
+    const forwardedFor = String(req.headers?.['x-forwarded-for'] || '')
+      .split(',')[0]
+      .trim();
+    return {
+      ip: forwardedFor || req.ip || req.socket?.remoteAddress || '',
+      userAgent: String(req.headers?.['user-agent'] || '').slice(0, 500),
+      requestId: String(req.id || req.requestId || req.headers?.['x-request-id'] || '').slice(0, 120),
+    };
+  }
+
+  buildRiskSnapshot(assessment) {
+    return {
+      normalizedPhone: assessment.normalizedPhone,
+      normalizedEmail: assessment.normalizedEmail,
+      addressHash: assessment.addressHash,
+      score: assessment.score,
+      decision: assessment.decision,
+      flags: assessment.flags,
+      evaluatedAt: assessment.evaluatedAt,
+    };
+  }
+
+  createAllowedAssessment({ normalizedPhone = '', normalizedEmail = '', addressHash = '', requestContext = {} } = {}) {
+    return {
+      allowed: true,
+      decision: 'allow',
+      flags: [],
+      score: 0,
+      message: '',
+      normalizedPhone,
+      normalizedEmail,
+      addressHash,
+      checkoutIp: requestContext.ip || '',
+      checkoutUserAgent: requestContext.userAgent || '',
+      evaluatedAt: new Date(),
+    };
+  }
+
+  async countOrders(filter, session = null) {
+    const query = this.OrderModel.countDocuments(filter);
+    return session && query.session ? query.session(session) : query;
+  }
+
+  async getUser(userId, session = null) {
+    if (!userId) return null;
+    const query = this.UserModel.findById(userId).select('email phone codDisabled codDisabledReason');
+    return session && query.session ? query.session(session).lean() : query.lean();
+  }
+
+  buildPhoneFilter(normalizedPhone, rawPhones = []) {
+    const candidates = unique([
+      ...rawPhones,
+      normalizedPhone,
+      normalizedPhone ? `+91${normalizedPhone}` : '',
+    ]);
+
+    return {
+      $or: [
+        { 'codRisk.normalizedPhone': normalizedPhone },
+        { 'shippingAddress.phone': { $in: candidates } },
+        { 'guestInfo.phone': { $in: candidates } },
+      ],
+    };
+  }
+
+  async buildAssessment(input = {}) {
+    const {
+      userId = null,
+      guestInfo = {},
+      shippingAddress = {},
+      total = 0,
+      isGuest = false,
+      requestContext = {},
+      session = null,
+    } = input;
+
+    const rawPhones = unique([shippingAddress.phone, guestInfo.phone]);
+    const normalizedPhone = normalizePhone(shippingAddress.phone || guestInfo.phone);
+    const addressHash = buildAddressHash(shippingAddress);
+    const user = await this.getUser(userId, session);
+    const normalizedEmail = normalizeEmail(guestInfo.email || user?.email || '');
+    const assessment = this.createAllowedAssessment({
+      normalizedPhone,
+      normalizedEmail,
+      addressHash,
+      requestContext,
+    });
+
+    if (!this.config.enabled) return assessment;
+
+    const flags = [];
+    const blocks = [];
+    let score = 0;
+    const now = Date.now();
+
+    if (user?.codDisabled) {
+      blocks.push('cod_disabled_user');
+      score += 100;
+    }
+
+    if (total > this.config.maxOrderAmount) {
+      blocks.push('cod_amount_too_high');
+      score += 50;
+    } else if (total >= this.config.reviewOrderAmount) {
+      flags.push('high_value_cod');
+      score += 15;
+    }
+
+    if (isSuspiciousPhone(normalizedPhone)) {
+      blocks.push('suspicious_phone');
+      score += 40;
+    }
+
+    const emailDomain = getEmailDomain(normalizedEmail);
+    if (emailDomain && this.config.disposableEmailDomains.includes(emailDomain)) {
+      blocks.push('disposable_email');
+      score += 35;
+    }
+
+    if (guestInfo.phone && shippingAddress.phone && normalizePhone(guestInfo.phone) !== normalizePhone(shippingAddress.phone)) {
+      flags.push('guest_shipping_phone_mismatch');
+      score += 10;
+    }
+
+    if (normalizedPhone) {
+      const since = new Date(now - this.config.phoneOrderWindowHours * 60 * 60 * 1000);
+      const phoneCount = await this.countOrders({
+        paymentMethod: 'cod',
+        createdAt: { $gte: since },
+        ...this.buildPhoneFilter(normalizedPhone, rawPhones),
+      }, session);
+
+      if (phoneCount >= this.config.phoneOrderLimit) {
+        blocks.push('phone_velocity_exceeded');
+        score += 50;
+      } else if (phoneCount >= Math.max(1, this.config.phoneOrderLimit - 1)) {
+        flags.push('phone_velocity_near_limit');
+        score += 10;
+      }
+    }
+
+    if (isGuest && requestContext.ip) {
+      const since = new Date(now - this.config.guestIpOrderWindowHours * 60 * 60 * 1000);
+      const ipCount = await this.countOrders({
+        paymentMethod: 'cod',
+        user: null,
+        checkoutIp: requestContext.ip,
+        createdAt: { $gte: since },
+      }, session);
+
+      if (ipCount >= this.config.guestIpOrderLimit) {
+        blocks.push('guest_ip_velocity_exceeded');
+        score += 45;
+      }
+    }
+
+    if (addressHash) {
+      const since = new Date(now - this.config.addressCancelWindowDays * 24 * 60 * 60 * 1000);
+      const cancellationCount = await this.countOrders({
+        paymentMethod: 'cod',
+        status: ORDER_STATUSES.CANCELLED,
+        createdAt: { $gte: since },
+        'codRisk.addressHash': addressHash,
+      }, session);
+
+      if (cancellationCount >= this.config.addressCancelLimit) {
+        blocks.push('address_cancellation_velocity_exceeded');
+        score += 50;
+      }
+    }
+
+    assessment.flags = unique([...flags, ...blocks]);
+    assessment.score = score;
+    assessment.decision = blocks.length > 0 ? 'online_required' : (flags.length > 0 ? 'review' : 'allow');
+    assessment.allowed = blocks.length === 0;
+    assessment.message = this.messageForBlocks(blocks);
+    return assessment;
+  }
+
+  messageForBlocks(blocks) {
+    if (blocks.includes('cod_disabled_user')) {
+      return 'Cash on Delivery is unavailable for this account. Please choose online payment.';
+    }
+    if (blocks.includes('cod_amount_too_high')) {
+      return 'Cash on Delivery is unavailable for this order amount. Please choose online payment.';
+    }
+    if (blocks.includes('phone_velocity_exceeded') || blocks.includes('guest_ip_velocity_exceeded')) {
+      return 'Cash on Delivery is temporarily unavailable due to recent order activity. Please choose online payment.';
+    }
+    if (blocks.includes('address_cancellation_velocity_exceeded')) {
+      return 'Cash on Delivery is unavailable for this address due to recent cancellations. Please choose online payment.';
+    }
+    if (blocks.includes('suspicious_phone') || blocks.includes('disposable_email')) {
+      return 'Cash on Delivery is unavailable for this checkout. Please choose online payment.';
+    }
+    return 'Cash on Delivery is unavailable. Please choose online payment.';
+  }
+
+  async recordAssessment(assessment, input = {}) {
+    if (!assessment.flags.length) return;
+
+    const severity = assessment.allowed ? 'warning' : 'critical';
+    await this.operationalAlertService.recordAlert({
+      type: 'suspicious_cod_checkout',
+      severity,
+      source: 'checkout.cod',
+      message: assessment.allowed
+        ? 'COD checkout passed with risk flags'
+        : 'COD checkout blocked by abuse controls',
+      dedupeKey: `cod_abuse:${assessment.decision}:${assessment.normalizedPhone || assessment.checkoutIp || 'unknown'}:${assessment.flags[0] || 'flag'}`,
+      metadata: {
+        userId: input.userId || null,
+        isGuest: Boolean(input.isGuest),
+        total: input.total || 0,
+        flags: assessment.flags,
+        score: assessment.score,
+        normalizedPhone: assessment.normalizedPhone,
+        normalizedEmail: assessment.normalizedEmail,
+        checkoutIp: assessment.checkoutIp,
+        requestId: input.requestContext?.requestId || '',
+      },
+    }).catch(() => {});
+  }
+
+  async assertCanUseCOD(input = {}) {
+    const assessment = await this.buildAssessment(input);
+    await this.recordAssessment(assessment, input);
+
+    if (!assessment.allowed) {
+      const isVelocityBlock = assessment.flags.includes('phone_velocity_exceeded') ||
+        assessment.flags.includes('guest_ip_velocity_exceeded');
+      throw (isVelocityBlock
+        ? ApiError.tooMany(assessment.message)
+        : ApiError.badRequest(assessment.message));
+    }
+
+    return assessment;
+  }
+}
+
+const service = new CodAbuseService();
+
+module.exports = service;
+module.exports.CodAbuseService = CodAbuseService;
+module.exports.buildAddressHash = buildAddressHash;
+module.exports.normalizeEmail = normalizeEmail;
+module.exports.normalizePhone = normalizePhone;
+module.exports.isSuspiciousPhone = isSuspiciousPhone;

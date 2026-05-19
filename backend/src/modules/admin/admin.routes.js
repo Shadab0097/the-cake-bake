@@ -19,6 +19,11 @@ router.use(auth, adminAuth);
 router.get('/dashboard', adminController.getDashboard);
 router.get('/analytics', adminController.getAnalytics);
 router.get('/audit-logs', adminController.getAuditLogs);
+router.get('/operational-alerts', adminController.getOperationalAlerts);
+router.get('/refunds', adminController.getRefunds);
+router.put('/refunds/:id/approve', validate(adminValidation.paramId), adminAuditService.audit('refund.approve', { resourceType: 'refund' }), adminController.approveRefund);
+router.put('/refunds/:id/process', validate(adminValidation.paramId), adminAuditService.audit('refund.process', { resourceType: 'refund' }), adminController.processRefund);
+router.put('/refunds/:id/fail', validate(adminValidation.paramId), adminAuditService.audit('refund.fail', { resourceType: 'refund' }), adminController.failRefund);
 
 // Products
 router.get('/products', adminController.listProducts);

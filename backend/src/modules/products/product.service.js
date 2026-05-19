@@ -6,41 +6,85 @@ const { generateSlug, escapeRegex } = require('../../utils/helpers');
 const cache = require('../../utils/cache');
 const uploadService = require('../media/upload.service');
 
+const SEARCH_MAX_LENGTH = 80;
+
+const sanitizeSearchTerm = (value) => String(value || '')
+  .normalize('NFKC')
+  .replace(/[^\p{L}\p{N}\s-]+/gu, ' ')
+  .replace(/\s+/g, ' ')
+  .trim()
+  .slice(0, SEARCH_MAX_LENGTH);
+
+const sanitizeFilterValue = (value, maxLength = SEARCH_MAX_LENGTH) => {
+  if (value === undefined || value === null) return '';
+  return String(value)
+    .normalize('NFKC')
+    .replace(/[\0\r\n\t]+/g, ' ')
+    .trim()
+    .slice(0, maxLength);
+};
+
+const parsePriceBound = (value) => {
+  if (value === undefined || value === null || value === '') return undefined;
+  const parsed = parseInt(value, 10);
+  return Number.isFinite(parsed) && parsed >= 0 ? parsed : undefined;
+};
+
+const buildProductSort = (sortKey, hasTextSearch = false) => {
+  switch (sortKey) {
+    case 'price_asc': return { basePrice: 1 };
+    case 'price_desc': return { basePrice: -1 };
+    case 'popularity': return { totalOrders: -1 };
+    case 'rating': return { averageRating: -1 };
+    case 'newest': return { createdAt: -1 };
+    default:
+      return hasTextSearch ? { score: { $meta: 'textScore' } } : { sortOrder: 1, createdAt: -1 };
+  }
+};
+
+const buildProductFilter = (query = {}, options = {}) => {
+  const { includeTextSearch = false, productIds = null } = options;
+  const filter = { isActive: true };
+  const searchTerm = sanitizeSearchTerm(query.q || query.search || '');
+  const category = sanitizeFilterValue(query.category);
+  const occasion = sanitizeFilterValue(query.occasion);
+  const flavor = sanitizeFilterValue(query.flavor);
+  const city = sanitizeFilterValue(query.city);
+  const tag = sanitizeFilterValue(query.tag || query.tags);
+
+  if (includeTextSearch && searchTerm) filter.$text = { $search: searchTerm };
+  if (category) filter.category = category;
+  if (occasion) filter.occasions = occasion;
+  if (flavor) filter.flavors = flavor;
+  if (query.isEggless === 'true') filter.isEggless = true;
+  if (query.hasEgglessOption === 'true') filter.hasEgglessOption = true;
+  if (query.isFeatured === 'true') filter.isFeatured = true;
+  if (city) filter.cities = city;
+  if (tag) filter.tags = tag;
+
+  const minPrice = parsePriceBound(query.minPrice);
+  const maxPrice = parsePriceBound(query.maxPrice);
+  if (minPrice !== undefined || maxPrice !== undefined) {
+    filter.basePrice = {};
+    if (minPrice !== undefined) filter.basePrice.$gte = minPrice;
+    if (maxPrice !== undefined) filter.basePrice.$lte = maxPrice;
+  }
+
+  if (productIds) {
+    filter._id = { $in: productIds };
+  }
+
+  return { filter, searchTerm };
+};
+
 class ProductService {
   /**
    * List products with filters, sorting, and pagination
    */
   async listProducts(query) {
     const { page, limit, skip } = parsePagination(query);
-
-    const filter = { isActive: true };
-
-    if (query.category) filter.category = query.category;
-    if (query.occasion) filter.occasions = query.occasion;
-    if (query.flavor) filter.flavors = query.flavor;
-    if (query.isEggless === 'true') filter.isEggless = true;
-    if (query.hasEgglessOption === 'true') filter.hasEgglessOption = true;
-    if (query.isFeatured === 'true') filter.isFeatured = true;
-    if (query.city) filter.cities = query.city;
-    if (query.tag) filter.tags = query.tag;
-
-    // Price range (basePrice is in paise)
-    if (query.minPrice || query.maxPrice) {
-      filter.basePrice = {};
-      if (query.minPrice) filter.basePrice.$gte = parseInt(query.minPrice, 10);
-      if (query.maxPrice) filter.basePrice.$lte = parseInt(query.maxPrice, 10);
-    }
-
-    // Sorting
-    let sort = {};
-    switch (query.sort) {
-      case 'price_asc': sort = { basePrice: 1 }; break;
-      case 'price_desc': sort = { basePrice: -1 }; break;
-      case 'popularity': sort = { totalOrders: -1 }; break;
-      case 'rating': sort = { averageRating: -1 }; break;
-      case 'newest': sort = { createdAt: -1 }; break;
-      default: sort = { sortOrder: 1, createdAt: -1 };
-    }
+    const availableOnly = query.available === 'true';
+    const sort = buildProductSort(query.sort);
 
     // Cache product listings for 60 seconds — key includes all query params
     const cacheKey = cache.buildKey('products:list', {
@@ -48,14 +92,23 @@ class ProductService {
       category: query.category, occasion: query.occasion, flavor: query.flavor,
       isEggless: query.isEggless, hasEgglessOption: query.hasEgglessOption,
       isFeatured: query.isFeatured, city: query.city, tag: query.tag,
+      tags: query.tags,
       minPrice: query.minPrice, maxPrice: query.maxPrice, sort: query.sort,
+      available: query.available,
     });
 
     return cache.getOrSet(cacheKey, async () => {
+      const productIds = availableOnly
+        ? await Variant.distinct('product', { isActive: true, stock: { $gt: 0 } })
+        : null;
+      const { filter } = buildProductFilter(query, { productIds });
+      const variantMatch = availableOnly
+        ? { isActive: true, stock: { $gt: 0 } }
+        : { isActive: true };
       const [products, total] = await Promise.all([
         Product.find(filter)
           .populate('category', 'name slug')
-          .populate({ path: 'variants', match: { isActive: true }, options: { sort: { price: 1 } } })
+          .populate({ path: 'variants', match: variantMatch, options: { sort: { price: 1 } } })
           .sort(sort)
           .skip(skip)
           .limit(limit)
@@ -71,27 +124,56 @@ class ProductService {
    */
   async searchProducts(query) {
     const { page, limit, skip } = parsePagination(query);
-    const searchTerm = query.q;
+    const availableOnly = query.available === 'true';
+    const { filter: validationFilter, searchTerm } = buildProductFilter(query, {
+      includeTextSearch: true,
+    });
 
-    if (!searchTerm) throw ApiError.badRequest('Search term is required');
+    const hasFilter = Object.keys(validationFilter).some((key) => !['isActive', '_id'].includes(key));
+    if (!searchTerm && !hasFilter && !availableOnly) {
+      throw ApiError.badRequest('Search term or filter is required');
+    }
+    if (query.q && searchTerm.length < 2) {
+      throw ApiError.badRequest('Search term must contain at least 2 searchable characters');
+    }
 
-    const filter = {
-      isActive: true,
-      $text: { $search: searchTerm },
-    };
+    const hasTextSearch = Boolean(validationFilter.$text);
+    const sort = buildProductSort(query.sort, hasTextSearch);
+    const projection = hasTextSearch ? { score: { $meta: 'textScore' } } : {};
+    const cacheKey = cache.buildKey('products:search', {
+      page, limit,
+      q: searchTerm,
+      category: query.category, occasion: query.occasion, flavor: query.flavor,
+      isEggless: query.isEggless, hasEgglessOption: query.hasEgglessOption,
+      isFeatured: query.isFeatured, city: query.city,
+      tag: query.tag, tags: query.tags, available: query.available,
+      minPrice: query.minPrice, maxPrice: query.maxPrice, sort: query.sort,
+    });
 
-    const [products, total] = await Promise.all([
-      Product.find(filter, { score: { $meta: 'textScore' } })
-        .populate('category', 'name slug')
-        .populate({ path: 'variants', match: { isActive: true }, options: { sort: { price: 1 } } })
-        .sort({ score: { $meta: 'textScore' } })
-        .skip(skip)
-        .limit(limit)
-        .lean(),
-      Product.countDocuments(filter),
-    ]);
+    return cache.getOrSet(cacheKey, async () => {
+      const productIds = availableOnly
+        ? await Variant.distinct('product', { isActive: true, stock: { $gt: 0 } })
+        : null;
+      const { filter } = buildProductFilter(query, {
+        includeTextSearch: true,
+        productIds,
+      });
+      const variantMatch = availableOnly
+        ? { isActive: true, stock: { $gt: 0 } }
+        : { isActive: true };
+      const [products, total] = await Promise.all([
+        Product.find(filter, projection)
+          .populate('category', 'name slug')
+          .populate({ path: 'variants', match: variantMatch, options: { sort: { price: 1 } } })
+          .sort(sort)
+          .skip(skip)
+          .limit(limit)
+          .lean(),
+        Product.countDocuments(filter),
+      ]);
 
-    return paginatedResponse(products, total, page, limit);
+      return paginatedResponse(products, total, page, limit);
+    }, 60);
   }
 
   /**
@@ -316,3 +398,8 @@ class ProductService {
 }
 
 module.exports = new ProductService();
+module.exports.buildProductFilter = buildProductFilter;
+module.exports.buildProductSort = buildProductSort;
+module.exports.parsePriceBound = parsePriceBound;
+module.exports.sanitizeFilterValue = sanitizeFilterValue;
+module.exports.sanitizeSearchTerm = sanitizeSearchTerm;

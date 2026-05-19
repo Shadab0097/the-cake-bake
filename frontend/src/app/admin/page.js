@@ -6,8 +6,66 @@ import adminApi, { formatPrice, formatDate, formatDateTime } from '@/lib/adminAp
 import { StatusBadge, StatCard, LoadingSkeleton, RefreshButton } from '@/components/admin/AdminUI';
 import {
   HiOutlineCurrencyRupee, HiOutlineShoppingBag, HiOutlineUsers,
-  HiOutlineCube, HiOutlineClock, HiOutlineCalendarDays
+  HiOutlineCube, HiOutlineClock, HiOutlineCalendarDays,
+  HiOutlineExclamationTriangle, HiOutlineBellAlert, HiOutlineCreditCard,
+  HiOutlineReceiptRefund, HiOutlineShieldExclamation, HiOutlineShoppingCart,
+  HiOutlineTicket
 } from 'react-icons/hi2';
+
+function OperationCard({ label, value, icon, tone = 'info', href }) {
+  const colors = {
+    danger: 'var(--admin-danger-soft)',
+    warning: 'var(--admin-warning-soft)',
+    success: 'var(--admin-success-soft)',
+    info: 'var(--admin-info-soft)',
+    accent: 'var(--admin-accent-soft)',
+  };
+
+  const content = (
+    <div className="admin-card" style={{ display: 'flex', alignItems: 'center', gap: '0.85rem', minHeight: 94 }}>
+      <div style={{
+        width: 42,
+        height: 42,
+        borderRadius: 'var(--admin-radius-sm)',
+        background: colors[tone] || colors.info,
+        display: 'flex',
+        alignItems: 'center',
+        justifyContent: 'center',
+        fontSize: '1.2rem',
+        flexShrink: 0,
+      }}>
+        {icon}
+      </div>
+      <div style={{ minWidth: 0 }}>
+        <div style={{ fontSize: '0.75rem', color: 'var(--admin-text-secondary)', marginBottom: '0.2rem' }}>{label}</div>
+        <div style={{ fontSize: '1.35rem', fontWeight: 700, color: 'var(--admin-text)' }}>{value}</div>
+      </div>
+    </div>
+  );
+
+  if (!href) return content;
+  return (
+    <Link href={href} style={{ textDecoration: 'none' }}>
+      {content}
+    </Link>
+  );
+}
+
+function CompactPanel({ title, action, children }) {
+  return (
+    <div className="admin-card">
+      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: '1rem', marginBottom: '1rem' }}>
+        <h3 style={{ margin: 0 }}>{title}</h3>
+        {action}
+      </div>
+      {children}
+    </div>
+  );
+}
+
+function EmptyPanel({ message }) {
+  return <div className="admin-empty" style={{ padding: '1.5rem 0' }}>{message}</div>;
+}
 
 export default function AdminDashboardPage() {
   const [dashData, setDashData] = useState(null);
@@ -53,6 +111,64 @@ export default function AdminDashboardPage() {
   const revenueByDay = analytics?.revenueByDay || [];
   // topProducts has _id (name), totalQuantity, totalRevenue
   const topProducts = (analytics?.topProducts || []).map(p => ({ ...p, name: p._id, totalOrders: p.totalQuantity }));
+  const operations = dashData?.operations || {};
+  const operationCards = [
+    {
+      label: 'Pending Payments',
+      value: operations.payments?.pending || 0,
+      icon: <HiOutlineCreditCard />,
+      tone: (operations.payments?.stalePending || 0) > 0 ? 'warning' : 'info',
+      href: '/admin/orders?paymentStatus=pending',
+    },
+    {
+      label: 'Failed/Expired Payments',
+      value: (operations.payments?.failed || 0) + (operations.payments?.expired || 0),
+      icon: <HiOutlineExclamationTriangle />,
+      tone: ((operations.payments?.failed || 0) + (operations.payments?.expired || 0)) > 0 ? 'danger' : 'success',
+      href: '/admin/orders?paymentStatus=failed',
+    },
+    {
+      label: 'Refund Queue',
+      value: (operations.refunds?.requested || 0) + (operations.refunds?.approved || 0) + (operations.refunds?.processing || 0),
+      icon: <HiOutlineReceiptRefund />,
+      tone: (operations.refunds?.failed || 0) > 0 ? 'danger' : 'warning',
+      href: '/admin/refunds',
+    },
+    {
+      label: 'Low Stock Variants',
+      value: operations.inventory?.lowStockCount || 0,
+      icon: <HiOutlineCube />,
+      tone: (operations.inventory?.lowStockCount || 0) > 0 ? 'warning' : 'success',
+      href: '/admin/products',
+    },
+    {
+      label: 'Open Critical Alerts',
+      value: operations.alerts?.critical || 0,
+      icon: <HiOutlineBellAlert />,
+      tone: (operations.alerts?.critical || 0) > 0 ? 'danger' : 'success',
+      href: '/admin/notifications',
+    },
+    {
+      label: 'High-Risk COD',
+      value: operations.cod?.highRiskCount || 0,
+      icon: <HiOutlineShieldExclamation />,
+      tone: (operations.cod?.highRiskCount || 0) > 0 ? 'warning' : 'success',
+      href: '/admin/orders?paymentMethod=cod',
+    },
+    {
+      label: 'Failed Notifications',
+      value: operations.notifications?.failed || 0,
+      icon: <HiOutlineBellAlert />,
+      tone: (operations.notifications?.failed || 0) > 0 ? 'warning' : 'success',
+      href: '/admin/notifications',
+    },
+    {
+      label: 'Abandoned Carts',
+      value: operations.carts?.abandoned || 0,
+      icon: <HiOutlineShoppingCart />,
+      tone: (operations.carts?.abandoned || 0) > 0 ? 'accent' : 'success',
+    },
+  ];
 
   const stats = [
     { label: 'Total Revenue', value: formatPrice(overview.totalRevenue || 0), icon: <HiOutlineCurrencyRupee />, color: 'var(--admin-accent-soft)' },
@@ -81,6 +197,143 @@ export default function AdminDashboardPage() {
         {stats.map((stat, i) => (
           <StatCard key={i} {...stat} />
         ))}
+      </div>
+
+      {/* Operations Row */}
+      <div style={{ marginBottom: '2rem' }}>
+        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: '1rem', marginBottom: '1rem' }}>
+          <div>
+            <h2 style={{ margin: 0 }}>Live Operations</h2>
+            <div style={{ fontSize: '0.75rem', color: 'var(--admin-text-muted)', marginTop: '0.25rem' }}>
+              Last {operations.windowHours || 24} hours for payment and notification health
+            </div>
+          </div>
+        </div>
+
+        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(190px, 1fr))', gap: '1rem', marginBottom: '1rem' }}>
+          {operationCards.map((card) => (
+            <OperationCard key={card.label} {...card} />
+          ))}
+        </div>
+
+        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(280px, 1fr))', gap: '1rem' }}>
+          <CompactPanel
+            title="Low Stock"
+            action={<Link href="/admin/products" style={{ fontSize: '0.8125rem', color: 'var(--admin-accent-hover)', textDecoration: 'none' }}>Manage</Link>}
+          >
+            {(operations.inventory?.lowStock || []).length > 0 ? (
+              <div style={{ display: 'flex', flexDirection: 'column', gap: '0.65rem' }}>
+                {operations.inventory.lowStock.map((variant) => (
+                  <div key={variant._id} style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: '0.75rem' }}>
+                    <div style={{ minWidth: 0 }}>
+                      <div style={{ fontSize: '0.875rem', fontWeight: 600, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                        {variant.product?.name || 'Product'}
+                      </div>
+                      <div style={{ fontSize: '0.72rem', color: 'var(--admin-text-muted)' }}>
+                        {variant.weight || variant.sku || 'Variant'}
+                      </div>
+                    </div>
+                    <span style={{
+                      minWidth: 46,
+                      textAlign: 'center',
+                      borderRadius: 999,
+                      padding: '0.2rem 0.55rem',
+                      background: variant.stock <= 0 ? 'var(--admin-danger-soft)' : 'var(--admin-warning-soft)',
+                      color: variant.stock <= 0 ? 'var(--admin-danger)' : 'var(--admin-warning)',
+                      fontWeight: 700,
+                      fontSize: '0.8rem',
+                    }}>
+                      {variant.stock}
+                    </span>
+                  </div>
+                ))}
+              </div>
+            ) : (
+              <EmptyPanel message="No low-stock variants" />
+            )}
+          </CompactPanel>
+
+          <CompactPanel
+            title="Refund Queue"
+            action={<Link href="/admin/refunds" style={{ fontSize: '0.8125rem', color: 'var(--admin-accent-hover)', textDecoration: 'none' }}>Open</Link>}
+          >
+            {(operations.refunds?.queue || []).length > 0 ? (
+              <div style={{ display: 'flex', flexDirection: 'column', gap: '0.65rem' }}>
+                {operations.refunds.queue.map((refund) => (
+                  <div key={refund._id} style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: '0.75rem' }}>
+                    <div style={{ minWidth: 0 }}>
+                      <div style={{ fontSize: '0.875rem', fontWeight: 600 }}>
+                        #{refund.order?.orderNumber || 'Order'}
+                      </div>
+                      <div style={{ fontSize: '0.72rem', color: 'var(--admin-text-muted)' }}>
+                        {formatDateTime(refund.createdAt)}
+                      </div>
+                    </div>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
+                      <span style={{ fontSize: '0.82rem', fontWeight: 700 }}>{formatPrice(refund.amount || 0)}</span>
+                      <StatusBadge status={refund.status} />
+                    </div>
+                  </div>
+                ))}
+              </div>
+            ) : (
+              <EmptyPanel message="No refunds waiting" />
+            )}
+          </CompactPanel>
+
+          <CompactPanel
+            title="Open Alerts"
+            action={<Link href="/admin/notifications" style={{ fontSize: '0.8125rem', color: 'var(--admin-accent-hover)', textDecoration: 'none' }}>Review</Link>}
+          >
+            {(operations.alerts?.recent || []).length > 0 ? (
+              <div style={{ display: 'flex', flexDirection: 'column', gap: '0.65rem' }}>
+                {operations.alerts.recent.map((alert) => (
+                  <div key={alert._id} style={{ display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', gap: '0.75rem' }}>
+                    <div style={{ minWidth: 0 }}>
+                      <div style={{ fontSize: '0.875rem', fontWeight: 600, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                        {alert.type}
+                      </div>
+                      <div style={{ fontSize: '0.72rem', color: 'var(--admin-text-muted)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                        {alert.message}
+                      </div>
+                    </div>
+                    <StatusBadge status={alert.severity} />
+                  </div>
+                ))}
+              </div>
+            ) : (
+              <EmptyPanel message="No open operational alerts" />
+            )}
+          </CompactPanel>
+
+          <CompactPanel title="Coupon Usage">
+            {(operations.coupons?.top || []).length > 0 ? (
+              <div style={{ display: 'flex', flexDirection: 'column', gap: '0.65rem' }}>
+                {operations.coupons.top.slice(0, 6).map((coupon) => {
+                  const usageLimit = coupon.usageLimit || 0;
+                  const percent = usageLimit > 0 ? Math.min(100, Math.round((coupon.usageCount / usageLimit) * 100)) : 0;
+                  return (
+                    <div key={coupon._id}>
+                      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: '0.75rem', marginBottom: '0.25rem' }}>
+                        <span style={{ fontSize: '0.85rem', fontWeight: 700 }}>{coupon.code}</span>
+                        <span style={{ fontSize: '0.75rem', color: 'var(--admin-text-secondary)' }}>
+                          {coupon.usageCount || 0}{usageLimit > 0 ? ` / ${usageLimit}` : ''}
+                        </span>
+                      </div>
+                      {usageLimit > 0 && (
+                        <div style={{ height: 6, background: 'var(--admin-bg)', borderRadius: 99, overflow: 'hidden' }}>
+                          <div style={{ height: '100%', width: `${percent}%`, background: percent >= 80 ? 'var(--admin-warning)' : 'var(--admin-info)', borderRadius: 99 }} />
+                        </div>
+                      )}
+                    </div>
+                  );
+                })}
+              </div>
+            ) : (
+              <EmptyPanel message="No coupon usage yet" />
+            )}
+          </CompactPanel>
+        </div>
       </div>
 
       {/* Charts Row */}

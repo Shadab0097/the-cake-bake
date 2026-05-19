@@ -2,9 +2,11 @@
 
 import { useState, useEffect } from 'react';
 import Link from 'next/link';
+import Image from 'next/image';
 import { motion, AnimatePresence } from 'framer-motion';
 import { FiArrowRight, FiChevronLeft, FiChevronRight } from 'react-icons/fi';
 import api from '@/lib/api';
+import { getBannerImageUrl } from '@/lib/utils';
 
 const FALLBACK_SLIDES = [
   {
@@ -30,21 +32,13 @@ const FALLBACK_SLIDES = [
   },
 ];
 
-const resolveMediaUrl = (url) => {
-  if (!url) return '';
-  if (url.startsWith('/')) {
-    return `${process.env.NEXT_PUBLIC_API_BASE || 'http://localhost:5000'}${url}`;
-  }
-  return url;
-};
-
 const bannerToSlide = (banner) => ({
   title: banner.title || '',
   subtitle: banner.subtitle || '',
   cta: { label: 'Explore Now', href: banner.link || '/products' },
   bg: 'from-pink-deep/90 to-primary/80',
   emoji: '',
-  image: resolveMediaUrl(banner.image?.desktop || banner.image?.mobile || ''),
+  image: getBannerImageUrl(banner, 'bannerDesktop'),
 });
 
 export default function HeroBanner() {
@@ -95,8 +89,14 @@ export default function HeroBanner() {
         >
           {slide.image && (
             <>
-              {/* eslint-disable-next-line @next/next/no-img-element */}
-              <img src={slide.image} alt={slide.title || 'Hero banner'} className="absolute inset-0 h-full w-full object-cover" />
+              <Image
+                src={slide.image}
+                alt={slide.title || 'Hero banner'}
+                fill
+                priority={current === 0}
+                className="object-cover"
+                sizes="100vw"
+              />
               <div className="absolute inset-0 bg-gradient-to-r from-black/65 via-black/35 to-black/10" />
             </>
           )}

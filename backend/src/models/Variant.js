@@ -43,5 +43,6 @@ const variantSchema = new mongoose.Schema(
 );
 
 variantSchema.index({ product: 1, isActive: 1 });
+variantSchema.index({ isActive: 1, stock: 1, product: 1 });
 
 module.exports = mongoose.model('Variant', variantSchema);

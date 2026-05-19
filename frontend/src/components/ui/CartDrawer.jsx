@@ -11,7 +11,7 @@ import {
   updateCartItem, removeCartItem,
   updateGuestItem, removeGuestItem,
 } from '@/store/slices/cartSlice';
-import { formatPrice, getProductImage } from '@/lib/utils';
+import { formatPrice, getOptimizedImageUrl, getProductImage } from '@/lib/utils';
 import AddOnModal from '@/components/ui/AddOnModal';
 
 export default function CartDrawer() {
@@ -107,7 +107,9 @@ export default function CartDrawer() {
                 <div className="space-y-4">
                   {cartItems.map((item) => {
                     const itemKey = isAuthenticated ? item._id : item.localId;
-                    const itemImage = isAuthenticated ? getProductImage(item.product) : (item.productImage || '/images/placeholder-cake.svg');
+                    const itemImage = isAuthenticated
+                      ? getProductImage(item.product, 0, 'thumbnail')
+                      : (getOptimizedImageUrl(item.productImage, 'thumbnail') || '/images/placeholder-cake.svg');
                     const itemName = isAuthenticated ? (item.snapshotName || item.product?.name) : item.productName;
                     const itemWeight = isAuthenticated ? item.variant?.weight : item.variantWeight;
                     const itemPrice = isAuthenticated ? (item.snapshotPrice || item.variant?.price || 0) : (item.price || 0);

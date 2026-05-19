@@ -19,6 +19,7 @@ const logger = require('../../middleware/logger');
 const idempotencyService = require('./idempotency.service');
 const inventoryReservationService = require('./inventoryReservation.service');
 const guestTrackingService = require('./guestTracking.service');
+const codAbuseService = require('./codAbuse.service');
 
 // ── Joi validation schema for guest checkout ──────────────────────────────────
 const guestCheckoutSchema = Joi.object({
@@ -89,6 +90,7 @@ router.post(
     }
 
     const { guestInfo, shippingAddress, items, deliveryDate, deliverySlot } = value;
+    const requestContext = codAbuseService.buildRequestContext(req);
 
     // ── XSS sanitize string fields ──────────────────────────────────────────
     guestInfo.name = sanitize(guestInfo.name);
@@ -182,6 +184,14 @@ router.post(
     const total = subtotal + deliveryCharge;
     if (total <= 0) throw ApiError.badRequest('Invalid order total');
 
+    const codRiskAssessment = await codAbuseService.assertCanUseCOD({
+      guestInfo,
+      shippingAddress,
+      total,
+      isGuest: true,
+      requestContext,
+    });
+
     // ── Normalise delivery slot ──────────────────────────────────────────────
     let slotObj = deliverySlot || {};
     if (typeof slotObj === 'string') {
@@ -227,6 +237,9 @@ router.post(
         status: ORDER_STATUSES.CONFIRMED,
         paymentMethod: 'cod',
         paymentStatus: 'pending',
+        checkoutIp: requestContext.ip || '',
+        checkoutUserAgent: requestContext.userAgent || '',
+        codRisk: codAbuseService.buildRiskSnapshot(codRiskAssessment),
         statusHistory: [{ status: ORDER_STATUSES.CONFIRMED, timestamp: new Date(), note: 'Guest COD order confirmed' }],
       }], { session });
 

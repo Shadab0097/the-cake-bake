@@ -57,6 +57,18 @@ const userSchema = new mongoose.Schema(
       default: 0,
       min: 0,
     },
+    codDisabled: {
+      type: Boolean,
+      default: false,
+      index: true,
+    },
+    codDisabledReason: {
+      type: String,
+      default: '',
+    },
+    codDisabledAt: {
+      type: Date,
+    },
     lastLogin: {
       type: Date,
     },

@@ -287,3 +287,5 @@ class LoyaltyService {
 }
 
 module.exports = new LoyaltyService();
+module.exports.LoyaltyService = LoyaltyService;
+module.exports.EVENTS = EVENTS;

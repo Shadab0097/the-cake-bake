@@ -17,6 +17,9 @@ const { canMoveOnlineOrderToStatus, cancelUnpaidOnlineOrder } = require('./order
 const inventoryReservationService = require('./inventoryReservation.service');
 const couponUsageService = require('../coupons/couponUsage.service');
 const loyaltyService = require('../loyalty/loyalty.service');
+const codAbuseService = require('./codAbuse.service');
+const cancellationService = require('./cancellation.service');
+const refundService = require('../payments/refund.service');
 
 class OrderService {
   /**
@@ -152,7 +155,8 @@ class OrderService {
   /**
    * Create order and Razorpay payment order
    */
-  async createOrder(userId, checkoutData) {
+  async createOrder(userId, checkoutData, options = {}) {
+    const { requestContext = {} } = options;
     const { addressId, deliveryDate, shippingAddress, specialInstructions, isGift, giftMessage, paymentMethod = 'cod', redeemPoints = false } = checkoutData;
 
     // Normalise deliverySlot — frontend sends a plain string like "10:00 AM – 12:00 PM"
@@ -262,6 +266,17 @@ class OrderService {
       if (!addressId && shippingAddress && checkoutData.saveAddress) {
         orderAddress = await this.resolveAddress(userId, null, shippingAddress, { saveInline: true, session });
       }
+      let codRiskAssessment = null;
+      if (paymentMethod === 'cod') {
+        codRiskAssessment = await codAbuseService.assertCanUseCOD({
+          userId,
+          shippingAddress: orderAddress,
+          total,
+          isGuest: false,
+          requestContext,
+          session,
+        });
+      }
 
       const order = await Order.create([{
         orderNumber,
@@ -291,6 +306,9 @@ class OrderService {
         status: paymentMethod === 'cod' ? ORDER_STATUSES.CONFIRMED : ORDER_STATUSES.PENDING,
         paymentMethod: paymentMethod || 'cod',
         paymentStatus: 'pending',
+        checkoutIp: requestContext.ip || '',
+        checkoutUserAgent: requestContext.userAgent || '',
+        codRisk: codRiskAssessment ? codAbuseService.buildRiskSnapshot(codRiskAssessment) : undefined,
         statusHistory: [{
           status: paymentMethod === 'cod' ? ORDER_STATUSES.CONFIRMED : ORDER_STATUSES.PENDING,
           timestamp: new Date(),
@@ -486,7 +504,10 @@ class OrderService {
       .lean();
 
     if (!order) throw ApiError.notFound('Order not found');
-    return order;
+    return {
+      ...order,
+      cancellationPolicy: cancellationService.evaluate(order, { actor: 'customer' }),
+    };
   }
 
   /**
@@ -500,10 +521,8 @@ class OrderService {
       const order = await Order.findOne({ orderNumber, user: userId }).session(session);
       if (!order) throw ApiError.notFound('Order not found');
 
-      const cancellableStatuses = [ORDER_STATUSES.PENDING, ORDER_STATUSES.CONFIRMED];
-      if (!cancellableStatuses.includes(order.status)) {
-        throw ApiError.badRequest('Order cannot be cancelled at this stage');
-      }
+      const policy = cancellationService.evaluate(order, { actor: 'customer' });
+      if (!policy.cancellable) throw ApiError.badRequest(policy.reason);
 
       if (order.paymentMethod === 'online' && order.paymentStatus !== 'paid') {
         const result = await cancelUnpaidOnlineOrder(order, {
@@ -534,13 +553,19 @@ class OrderService {
         return cancelledOrder;
       }
 
+      const payment = await Payment.findOne({ order: order._id }).session(session);
       order.status = ORDER_STATUSES.CANCELLED;
+      order.cancellation = {
+        requestedBy: 'customer',
+        reason: 'Cancelled by customer',
+        cancelledAt: new Date(),
+        policyCode: policy.code,
+      };
       order.statusHistory.push({
         status: ORDER_STATUSES.CANCELLED,
         timestamp: new Date(),
         note: 'Cancelled by customer',
       });
-      await order.save({ session });
 
       await inventoryReservationService.releaseForOrder(order, session, {
         reason: 'Cancelled by customer',
@@ -552,6 +577,33 @@ class OrderService {
         eventType: loyaltyService.EVENTS.ORDER_CANCELLED_RESTORE,
         reason: `Points refunded for cancelled order ${order.orderNumber}`,
       });
+
+      await couponUsageService.releaseForOrder(order, session);
+
+      if (order.paymentMethod === 'cod') {
+        order.paymentStatus = 'failed';
+        if (payment) {
+          payment.status = PAYMENT_STATUSES.FAILED;
+          payment.webhookEvents.push({
+            event: 'customer.cancel_cod_order',
+            payload: { userId },
+            receivedAt: new Date(),
+          });
+          await payment.save({ session });
+        }
+      } else if (policy.refundRequired) {
+        await refundService.requestForOrder({
+          order,
+          payment,
+          amount: policy.refundAmount,
+          reason: 'Customer cancelled paid online order',
+          requestedBy: 'customer',
+          requestedByUser: userId,
+          session,
+        });
+      }
+
+      await order.save({ session });
       await session.commitTransaction();
 
       // Send cancellation notification (fire-and-forget, outside transaction)
@@ -575,12 +627,120 @@ class OrderService {
     }
   }
 
+  async cancelOrderByAdmin(orderId, note, adminId) {
+    const session = await mongoose.startSession();
+
+    try {
+      let cancelledOrderId = null;
+      await session.withTransaction(async () => {
+        const order = await Order.findById(orderId).session(session);
+        if (!order) throw ApiError.notFound('Order not found');
+
+        const policy = cancellationService.evaluate(order, { actor: 'admin' });
+        if (!policy.cancellable) throw ApiError.badRequest(policy.reason);
+
+        if (order.paymentMethod === 'online' && order.paymentStatus !== 'paid') {
+          const result = await cancelUnpaidOnlineOrder(order, {
+            session,
+            paymentStatus: 'failed',
+            paymentRecordStatus: PAYMENT_STATUSES.FAILED,
+            note: note || 'Cancelled by admin before payment completion',
+            paymentEvent: 'admin.cancel_unpaid_online_order',
+            paymentPayload: { adminId },
+          });
+
+          if (!result.changed) {
+            throw ApiError.badRequest('Order is no longer awaiting online payment');
+          }
+
+          cancelledOrderId = order._id;
+          return;
+        }
+
+        const payment = await Payment.findOne({ order: order._id }).session(session);
+        const cancellationNote = note || 'Cancelled by admin';
+
+        order.status = ORDER_STATUSES.CANCELLED;
+        order.cancellation = {
+          requestedBy: 'admin',
+          reason: cancellationNote,
+          cancelledAt: new Date(),
+          policyCode: policy.code,
+        };
+        order.statusHistory.push({
+          status: ORDER_STATUSES.CANCELLED,
+          timestamp: new Date(),
+          note: cancellationNote,
+          updatedBy: adminId,
+        });
+
+        await inventoryReservationService.releaseForOrder(order, session, {
+          reason: cancellationNote,
+        });
+
+        await loyaltyService.restoreForOrder(order, {
+          session,
+          eventType: loyaltyService.EVENTS.ORDER_CANCELLED_RESTORE,
+          reason: `Points refunded for cancelled order ${order.orderNumber}`,
+        });
+
+        await couponUsageService.releaseForOrder(order, session);
+
+        if (order.paymentMethod === 'cod') {
+          order.paymentStatus = 'failed';
+          if (payment) {
+            payment.status = PAYMENT_STATUSES.FAILED;
+            payment.webhookEvents.push({
+              event: 'admin.cancel_cod_order',
+              payload: { adminId },
+              receivedAt: new Date(),
+            });
+            await payment.save({ session });
+          }
+        } else if (policy.refundRequired) {
+          await refundService.requestForOrder({
+            order,
+            payment,
+            amount: policy.refundAmount,
+            reason: cancellationNote,
+            requestedBy: 'admin',
+            requestedByUser: adminId,
+            session,
+          });
+        }
+
+        await order.save({ session });
+        cancelledOrderId = order._id;
+      });
+
+      cache.del('admin:dashboard');
+      const cancelledOrder = await Order.findById(cancelledOrderId);
+
+      setImmediate(async () => {
+        try {
+          const notificationService = require('../notifications/notification.service');
+          await notificationService.sendStatusUpdate(cancelledOrder, 'cancelled');
+        } catch (err) {
+          logger.warn('[Order] Admin cancel notification failed:', err.message);
+        }
+      });
+
+      return cancelledOrder;
+    } finally {
+      session.endSession();
+    }
+  }
+
   /**
    * Admin: Update order status
    */
   async updateOrderStatus(orderId, status, note, adminId) {
     const initialOrder = await Order.findById(orderId);
     if (!initialOrder) throw ApiError.notFound('Order not found');
+
+    if (status === ORDER_STATUSES.CANCELLED) {
+      return this.cancelOrderByAdmin(orderId, note, adminId);
+    }
 
     if (!canMoveOnlineOrderToStatus(initialOrder, status)) {
       throw ApiError.badRequest('Unpaid online orders can only be cancelled');

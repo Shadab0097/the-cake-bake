@@ -13,8 +13,8 @@ This tracker follows `IMPLEMENTATION_PLAN.md` and records what is done, in progr
 
 - `[x]` Sprint 1 — Must-fix before launch
 - `[x]` Sprint 2 — Security hardening
-- `[~]` Sprint 3 — Scale and operations
-- `[ ]` Sprint 4 — Ecommerce polish
+- `[x]` Sprint 3 — Scale and operations
+- `[x]` Sprint 4 — Ecommerce polish
 
 ## Sprint 1 — Must-fix before launch
 
@@ -58,21 +58,21 @@ This tracker follows `IMPLEMENTATION_PLAN.md` and records what is done, in progr
 - `[x]` Redis-backed production rate limiting
 - `[x]` Shared Redis cache for public catalog data
 - `[x]` Queue-based background jobs
-- `[ ]` Payment reconciliation job
-- `[ ]` Stock reservation expiry job
-- `[ ]` Database index optimization
-- `[ ]` Monitoring and alerting for critical incidents
+- `[x]` Payment reconciliation job
+- `[x]` Stock reservation expiry job
+- `[x]` Database index optimization
+- `[x]` Monitoring and alerting for critical incidents
 
 ## Sprint 4 — Ecommerce polish
 
-- `[ ]` COD fraud and abuse controls
-- `[ ]` Cancellation and refund workflow
-- `[ ]` Product search and catalog UX improvements
-- `[ ]` CDN/image optimization
-- `[ ]` Admin operational dashboard
-- `[ ]` Backend automated tests
-- `[ ]` Frontend automated tests
-- `[ ]` Release readiness checklist
+- `[x]` COD fraud and abuse controls
+- `[x]` Cancellation and refund workflow
+- `[x]` Product search and catalog UX improvements
+- `[x]` CDN/image optimization
+- `[x]` Admin operational dashboard
+- `[x]` Backend automated tests
+- `[x]` Frontend automated tests
+- `[x]` Release readiness checklist
 
 ## Change log
 
@@ -94,3 +94,15 @@ This tracker follows `IMPLEMENTATION_PLAN.md` and records what is done, in progr
 | 2026-05-18 | Sprint 3.1 Redis-backed rate limiting | Completed | Added Redis client configuration, production REDIS_URL validation, atomic Redis-backed express-rate-limit stores with per-limiter namespaces, stricter high-risk auth/coupon limits, Redis startup/shutdown handling, targeted Redis store tests, and a clean production dependency audit. |
 | 2026-05-18 | Sprint 3.2 Shared Redis catalog cache | Completed | Reworked cache utility to support shared Redis caching with local dev fallback and fail-open reads, added request coalescing for cache misses, cached categories, product/category listings, product details, featured/bestseller/trending products, banners, add-ons, and delivery data, and invalidated catalog cache on admin product/category/banner/add-on/delivery mutations. |
 | 2026-05-18 | Sprint 3.3 Queue-based background jobs | Completed | Added BullMQ/Redis queue infrastructure with inline dev fallback, queued email/WhatsApp notification dispatch with deterministic job IDs and idempotent notification logs, started notification workers on server boot, and added targeted queue tests plus backend regression validation. |
+| 2026-05-19 | Sprint 3.4 Payment reconciliation job | Completed | Added a distributed-lock Razorpay reconciliation scheduler that scans older provider payment records, repairs captured-but-local-pending payments through the transaction-safe finalizer, records authorized/failed provider states idempotently, isolates provider API failures per candidate, and added targeted reconciliation tests. |
+| 2026-05-19 | Sprint 3.5 Stock reservation expiry job | Completed | Added a distributed-lock reservation expiry scheduler using InventoryReservation.expiresAt as the scan source, re-checking payment/provider state before release, confirming reservations for paid/captured orders, expiring unpaid online reservations exactly once, and adding targeted expiry safety tests. |
+| 2026-05-19 | Sprint 3.6 Database index optimization | Completed | Added order status/paymentStatus plus createdAt compound indexes, normalized Razorpay payment lookup indexes to partial provider-ID indexes, added payment status/createdAt reconciliation scan coverage, removed the duplicate Razorpay order index warning, and added schema index regression tests for required large-traffic query paths. |
+| 2026-05-19 | Sprint 3.7 Monitoring and alerting | Completed | Added persistent operational alerts with dedupe keys, redacted metadata, optional webhook notification with cooldown, admin alert listing, private readiness monitoring status, API 5xx alert hooks, critical payment/order mismatch alerts, and targeted alerting tests. |
+| 2026-05-19 | Sprint 4.1 COD fraud and abuse controls | Completed | Added shared COD risk assessment for authenticated and guest checkout, conservative velocity checks for phone/IP/address cancellation abuse, high-value COD controls, disposable email and fake-phone detection, account-level COD disable support, persisted COD risk snapshots on orders, operational alerts for suspicious COD attempts, and targeted COD abuse tests. |
+| 2026-05-19 | Sprint 4.2 Cancellation and refund workflow | Completed | Added cancellation policy evaluation with customer cutoff rules, refund state fields on orders/payments, a durable Refund workflow model, customer/admin cancellation paths that request refunds for paid online orders, admin refund approval/processing/failure endpoints with audit hooks, Razorpay refund processing support, and targeted cancellation/refund tests. |
+| 2026-05-19 | Sprint 4.3 Product search and catalog UX | Completed | Added sanitized backend product search/filter helpers, availability-aware catalog queries, indexed flavor/city/stock search paths, safer search cache keys, URL-backed frontend search filters for category/flavor/occasion/city/price/availability/sort, and targeted product-search tests plus frontend build validation. |
+| 2026-05-19 | Sprint 4.4 CDN and image optimization | Completed | Added tested Cloudinary transformation helpers, CDN-aware media URL resolution, production Next image remote patterns and long image cache TTLs, optimized product/category/banner/add-on image rendering, frontend image environment examples, and CDN-friendly backend upload/cache headers. |
+| 2026-05-19 | Sprint 4.5 Admin operational dashboard | Completed | Added cached live-operations metrics for payment health, refund queue, low stock, open operational alerts, failed notifications, high-risk COD orders, abandoned carts, active reservations, and coupon usage, then surfaced them in the admin dashboard with targeted dashboard tests and frontend build validation. |
+| 2026-05-19 | Sprint 4.6 Backend automated tests | Completed | Added focused backend tests for admin middleware authorization, coupon usage identity normalization and discount caps, reservable inventory item shaping, loyalty event stability, and dashboard count helpers, expanding the backend regression suite to 87 passing tests. |
+| 2026-05-19 | Sprint 4.7 Frontend automated tests | Completed | Added dependency-free frontend utility tests for customer-facing price/date formatting, slug generation, occasion labels, rating display, and truncation, while preserving existing image optimization and security-header tests in a 17-test targeted frontend suite. |
+| 2026-05-19 | Sprint 4.8 Release readiness checklist | Completed | Added a root release readiness checklist covering production infrastructure gates, secrets, Razorpay and Meta webhooks, CDN/image settings, validation commands, ecommerce smoke tests, high-traffic edge cases, rollback planning, launch monitoring, and go/no-go signoff. |

@@ -154,6 +154,18 @@ class InventoryReservationService {
       return { changed: false, reason: reservation.status, reservation };
     }
 
+    return this.releaseReservationDocument(reservation, session, { status, reason });
+  }
+
+  async releaseReservationDocument(reservation, session, options = {}) {
+    if (!session) throw new Error('releaseReservationDocument requires a mongoose session');
+
+    const { status = 'released', reason = 'Inventory reservation released' } = options;
+    if (!reservation) return { changed: false, reason: 'not_found' };
+    if (reservation.status === 'released' || reservation.status === 'expired') {
+      return { changed: false, reason: reservation.status, reservation };
+    }
+
     const bulkOps = reservation.items.map((item) => ({
       updateOne: {
         filter: { _id: item.variant },
@@ -175,3 +187,5 @@ class InventoryReservationService {
 }
 
 module.exports = new InventoryReservationService();
+module.exports.InventoryReservationService = InventoryReservationService;
+module.exports.buildReservationItems = buildReservationItems;

@@ -20,6 +20,14 @@ const PAYMENT_STATUSES = {
   REFUNDED: 'refunded',
 };
 
+const REFUND_STATUSES = {
+  REQUESTED: 'requested',
+  APPROVED: 'approved',
+  PROCESSING: 'processing',
+  REFUNDED: 'refunded',
+  FAILED: 'failed',
+};
+
 const USER_ROLES = {
   CUSTOMER: 'customer',
   ADMIN: 'admin',
@@ -107,6 +115,7 @@ const ADDON_CATEGORIES = ['candles', 'flowers', 'cards', 'balloons', 'gifts', 'd
 module.exports = {
   ORDER_STATUSES,
   PAYMENT_STATUSES,
+  REFUND_STATUSES,
   USER_ROLES,
   COUPON_TYPES,
   INQUIRY_STATUSES,

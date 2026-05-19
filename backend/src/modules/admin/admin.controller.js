@@ -8,6 +8,8 @@ const inquiryService = require('../inquiries/inquiry.service');
 const reviewService = require('../reviews/review.service');
 const notificationService = require('../notifications/notification.service');
 const adminAuditService = require('./adminAudit.service');
+const operationalAlertService = require('../monitoring/operationalAlert.service');
+const refundService = require('../payments/refund.service');
 const Banner = require('../../models/Banner');
 const Category = require('../../models/Category');
 const AddOn = require('../../models/AddOn');
@@ -47,6 +49,31 @@ const getAnalytics = asyncHandler(async (req, res) => {
 const getAuditLogs = asyncHandler(async (req, res) => {
   const result = await adminAuditService.list(req.query);
   ApiResponse.ok(result).send(res);
+});
+
+const getOperationalAlerts = asyncHandler(async (req, res) => {
+  const result = await operationalAlertService.list(req.query);
+  ApiResponse.ok(result).send(res);
+});
+
+const getRefunds = asyncHandler(async (req, res) => {
+  const result = await refundService.list(req.query);
+  ApiResponse.ok(result).send(res);
+});
+
+const approveRefund = asyncHandler(async (req, res) => {
+  const refund = await refundService.approve(req.params.id, req.user._id, req.body?.note || 'Refund approved');
+  ApiResponse.ok(refund, 'Refund approved').send(res);
+});
+
+const processRefund = asyncHandler(async (req, res) => {
+  const refund = await refundService.processApproved(req.params.id, req.user._id);
+  ApiResponse.ok(refund, 'Refund processed').send(res);
+});
+
+const failRefund = asyncHandler(async (req, res) => {
+  const refund = await refundService.markFailed(req.params.id, req.user._id, req.body?.reason || 'Refund failed');
+  ApiResponse.ok(refund, 'Refund marked failed').send(res);
 });
 
 // ---- Products ----
@@ -369,7 +396,7 @@ const getChatbotStats = asyncHandler(async (req, res) => {
 });
 
 module.exports = {
-  getDashboard, getAnalytics, getAuditLogs,
+  getDashboard, getAnalytics, getAuditLogs, getOperationalAlerts, getRefunds, approveRefund, processRefund, failRefund,
   listProducts, createProduct, updateProduct, deleteProduct, addVariant, updateVariant, bulkImportProducts,
   listCategories, createCategory, updateCategory, deleteCategory,
   getOrders, getOrderDetail, updateOrderStatus,

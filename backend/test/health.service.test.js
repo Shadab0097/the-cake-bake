@@ -49,6 +49,7 @@ test('readiness health reports database and private config status without runtim
   assert.equal(result.body.checks.smtp.status, 'ok');
   assert.equal(result.body.checks.whatsapp.status, 'ok');
   assert.equal(result.body.checks.cloudinary.status, 'ok');
+  assert.equal(result.body.checks.monitoring.status, 'disabled');
 
   for (const key of ['memory', 'pid', 'environment', 'version', 'uptime']) {
     assert.equal(Object.hasOwn(result.body, key), false);

@@ -142,10 +142,51 @@ const orderSchema = new mongoose.Schema(
       enum: ['pending', 'paid', 'failed', 'expired', 'refunded'],
       default: 'pending',
     },
+    refundStatus: {
+      type: String,
+      enum: ['', 'requested', 'approved', 'processing', 'refunded', 'failed'],
+      default: '',
+      index: true,
+    },
+    refundAmount: {
+      type: Number,
+      default: 0,
+    },
     paymentMethod: {
       type: String,
       enum: ['cod', 'online'],
       default: 'cod',
+    },
+    cancellation: {
+      requestedBy: {
+        type: String,
+        enum: ['', 'customer', 'admin', 'system'],
+        default: '',
+      },
+      reason: { type: String, default: '' },
+      cancelledAt: { type: Date },
+      policyCode: { type: String, default: '' },
+    },
+    checkoutIp: {
+      type: String,
+      default: '',
+    },
+    checkoutUserAgent: {
+      type: String,
+      default: '',
+    },
+    codRisk: {
+      normalizedPhone: { type: String, default: '' },
+      normalizedEmail: { type: String, default: '' },
+      addressHash: { type: String, default: '' },
+      score: { type: Number, default: 0 },
+      decision: {
+        type: String,
+        enum: ['allow', 'review', 'online_required'],
+        default: 'allow',
+      },
+      flags: [{ type: String }],
+      evaluatedAt: { type: Date },
     },
     specialInstructions: {
       type: String,
@@ -167,10 +208,14 @@ const orderSchema = new mongoose.Schema(
 
 // Compound indexes
 orderSchema.index({ user: 1, createdAt: -1 });
+orderSchema.index({ status: 1, createdAt: -1 });
 orderSchema.index({ status: 1, deliveryDate: 1 });
 orderSchema.index({ deliveryCity: 1, deliveryDate: 1 });
-orderSchema.index({ paymentStatus: 1 });
+orderSchema.index({ paymentStatus: 1, createdAt: -1 });
 orderSchema.index({ createdAt: -1 });
+orderSchema.index({ paymentMethod: 1, 'codRisk.normalizedPhone': 1, createdAt: -1 });
+orderSchema.index({ paymentMethod: 1, checkoutIp: 1, createdAt: -1 });
+orderSchema.index({ paymentMethod: 1, 'codRisk.addressHash': 1, status: 1, createdAt: -1 });
 orderSchema.index(
   { guestTrackingTokenHash: 1 },
   {

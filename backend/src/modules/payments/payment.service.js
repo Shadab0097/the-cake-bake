@@ -15,6 +15,7 @@ const inventoryReservationService = require('../orders/inventoryReservation.serv
 const { cancelUnpaidOnlineOrder } = require('../orders/order.lifecycle');
 const couponUsageService = require('../coupons/couponUsage.service');
 const loyaltyService = require('../loyalty/loyalty.service');
+const operationalAlertService = require('../monitoring/operationalAlert.service');
 
 const CAPTURE_READY_PAYMENT_STATUSES = [
   PAYMENT_STATUSES.CREATED,
@@ -128,6 +129,16 @@ class PaymentService {
       note,
     });
     await order.save();
+    await operationalAlertService.recordPaymentMismatch({
+      order,
+      payment,
+      reason,
+      source: 'payment.finalization',
+      metadata: {
+        paymentRecordStatus: payment.status,
+        orderPaymentStatus: order.paymentStatus,
+      },
+    });
     cache.del('admin:dashboard');
   }
 
