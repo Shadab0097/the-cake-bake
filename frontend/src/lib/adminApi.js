@@ -7,6 +7,14 @@ const adminApi = {
     getAnalytics: (days = 30) => api.get(`/admin/analytics?days=${days}`),
   },
 
+  // Diagnostics
+  diagnostics: {
+    auditLogs: (params) => api.get('/admin/audit-logs', { params }),
+    operationalAlerts: (params) => api.get('/admin/operational-alerts', { params }),
+    applicationErrors: (params) => api.get('/admin/application-errors', { params }),
+    paymentDiagnostics: (params) => api.get('/admin/payment-diagnostics', { params }),
+  },
+
   // Products
   products: {
     list: (params) => api.get('/admin/products', { params }),
@@ -31,6 +39,14 @@ const adminApi = {
     list: (params) => api.get('/admin/orders', { params }),
     get: (id) => api.get(`/admin/orders/${id}`),
     updateStatus: (id, status, note = '') => api.put(`/admin/orders/${id}/status`, { status, note }),
+  },
+
+  // Refunds
+  refunds: {
+    list: (params) => api.get('/admin/refunds', { params }),
+    approve: (id, note) => api.put(`/admin/refunds/${id}/approve`, { note }),
+    process: (id) => api.put(`/admin/refunds/${id}/process`),
+    fail: (id, reason) => api.put(`/admin/refunds/${id}/fail`, { reason }),
   },
 
   // Coupons
@@ -64,6 +80,7 @@ const adminApi = {
     getCustom: (params) => api.get('/admin/inquiries/custom', { params }),
     getCorporate: (params) => api.get('/admin/inquiries/corporate', { params }),
     update: (id, data) => api.put(`/admin/inquiries/${id}`, data),
+    sendQuote: (id, data) => api.post(`/admin/inquiries/${id}/quote`, data),
   },
 
   // Customers
@@ -114,7 +131,7 @@ export const ADDON_CATEGORIES = ['candles', 'flowers', 'cards', 'balloons', 'gif
 export const BANNER_POSITIONS = ['hero', 'category', 'promo', 'sidebar'];
 export const PRODUCT_TAGS = ['bestseller', 'trending', 'new', 'featured', 'limited'];
 export const OCCASIONS = ['birthday', 'anniversary', 'wedding', 'valentines', 'mothers_day', 'fathers_day', 'christmas', 'new_year', 'diwali', 'holi', 'eid', 'rakhi', 'graduation', 'baby_shower', 'engagement', 'farewell', 'thank_you', 'get_well', 'congratulations', 'corporate'];
-export const NOTIFICATION_TEMPLATES = ['order_confirmed', 'order_details', 'payment_success', 'payment_failed', 'order_preparing', 'order_packed', 'order_dispatched', 'out_for_delivery', 'order_delivered', 'order_cancelled', 'refund_initiated'];
+export const NOTIFICATION_TEMPLATES = ['order_confirmed', 'order_details', 'payment_success', 'payment_failed', 'order_preparing', 'order_packed', 'order_dispatched', 'out_for_delivery', 'order_delivered', 'order_cancelled', 'refund_initiated', 'inquiry_quote'];
 
 // Formatter helpers
 export const formatPrice = (paise) => `₹${(paise / 100).toLocaleString('en-IN')}`;

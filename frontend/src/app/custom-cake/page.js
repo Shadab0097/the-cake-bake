@@ -3,8 +3,8 @@
 import { useEffect, useRef, useState } from 'react';
 import { useDispatch } from 'react-redux';
 import AppShell from '@/components/layout/AppShell';
+import InquiryImageUpload from '@/components/ui/InquiryImageUpload';
 import { addToast } from '@/store/slices/toastSlice';
-import { FiUpload, FiX } from 'react-icons/fi';
 import api from '@/lib/api';
 import { IMAGE_UPLOAD, validateImageFiles } from '@/lib/uploadApi';
 
@@ -133,39 +133,16 @@ export default function CustomCakePage() {
           <input placeholder="Message on Cake" value={form.message} onChange={(e) => setForm({ ...form, message: e.target.value })} className="w-full px-4 py-3 text-sm border border-outline-variant/30 rounded-xl focus:outline-none focus:border-pink-deep placeholder:text-outline" />
           <textarea placeholder="Describe your dream cake in detail... *" rows={4} required value={form.designDescription} onChange={(e) => setForm({ ...form, designDescription: e.target.value })} className="w-full px-4 py-3 text-sm border border-outline-variant/30 rounded-xl focus:outline-none focus:border-pink-deep placeholder:text-outline resize-none" />
 
-          <div className="space-y-3">
-            <label className="flex items-center justify-center gap-2 w-full px-4 py-4 text-sm font-medium border border-dashed border-outline-variant/50 rounded-xl cursor-pointer hover:border-pink-deep transition-colors">
-              <FiUpload className="w-4 h-4" />
-              Add Reference Images
-              <input
-                type="file"
-                multiple
-                accept={IMAGE_UPLOAD.accept}
-                onChange={(e) => {
-                  handleReferenceFiles(e.target.files);
-                  e.target.value = '';
-                }}
-                className="hidden"
-              />
-            </label>
-            {referencePreviews.length > 0 && (
-              <div className="grid grid-cols-3 sm:grid-cols-5 gap-2">
-                {referencePreviews.map((preview, index) => (
-                  <div key={preview} className="relative aspect-square rounded-xl overflow-hidden border border-outline-variant/30">
-                    {/* eslint-disable-next-line @next/next/no-img-element */}
-                    <img src={preview} alt={`Reference ${index + 1}`} className="w-full h-full object-cover" />
-                    <button
-                      type="button"
-                      onClick={() => removeReferenceFile(index)}
-                      className="absolute top-1 right-1 w-6 h-6 rounded-full bg-black/60 text-white flex items-center justify-center"
-                    >
-                      <FiX className="w-3.5 h-3.5" />
-                    </button>
-                  </div>
-                ))}
-              </div>
-            )}
-          </div>
+          <InquiryImageUpload
+            files={referenceFiles}
+            previews={referencePreviews}
+            onAdd={handleReferenceFiles}
+            onRemove={removeReferenceFile}
+            disabled={submitting}
+            title="Upload cake references"
+            description="Upload photos from your device for printed cakes, colors, shapes, or decoration references."
+            helperText="For photo cakes, use the clearest high-resolution image available."
+          />
 
           <button type="submit" disabled={submitting} className="w-full py-3 rounded-xl gradient-primary text-white font-semibold hover:opacity-90 disabled:opacity-60 flex items-center justify-center gap-2">
             {submitting ? <div className="w-5 h-5 border-2 border-white border-t-transparent rounded-full animate-spin" /> : <>Submit Request 🎨</>}

@@ -1,9 +1,8 @@
-const { env, validateEnv } = require('./src/config/env');
+const { PROCESS_ROLES, env, validateEnv } = require('./src/config/env');
 
-// Validate environment variables before anything else
+// Validate environment variables before starting any runtime role.
 validateEnv();
 
-const app = require('./src/app');
 const connectDB = require('./src/config/db');
 const { closeRedisClient, connectRedisIfConfigured } = require('./src/config/redis');
 const logger = require('./src/middleware/logger');
@@ -13,71 +12,157 @@ const inventoryReservationExpiryJob = require('./src/jobs/inventoryReservationEx
 const jobQueue = require('./src/jobs/jobQueue.service');
 const notificationWorker = require('./src/jobs/notificationWorker');
 
-const startServer = async () => {
+const ROLE_CAPABILITIES = {
+  [PROCESS_ROLES.ALL]: { web: true, worker: true, scheduler: true },
+  [PROCESS_ROLES.WEB]: { web: true, worker: false, scheduler: false },
+  [PROCESS_ROLES.WORKER]: { web: false, worker: true, scheduler: false },
+  [PROCESS_ROLES.SCHEDULER]: { web: false, worker: false, scheduler: true },
+};
+
+let server = null;
+let shutdownStarted = false;
+const stopCallbacks = [];
+
+const logStartup = () => {
+  logger.info(
+    [
+      '',
+      '==================================================',
+      'The Cake Bake backend started',
+      `Environment: ${env.nodeEnv}`,
+      `Process role: ${env.processRole}`,
+      `Queue mode: ${env.jobs.queueMode}`,
+      `API URL: http://localhost:${env.port}/api/v1`,
+      '==================================================',
+    ].join('\n')
+  );
+};
+
+const startWebServer = async () => {
+  const app = require('./src/app');
+
+  return new Promise((resolve, reject) => {
+    const listeningServer = app.listen(env.port, () => {
+      server = listeningServer;
+      logger.info(`[Runtime] Web server listening on port ${env.port}`);
+      resolve();
+    });
+
+    listeningServer.once('error', reject);
+  });
+};
+
+const startScheduler = () => {
+  stopCallbacks.push(orderExpiryJob.start());
+  stopCallbacks.push(paymentReconciliationJob.start());
+  stopCallbacks.push(inventoryReservationExpiryJob.start());
+};
+
+const startNotificationWorker = () => {
+  if (env.processRole === PROCESS_ROLES.WORKER && !jobQueue.isBullMode()) {
+    throw new Error('PROCESS_ROLE=worker requires JOB_QUEUE_MODE=bullmq and REDIS_URL. Use PROCESS_ROLE=all for inline local development.');
+  }
+
+  notificationWorker.start();
+};
+
+const closeWebServer = async () => {
+  if (!server) return;
+
+  await new Promise((resolve, reject) => {
+    server.close((err) => {
+      if (err) reject(err);
+      else resolve();
+    });
+  });
+
+  server = null;
+  logger.info('[Runtime] Web server closed');
+};
+
+const shutdown = async (signal, exitCode = 0) => {
+  if (shutdownStarted) return;
+  shutdownStarted = true;
+
+  logger.info(`${signal} received. Shutting down role "${env.processRole}" gracefully...`);
+
+  const forceExit = setTimeout(() => {
+    logger.error('Forced shutdown after timeout');
+    process.exit(1);
+  }, 10000);
+  forceExit.unref?.();
+
   try {
-    // Connect to MongoDB
-    await connectDB();
-    await connectRedisIfConfigured();
+    for (const stop of stopCallbacks.splice(0)) {
+      try {
+        stop?.();
+      } catch (err) {
+        logger.warn(`[Runtime] Failed to stop scheduler callback: ${err.message}`);
+      }
+    }
 
-    // Start Express server
-    const server = app.listen(env.port, () => {
-      logger.info(`
-  ╔══════════════════════════════════════════════╗
-  ║                                              ║
-  ║    🎂  The Cake Bake API Server              ║
-  ║                                              ║
-  ║    Environment: ${env.nodeEnv.padEnd(28)}║
-  ║    Port:        ${String(env.port).padEnd(28)}║
-  ║    URL:         http://localhost:${String(env.port).padEnd(13)}║
-  ║    API:         http://localhost:${String(env.port)}/api/v1   ║
-  ║                                              ║
-  ╚══════════════════════════════════════════════╝
-      `);
-    });
-    const stopOrderExpiryJob = orderExpiryJob.start();
-    const stopPaymentReconciliationJob = paymentReconciliationJob.start();
-    const stopInventoryReservationExpiryJob = inventoryReservationExpiryJob.start();
-    notificationWorker.start();
-
-    // Graceful shutdown
-    const gracefulShutdown = (signal) => {
-      logger.info(`${signal} received. Shutting down gracefully...`);
-      stopOrderExpiryJob();
-      stopPaymentReconciliationJob();
-      stopInventoryReservationExpiryJob();
-      server.close(async () => {
-        await jobQueue.close();
-        await closeRedisClient();
-        logger.info('Server closed');
-        process.exit(0);
-      });
-
-      // Force close after 10s
-      setTimeout(() => {
-        logger.error('Forced shutdown after timeout');
-        process.exit(1);
-      }, 10000);
-    };
-
-    process.on('SIGTERM', () => gracefulShutdown('SIGTERM'));
-    process.on('SIGINT', () => gracefulShutdown('SIGINT'));
-
-    // Handle unhandled rejections
-    process.on('unhandledRejection', (err) => {
-      logger.error('Unhandled Rejection:', err);
-      gracefulShutdown('UNHANDLED_REJECTION');
-    });
-
-    // Handle uncaught exceptions
-    process.on('uncaughtException', (err) => {
-      logger.error('Uncaught Exception:', err);
-      gracefulShutdown('UNCAUGHT_EXCEPTION');
-    });
-
-  } catch (error) {
-    logger.error('Failed to start server:', error);
+    await closeWebServer();
+    await jobQueue.close();
+    await closeRedisClient();
+    await connectDB.closeDB();
+    clearTimeout(forceExit);
+    logger.info('Shutdown complete');
+    process.exit(exitCode);
+  } catch (err) {
+    logger.error('Shutdown failed:', err);
     process.exit(1);
   }
 };
+
+const startServer = async () => {
+  try {
+    const capabilities = ROLE_CAPABILITIES[env.processRole];
+
+    if (!capabilities) {
+      throw new Error(`Unsupported PROCESS_ROLE "${env.processRole}"`);
+    }
+
+    if (env.isProd() && env.processRole === PROCESS_ROLES.ALL) {
+      logger.warn('[Runtime] PROCESS_ROLE=all is convenient but not recommended for scaled production. Prefer web, worker, and scheduler as separate processes.');
+    }
+
+    if (capabilities.web && env.jobs.queueMode === 'inline' && env.processRole === PROCESS_ROLES.WEB) {
+      logger.warn('[Runtime] PROCESS_ROLE=web with JOB_QUEUE_MODE=inline will enqueue notifications without processing them. Use PROCESS_ROLE=all locally or BullMQ with a worker process.');
+    }
+
+    await connectDB();
+    await connectRedisIfConfigured();
+
+    if (capabilities.web) {
+      await startWebServer();
+    }
+
+    if (capabilities.scheduler) {
+      startScheduler();
+    }
+
+    if (capabilities.worker) {
+      startNotificationWorker();
+    }
+
+    logStartup();
+  } catch (error) {
+    logger.error('Failed to start runtime:', error);
+    process.exit(1);
+  }
+};
+
+process.on('SIGTERM', () => shutdown('SIGTERM'));
+process.on('SIGINT', () => shutdown('SIGINT'));
+
+process.on('unhandledRejection', (err) => {
+  logger.error('Unhandled Rejection:', err);
+  shutdown('UNHANDLED_REJECTION', 1);
+});
+
+process.on('uncaughtException', (err) => {
+  logger.error('Uncaught Exception:', err);
+  shutdown('UNCAUGHT_EXCEPTION', 1);
+});
 
 startServer();

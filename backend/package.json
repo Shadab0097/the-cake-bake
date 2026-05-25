@@ -5,6 +5,10 @@
   "main": "server.js",
   "scripts": {
     "start": "node server.js",
+    "start:web": "node scripts/start-role.js web",
+    "start:worker": "node scripts/start-role.js worker",
+    "start:scheduler": "node scripts/start-role.js scheduler",
+    "start:all": "node scripts/start-role.js all",
     "dev": "nodemon server.js",
     "seed": "node src/seeds/index.js",
     "test": "node --test"

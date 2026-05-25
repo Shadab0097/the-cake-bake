@@ -1,5 +1,5 @@
 const mongoose = require('mongoose');
-const { ORDER_STATUSES } = require('../utils/constants');
+const { ORDER_SOURCES, ORDER_STATUSES } = require('../utils/constants');
 
 const orderItemSchema = new mongoose.Schema(
   {
@@ -157,6 +157,28 @@ const orderSchema = new mongoose.Schema(
       enum: ['cod', 'online'],
       default: 'cod',
     },
+    source: {
+      type: String,
+      enum: Object.values(ORDER_SOURCES),
+      default: ORDER_SOURCES.CATALOG,
+      index: true,
+    },
+    sourceInquiryType: {
+      type: String,
+      enum: ['', 'custom_cake', 'corporate'],
+      default: '',
+    },
+    sourceInquiry: {
+      type: mongoose.Schema.Types.ObjectId,
+      default: null,
+      index: true,
+    },
+    sourceQuote: {
+      type: mongoose.Schema.Types.ObjectId,
+      ref: 'InquiryQuote',
+      default: null,
+      index: true,
+    },
     cancellation: {
       requestedBy: {
         type: String,
@@ -213,9 +235,13 @@ orderSchema.index({ status: 1, deliveryDate: 1 });
 orderSchema.index({ deliveryCity: 1, deliveryDate: 1 });
 orderSchema.index({ paymentStatus: 1, createdAt: -1 });
 orderSchema.index({ createdAt: -1 });
+orderSchema.index({ 'guestInfo.email': 1, createdAt: -1 });
+orderSchema.index({ 'guestInfo.phone': 1, createdAt: -1 });
+orderSchema.index({ 'shippingAddress.phone': 1, createdAt: -1 });
 orderSchema.index({ paymentMethod: 1, 'codRisk.normalizedPhone': 1, createdAt: -1 });
 orderSchema.index({ paymentMethod: 1, checkoutIp: 1, createdAt: -1 });
 orderSchema.index({ paymentMethod: 1, 'codRisk.addressHash': 1, status: 1, createdAt: -1 });
+orderSchema.index({ source: 1, createdAt: -1 });
 orderSchema.index(
   { guestTrackingTokenHash: 1 },
   {

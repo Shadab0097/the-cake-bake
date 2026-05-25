@@ -9,7 +9,9 @@ const reviewService = require('../reviews/review.service');
 const notificationService = require('../notifications/notification.service');
 const adminAuditService = require('./adminAudit.service');
 const operationalAlertService = require('../monitoring/operationalAlert.service');
+const applicationErrorEventService = require('../monitoring/applicationErrorEvent.service');
 const refundService = require('../payments/refund.service');
+const paymentDiagnosticsService = require('../payments/paymentDiagnostics.service');
 const Banner = require('../../models/Banner');
 const Category = require('../../models/Category');
 const AddOn = require('../../models/AddOn');
@@ -53,6 +55,16 @@ const getAuditLogs = asyncHandler(async (req, res) => {
 
 const getOperationalAlerts = asyncHandler(async (req, res) => {
   const result = await operationalAlertService.list(req.query);
+  ApiResponse.ok(result).send(res);
+});
+
+const getApplicationErrors = asyncHandler(async (req, res) => {
+  const result = await applicationErrorEventService.list(req.query);
+  ApiResponse.ok(result).send(res);
+});
+
+const getPaymentDiagnostics = asyncHandler(async (req, res) => {
+  const result = await paymentDiagnosticsService.trace(req.query);
   ApiResponse.ok(result).send(res);
 });
 
@@ -254,6 +266,12 @@ const updateInquiry = asyncHandler(async (req, res) => {
   ApiResponse.ok(inquiry, 'Inquiry updated').send(res);
 });
 
+const sendInquiryQuote = asyncHandler(async (req, res) => {
+  const inquiryQuoteService = require('../inquiries/inquiryQuote.service');
+  const result = await inquiryQuoteService.sendQuote(req.params.id, req.body, req.user._id);
+  ApiResponse.created(result, 'Quote sent to customer').send(res);
+});
+
 // ---- Customers ----
 const getCustomers = asyncHandler(async (req, res) => {
   const result = await adminService.getCustomers(req.query);
@@ -396,14 +414,14 @@ const getChatbotStats = asyncHandler(async (req, res) => {
 });
 
 module.exports = {
-  getDashboard, getAnalytics, getAuditLogs, getOperationalAlerts, getRefunds, approveRefund, processRefund, failRefund,
+  getDashboard, getAnalytics, getAuditLogs, getOperationalAlerts, getApplicationErrors, getPaymentDiagnostics, getRefunds, approveRefund, processRefund, failRefund,
   listProducts, createProduct, updateProduct, deleteProduct, addVariant, updateVariant, bulkImportProducts,
   listCategories, createCategory, updateCategory, deleteCategory,
   getOrders, getOrderDetail, updateOrderStatus,
   listCoupons, createCoupon, updateCoupon, deleteCoupon,
   getSlots, createSlot, updateSlot, getZones, createZone, updateZone,
   listAddOns, createAddOn, updateAddOn, deleteAddOn,
-  getCustomInquiries, getCorporateInquiries, updateInquiry,
+  getCustomInquiries, getCorporateInquiries, updateInquiry, sendInquiryQuote,
   getCustomers, getCustomerDetail, adjustCustomerPoints,
   getReviews, approveReview, deleteReview,
   getBanners, createBanner, updateBanner, deleteBanner,

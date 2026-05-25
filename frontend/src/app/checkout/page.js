@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useEffect, useRef } from 'react';
+import { useState, useEffect, useRef, useCallback } from 'react';
 import { useSelector, useDispatch } from 'react-redux';
 import { useRouter } from 'next/navigation';
 import Link from 'next/link';
@@ -174,7 +174,7 @@ export default function CheckoutPage() {
   const [showNewAddress, setShowNewAddress] = useState(false);
 
   // Fetch addresses function
-  const fetchAddresses = async () => {
+  const fetchAddresses = useCallback(async () => {
     try {
       const res = await api.get('/users/me/addresses');
       const list = res.data?.data || [];
@@ -183,7 +183,7 @@ export default function CheckoutPage() {
         setSelectedAddress(list[0]._id);
       }
     } catch { /* ignore */ }
-  };
+  }, [selectedAddress]);
 
   // Fetch zones once
   useEffect(() => {
@@ -197,7 +197,7 @@ export default function CheckoutPage() {
     if (step === 1 && checkoutMode === 'auth' && addresses.length === 0) {
       fetchAddresses();
     }
-  }, [step, checkoutMode, addresses.length]);
+  }, [step, checkoutMode, addresses.length, fetchAddresses]);
 
   // Loyalty Points
   const [usePoints, setUsePoints] = useState(false);

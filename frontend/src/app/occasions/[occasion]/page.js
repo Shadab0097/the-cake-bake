@@ -10,27 +10,45 @@ import api from '@/lib/api';
 
 export default function OccasionProductsPage() {
   const { occasion } = useParams();
-  const [products, setProducts] = useState([]);
-  const [loading, setLoading] = useState(true);
+  const currentOccasion = (Array.isArray(occasion) ? occasion[0] : occasion) || '';
+  const [result, setResult] = useState({ occasion: '', products: [] });
+
+  const isLoaded = result.occasion === currentOccasion;
+  const products = isLoaded ? result.products : [];
+  const loading = !isLoaded;
 
   useEffect(() => {
-    setLoading(true);
-    api.get(`/products/by-occasion/${occasion}?limit=20`)
+    if (!currentOccasion) return;
+    let isCurrent = true;
+
+    api.get(`/products/by-occasion/${currentOccasion}?limit=20`)
       .then((res) => {
+        if (!isCurrent) return;
+
         const data = res.data?.data;
-        setProducts(Array.isArray(data) ? data : (data?.items || data?.docs || []));
+        setResult({
+          occasion: currentOccasion,
+          products: Array.isArray(data) ? data : (data?.items || data?.docs || []),
+        });
       })
-      .catch(() => setProducts([]))
-      .finally(() => setLoading(false));
-  }, [occasion]);
+      .catch(() => {
+        if (!isCurrent) return;
+
+        setResult({ occasion: currentOccasion, products: [] });
+      });
+
+    return () => {
+      isCurrent = false;
+    };
+  }, [currentOccasion]);
 
   return (
     <AppShell>
       <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
         <div className="text-center mb-8">
-          <span className="text-5xl block mb-3">{OCCASION_EMOJIS[occasion] || '🎂'}</span>
+          <span className="text-5xl block mb-3">{OCCASION_EMOJIS[currentOccasion] || '\u{1F382}'}</span>
           <h1 className="text-2xl lg:text-3xl font-bold text-dark">
-            {formatOccasion(occasion)} Cakes
+            {formatOccasion(currentOccasion)} Cakes
           </h1>
           <p className="text-sm text-outline mt-1">The perfect cakes for your special celebration</p>
         </div>

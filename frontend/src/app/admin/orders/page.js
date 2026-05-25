@@ -245,6 +245,9 @@ export default function AdminOrdersPage() {
                                 NEW
                               </span>
                             )}
+                            {order.source === 'inquiry' && (
+                              <span className="admin-pill admin-pill-guest">FROM INQUIRY</span>
+                            )}
                           </div>
                         </td>
                         <td>

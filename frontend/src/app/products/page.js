@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useEffect, useCallback, Suspense } from 'react';
+import { useState, useEffect, useCallback, useMemo, Suspense } from 'react';
 import { useSearchParams, useRouter, usePathname } from 'next/navigation';
 import { useSelector } from 'react-redux';
 import { motion } from 'framer-motion';
@@ -23,10 +23,8 @@ function ProductsContent() {
   const router = useRouter();
   const pathname = usePathname();
 
-  const [products, setProducts] = useState([]);
   const categories = useSelector((s) => s.categories.items);
-  const [loading, setLoading] = useState(true);
-  const [totalPages, setTotalPages] = useState(1);
+  const [result, setResult] = useState({ query: '', products: [], totalPages: 1 });
   const [showFilters, setShowFilters] = useState(false);
 
   // Filters state from URL
@@ -38,9 +36,7 @@ function ProductsContent() {
   const currentMin = searchParams.get('minPrice') || '';
   const currentMax = searchParams.get('maxPrice') || '';
 
-  // Fetch products
-  useEffect(() => {
-    setLoading(true);
+  const productQuery = useMemo(() => {
     const params = new URLSearchParams();
     params.set('page', currentPage);
     params.set('limit', '12');
@@ -51,15 +47,39 @@ function ProductsContent() {
     if (currentMin) params.set('minPrice', currentMin);
     if (currentMax) params.set('maxPrice', currentMax);
 
-    api.get(`/products?${params.toString()}`)
-      .then((res) => {
-        const data = res.data?.data;
-        setProducts(Array.isArray(data) ? data : (data?.items || data?.docs || []));
-        setTotalPages(data?.pagination?.totalPages || data?.totalPages || 1);
-      })
-      .catch(() => setProducts([]))
-      .finally(() => setLoading(false));
+    return params.toString();
   }, [currentPage, currentSort, currentCategory, currentTag, isEggless, currentMin, currentMax]);
+
+  const isLoaded = result.query === productQuery;
+  const products = isLoaded ? result.products : [];
+  const totalPages = isLoaded ? result.totalPages : 1;
+  const loading = !isLoaded;
+
+  // Fetch products
+  useEffect(() => {
+    let isCurrent = true;
+
+    api.get(`/products?${productQuery}`)
+      .then((res) => {
+        if (!isCurrent) return;
+
+        const data = res.data?.data;
+        setResult({
+          query: productQuery,
+          products: Array.isArray(data) ? data : (data?.items || data?.docs || []),
+          totalPages: data?.pagination?.totalPages || data?.totalPages || 1,
+        });
+      })
+      .catch(() => {
+        if (!isCurrent) return;
+
+        setResult({ query: productQuery, products: [], totalPages: 1 });
+      });
+
+    return () => {
+      isCurrent = false;
+    };
+  }, [productQuery]);
 
   // Update URL params
   const updateParams = useCallback(

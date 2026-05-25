@@ -1,6 +1,7 @@
 'use client';
 
 import { useEffect, useState, useCallback } from 'react';
+import Image from 'next/image';
 import { useParams, useRouter, useSearchParams } from 'next/navigation';
 import { useSelector, useDispatch } from 'react-redux';
 import Link from 'next/link';
@@ -347,7 +348,7 @@ export default function OrderTrackingPage() {
                 {/* Image / placeholder */}
                 <div className="w-14 h-14 rounded-lg bg-surface-container-high flex items-center justify-center shrink-0 overflow-hidden">
                   {item.image ? (
-                    <img src={item.image} alt={item.name} className="w-full h-full object-cover" />
+                    <Image src={item.image} alt={item.name} width={56} height={56} className="w-full h-full object-cover" />
                   ) : (
                     <FiPackage className="w-6 h-6 text-outline/40" />
                   )}

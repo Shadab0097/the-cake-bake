@@ -49,10 +49,15 @@ const razorpayWebhookEventSchema = new mongoose.Schema(
       type: String,
       default: '',
     },
+    expiresAt: {
+      type: Date,
+      required: true,
+    },
   },
   { timestamps: true }
 );
 
 razorpayWebhookEventSchema.index({ status: 1, lockedUntil: 1 });
+razorpayWebhookEventSchema.index({ expiresAt: 1 }, { expireAfterSeconds: 0 });
 
 module.exports = mongoose.model('RazorpayWebhookEvent', razorpayWebhookEventSchema);

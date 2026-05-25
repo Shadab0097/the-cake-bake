@@ -1,4 +1,5 @@
 const Payment = require('../../models/Payment');
+const { env } = require('../../config/env');
 const { ORDER_STATUSES, PAYMENT_STATUSES } = require('../../utils/constants');
 const cache = require('../../utils/cache');
 const { sanitize } = require('../../utils/xssSanitizer');
@@ -56,6 +57,9 @@ const cancelUnpaidOnlineOrder = async (order, options = {}) => {
         payload: paymentPayload,
         receivedAt: new Date(),
       });
+      if (payment.webhookEvents.length > env.logging.paymentEmbeddedWebhookEventLimit) {
+        payment.webhookEvents = payment.webhookEvents.slice(-env.logging.paymentEmbeddedWebhookEventLimit);
+      }
     }
     await payment.save({ session });
   }

@@ -7,21 +7,41 @@ import api from '@/lib/api';
 import ProductCard from '@/components/ui/ProductCard';
 import { ProductGridSkeleton } from '@/components/ui/Skeleton';
 
+const fetchFeaturedProducts = () =>
+  api.get('/products/featured?limit=8').then((res) => res.data?.data || []);
+
 export default function FeaturedProducts() {
   const [products, setProducts] = useState([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(false);
 
-  const fetchData = () => {
+  const handleRetry = () => {
     setLoading(true);
     setError(false);
-    api.get('/products/featured?limit=8')
-      .then((res) => setProducts(res.data?.data || []))
+    fetchFeaturedProducts()
+      .then(setProducts)
       .catch(() => setError(true))
       .finally(() => setLoading(false));
   };
 
-  useEffect(() => { fetchData(); }, []);
+  useEffect(() => {
+    let isCurrent = true;
+
+    fetchFeaturedProducts()
+      .then((items) => {
+        if (isCurrent) setProducts(items);
+      })
+      .catch(() => {
+        if (isCurrent) setError(true);
+      })
+      .finally(() => {
+        if (isCurrent) setLoading(false);
+      });
+
+    return () => {
+      isCurrent = false;
+    };
+  }, []);
 
   return (
     <section className="py-12 lg:py-16 bg-surface-container-low">
@@ -47,7 +67,7 @@ export default function FeaturedProducts() {
         ) : error ? (
           <div className="text-center py-12">
             <p className="text-sm text-outline mb-3">Couldn&apos;t load featured cakes right now.</p>
-            <button onClick={fetchData} className="px-5 py-2 rounded-full text-sm font-semibold text-pink-deep border border-pink-deep hover:bg-pink-light/20 transition-colors">
+            <button onClick={handleRetry} className="px-5 py-2 rounded-full text-sm font-semibold text-pink-deep border border-pink-deep hover:bg-pink-light/20 transition-colors">
               Try Again
             </button>
           </div>

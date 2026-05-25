@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useEffect, useCallback } from 'react';
+import { useState, useEffect, useMemo } from 'react';
 import { useDispatch, useSelector } from 'react-redux';
 import { useRouter } from 'next/navigation';
 import { motion, AnimatePresence } from 'framer-motion';
@@ -19,8 +19,8 @@ export default function SearchOverlay() {
   const [results, setResults] = useState([]);
   const [isSearching, setIsSearching] = useState(false);
 
-  const searchProducts = useCallback(
-    debounce(async (term) => {
+  const searchProducts = useMemo(
+    () => debounce(async (term) => {
       if (!term || term.length < 2) {
         setResults([]);
         return;
@@ -43,25 +43,34 @@ export default function SearchOverlay() {
   }, [query, searchProducts]);
 
   useEffect(() => {
-    if (isSearchOpen) {
-      document.body.style.overflow = 'hidden';
-    } else {
-      document.body.style.overflow = '';
-      setQuery('');
-      setResults([]);
-    }
+    if (!isSearchOpen) return;
+
+    const previousOverflow = document.body.style.overflow;
+    document.body.style.overflow = 'hidden';
+
+    return () => {
+      document.body.style.overflow = previousOverflow;
+    };
   }, [isSearchOpen]);
+
+  const closeOverlay = () => {
+    setQuery('');
+    setResults([]);
+    setIsSearching(false);
+    dispatch(closeSearch());
+  };
 
   const handleSubmit = (e) => {
     e.preventDefault();
-    if (query.trim()) {
-      dispatch(closeSearch());
-      router.push(`/search?q=${encodeURIComponent(query.trim())}`);
+    const trimmedQuery = query.trim();
+    if (trimmedQuery) {
+      closeOverlay();
+      router.push(`/search?q=${encodeURIComponent(trimmedQuery)}`);
     }
   };
 
   const handlePopularClick = (term) => {
-    dispatch(closeSearch());
+    closeOverlay();
     router.push(`/search?q=${encodeURIComponent(term)}`);
   };
 
@@ -73,7 +82,7 @@ export default function SearchOverlay() {
           animate={{ opacity: 1 }}
           exit={{ opacity: 0 }}
           className="fixed inset-0 z-50 bg-black/50 backdrop-blur-sm"
-          onClick={() => dispatch(closeSearch())}
+          onClick={closeOverlay}
         >
           <motion.div
             initial={{ opacity: 0, y: -30 }}
@@ -96,7 +105,7 @@ export default function SearchOverlay() {
               />
               <button
                 type="button"
-                onClick={() => dispatch(closeSearch())}
+                onClick={closeOverlay}
                 className="p-1.5 rounded-full hover:bg-surface-container-high transition-colors"
               >
                 <FiX className="w-5 h-5 text-outline" />
@@ -133,7 +142,7 @@ export default function SearchOverlay() {
                     <button
                       key={product._id}
                       onClick={() => {
-                        dispatch(closeSearch());
+                        closeOverlay();
                         router.push(`/products/${product.slug}`);
                       }}
                       className="flex items-center gap-3 w-full p-2.5 rounded-xl hover:bg-surface-container-low transition-colors text-left"

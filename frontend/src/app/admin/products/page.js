@@ -1,6 +1,7 @@
 'use client';
 
 import { useEffect, useState, useCallback } from 'react';
+import Image from 'next/image';
 import Link from 'next/link';
 import adminApi, { formatPrice } from '@/lib/adminApi';
 import { Pagination, LoadingSkeleton, EmptyState, ConfirmDialog, AdminToast, useAdminToast, RefreshButton } from '@/components/admin/AdminUI';
@@ -89,7 +90,7 @@ export default function AdminProductsPage() {
                       <td>
                         <div style={{ display: 'flex', alignItems: 'center', gap: '0.75rem' }}>
                           {p.images?.[0]?.url ? (
-                            <img src={resolveImageUrl(p.images[0].url)} alt={p.name} style={{ width: 40, height: 40, borderRadius: 6, objectFit: 'cover', background: 'var(--admin-bg)' }} />
+                            <Image src={resolveImageUrl(p.images[0].url)} alt={p.name} width={40} height={40} style={{ width: 40, height: 40, borderRadius: 6, objectFit: 'cover', background: 'var(--admin-bg)' }} />
                           ) : (
                             <div style={{ width: 40, height: 40, borderRadius: 6, background: 'var(--admin-bg)', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: '1rem' }}>🎂</div>
                           )}

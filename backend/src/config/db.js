@@ -1,4 +1,5 @@
 const mongoose = require('mongoose');
+const { env } = require('./env');
 const logger = require('../middleware/logger');
 
 const getDetailedErrorHint = (error) => {
@@ -64,11 +65,11 @@ const connectDB = async () => {
 
   try {
     const conn = await mongoose.connect(process.env.MONGODB_URI, {
-      maxPoolSize: parseInt(process.env.DB_POOL_SIZE, 10) || 50,
-      minPoolSize: 10,
-      serverSelectionTimeoutMS: 5000,
-      socketTimeoutMS: 45000,
-      heartbeatFrequencyMS: 10000,
+      maxPoolSize: env.db.maxPoolSize,
+      minPoolSize: env.db.minPoolSize,
+      serverSelectionTimeoutMS: env.db.serverSelectionTimeoutMs,
+      socketTimeoutMS: env.db.socketTimeoutMs,
+      heartbeatFrequencyMS: env.db.heartbeatFrequencyMs,
     });
 
     logger.info(`MongoDB connected: ${conn.connection.host}/${conn.connection.name} (pool: ${conn.connection.getClient().options.maxPoolSize})`);
@@ -93,5 +94,12 @@ const connectDB = async () => {
   }
 };
 
-module.exports = connectDB;
+const closeDB = async () => {
+  if (mongoose.connection.readyState === 0) return;
+  await mongoose.connection.close(false);
+  logger.info('MongoDB connection closed');
+};
 
+connectDB.closeDB = closeDB;
+
+module.exports = connectDB;

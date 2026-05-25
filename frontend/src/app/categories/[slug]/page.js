@@ -9,28 +9,43 @@ import api from '@/lib/api';
 
 export default function CategoryPage() {
   const { slug } = useParams();
-  const [category, setCategory] = useState(null);
-  const [products, setProducts] = useState([]);
-  const [loading, setLoading] = useState(true);
+  const currentSlug = (Array.isArray(slug) ? slug[0] : slug) || '';
+  const [result, setResult] = useState({ slug: '', category: null, products: [] });
+
+  const isLoaded = result.slug === currentSlug;
+  const category = isLoaded ? result.category : null;
+  const products = isLoaded ? result.products : [];
+  const loading = !isLoaded;
 
   useEffect(() => {
-    setLoading(true);
+    if (!currentSlug) return;
+    let isCurrent = true;
+
     // Fetch category info and its products
     Promise.all([
-      api.get(`/categories/${slug}`).catch(() => null),
-      api.get(`/categories/${slug}/products?limit=20`).catch(() => null),
+      api.get(`/categories/${currentSlug}`).catch(() => null),
+      api.get(`/categories/${currentSlug}/products?limit=20`).catch(() => null),
     ]).then(([catRes, prodRes]) => {
-      if (catRes?.data?.data) setCategory(catRes.data.data);
-      setProducts(prodRes?.data?.data?.items || prodRes?.data?.data?.docs || prodRes?.data?.data || []);
-    }).finally(() => setLoading(false));
-  }, [slug]);
+      if (!isCurrent) return;
+
+      setResult({
+        slug: currentSlug,
+        category: catRes?.data?.data || null,
+        products: prodRes?.data?.data?.items || prodRes?.data?.data?.docs || prodRes?.data?.data || [],
+      });
+    });
+
+    return () => {
+      isCurrent = false;
+    };
+  }, [currentSlug]);
 
   return (
     <AppShell>
       <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
         <div className="mb-8">
           <h1 className="text-2xl lg:text-3xl font-bold text-dark">
-            {category?.name || slug.replace(/-/g, ' ').replace(/\b\w/g, (l) => l.toUpperCase())}
+            {category?.name || currentSlug.replace(/-/g, ' ').replace(/\b\w/g, (l) => l.toUpperCase())}
           </h1>
           {category?.description && (
             <p className="text-sm text-outline mt-1">{category.description}</p>

@@ -12,6 +12,7 @@ const { ORDER_STATUSES, PAYMENT_STATUSES } = require('../../utils/constants');
 const logger = require('../../middleware/logger');
 const cache = require('../../utils/cache');
 const inventoryReservationService = require('../orders/inventoryReservation.service');
+const { hasReservableItems } = require('../orders/inventoryReservation.service');
 const { cancelUnpaidOnlineOrder } = require('../orders/order.lifecycle');
 const couponUsageService = require('../coupons/couponUsage.service');
 const loyaltyService = require('../loyalty/loyalty.service');
@@ -32,6 +33,10 @@ const RECOVERABLE_CANCELLED_NOTES = [
   /^Online payment expired/i,
 ];
 const WEBHOOK_EVENT_LOCK_MS = 2 * 60 * 1000;
+
+const getWebhookEventExpiresAt = (now = new Date()) => (
+  new Date(now.getTime() + env.logging.paymentWebhookEventRetentionDays * 24 * 60 * 60 * 1000)
+);
 
 const timingSafeEqualHex = (actual, expected) => {
   if (!actual || !expected || typeof actual !== 'string' || typeof expected !== 'string') return false;
@@ -159,6 +164,7 @@ class PaymentService {
 
         if (currentOrder.paymentStatus === 'paid') {
           order = currentOrder;
+          await this.markInquiryQuoteConverted(currentOrder, payment, session);
           finalized = false;
           return;
         }
@@ -173,7 +179,9 @@ class PaymentService {
 
         await loyaltyService.reapplyRestoredRedemptionForCapture(currentOrder, { session });
 
-        await inventoryReservationService.confirmForOrder(currentOrder, session);
+        if (hasReservableItems(currentOrder.items)) {
+          await inventoryReservationService.confirmForOrder(currentOrder, session);
+        }
 
         if (currentOrder.couponCode) {
           await couponUsageService.consumeForOrder({
@@ -194,6 +202,7 @@ class PaymentService {
         });
 
         order = await currentOrder.save({ session });
+        await this.markInquiryQuoteConverted(currentOrder, currentPayment, session);
         finalized = true;
       });
     } catch (error) {
@@ -210,6 +219,46 @@ class PaymentService {
     }
 
     return { order, finalized };
+  }
+
+  async markInquiryQuoteConverted(order, payment, session) {
+    if (!order || order.source !== 'inquiry' || !order.sourceQuote || !order.sourceInquiry) return;
+
+    const InquiryQuote = require('../../models/InquiryQuote');
+    const CustomCakeInquiry = require('../../models/CustomCakeInquiry');
+    const CorporateInquiry = require('../../models/CorporateInquiry');
+    const { INQUIRY_QUOTE_STATUSES, INQUIRY_STATUSES } = require('../../utils/constants');
+
+    const convertedAt = new Date();
+    await InquiryQuote.updateOne(
+      { _id: order.sourceQuote },
+      {
+        $set: {
+          status: INQUIRY_QUOTE_STATUSES.CONVERTED,
+          convertedAt,
+          order: order._id,
+          payment: payment._id,
+        },
+      },
+      { session }
+    );
+
+    const InquiryModel = order.sourceInquiryType === 'corporate'
+      ? CorporateInquiry
+      : CustomCakeInquiry;
+
+    await InquiryModel.updateOne(
+      { _id: order.sourceInquiry },
+      {
+        $set: {
+          status: INQUIRY_STATUSES.CONFIRMED,
+          quoteStatus: INQUIRY_QUOTE_STATUSES.CONVERTED,
+          convertedOrder: order._id,
+          convertedAt,
+        },
+      },
+      { session }
+    );
   }
 
   verifySignature(payload, signature, secret, failureMessage) {
@@ -308,6 +357,7 @@ class PaymentService {
     const eventId = this.buildWebhookEventId(event, eventType);
     const now = new Date();
     const lockedUntil = new Date(now.getTime() + WEBHOOK_EVENT_LOCK_MS);
+    const expiresAt = getWebhookEventExpiresAt(now);
 
     try {
       const record = await RazorpayWebhookEvent.create({
@@ -318,6 +368,7 @@ class PaymentService {
         status: 'processing',
         payload: event,
         lockedUntil,
+        expiresAt,
       });
 
       return { eventId, record, shouldProcess: true };
@@ -351,6 +402,7 @@ class PaymentService {
             payload: event,
             lockedUntil,
             lastError: '',
+            expiresAt,
           },
           $inc: { attempts: 1 },
         },
@@ -399,10 +451,13 @@ class PaymentService {
       {
         $push: {
           webhookEvents: {
-            eventId,
-            event: eventType,
-            payload,
-            receivedAt: new Date(),
+            $each: [{
+              eventId,
+              event: eventType,
+              payload,
+              receivedAt: new Date(),
+            }],
+            $slice: -env.logging.paymentEmbeddedWebhookEventLimit,
           },
         },
       },

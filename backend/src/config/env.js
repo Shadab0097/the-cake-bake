@@ -8,6 +8,56 @@ const parsePositiveInt = (value, fallback) => {
   return Number.isFinite(parsed) && parsed > 0 ? parsed : fallback;
 };
 
+const parseNonNegativeInt = (value, fallback) => {
+  const parsed = parseInt(value, 10);
+  return Number.isFinite(parsed) && parsed >= 0 ? parsed : fallback;
+};
+
+const PROCESS_ROLES = Object.freeze({
+  ALL: 'all',
+  WEB: 'web',
+  WORKER: 'worker',
+  SCHEDULER: 'scheduler',
+});
+
+const VALID_PROCESS_ROLES = new Set(Object.values(PROCESS_ROLES));
+const VALID_QUEUE_MODES = new Set(['inline', 'bullmq']);
+const PLACEHOLDER_PATTERN = /(change-in-production|placeholder|replace|xxxxx|your-|example|test-secret|jwt-secret|refresh-secret)/i;
+
+const normalizeProcessRole = (value) => {
+  const normalized = String(value || PROCESS_ROLES.ALL).trim().toLowerCase();
+  return VALID_PROCESS_ROLES.has(normalized) ? normalized : value;
+};
+
+const normalizeQueueMode = () => {
+  if (process.env.NODE_ENV === 'production') return 'bullmq';
+  return String(process.env.JOB_QUEUE_MODE || (process.env.REDIS_URL ? 'bullmq' : 'inline')).trim().toLowerCase();
+};
+
+const splitCsv = (value = '') => value
+  .split(',')
+  .map((item) => item.trim())
+  .filter(Boolean);
+
+const isPlaceholder = (value = '') => !value || PLACEHOLDER_PATTERN.test(String(value));
+
+const isLocalOrigin = (origin = '') => {
+  try {
+    const url = new URL(origin);
+    return ['localhost', '127.0.0.1', '0.0.0.0'].includes(url.hostname);
+  } catch {
+    return false;
+  }
+};
+
+const isHttpsUrl = (value = '') => {
+  try {
+    return new URL(value).protocol === 'https:';
+  } catch {
+    return false;
+  }
+};
+
 const requiredEnvVars = [
   'MONGODB_URI',
   'JWT_SECRET',
@@ -18,6 +68,24 @@ const requiredEnvVars = [
 
 const validateEnv = () => {
   const missing = requiredEnvVars.filter((key) => !process.env[key]);
+  const processRole = normalizeProcessRole(process.env.PROCESS_ROLE);
+  const requestedQueueMode = process.env.JOB_QUEUE_MODE
+    ? String(process.env.JOB_QUEUE_MODE).trim().toLowerCase()
+    : '';
+  const queueMode = normalizeQueueMode();
+
+  if (!VALID_PROCESS_ROLES.has(processRole)) {
+    throw new Error(`Invalid PROCESS_ROLE "${process.env.PROCESS_ROLE}". Expected one of: ${[...VALID_PROCESS_ROLES].join(', ')}`);
+  }
+
+  if (requestedQueueMode && !VALID_QUEUE_MODES.has(requestedQueueMode)) {
+    throw new Error(`Invalid JOB_QUEUE_MODE "${process.env.JOB_QUEUE_MODE}". Expected one of: ${[...VALID_QUEUE_MODES].join(', ')}`);
+  }
+
+  if (process.env.NODE_ENV === 'production' && requestedQueueMode && requestedQueueMode !== 'bullmq') {
+    throw new Error('NODE_ENV=production requires JOB_QUEUE_MODE=bullmq');
+  }
+
   if (process.env.NODE_ENV === 'production' && !process.env.WHATSAPP_APP_SECRET) {
     missing.push('WHATSAPP_APP_SECRET');
   }
@@ -28,13 +96,111 @@ const validateEnv = () => {
   if (missing.length > 0) {
     throw new Error(`Missing required environment variables: ${missing.join(', ')}`);
   }
+
+  if (process.env.NODE_ENV === 'production') {
+    const productionErrors = [];
+    const allowInsecureOrigins = process.env.ALLOW_INSECURE_PRODUCTION_ORIGINS === 'true';
+    const allowTestPaymentKeys = process.env.ALLOW_TEST_PAYMENT_KEYS === 'true';
+
+    if (isPlaceholder(process.env.JWT_SECRET) || String(process.env.JWT_SECRET || '').length < 32) {
+      productionErrors.push('JWT_SECRET must be a unique production secret with at least 32 characters');
+    }
+
+    if (isPlaceholder(process.env.JWT_REFRESH_SECRET) || String(process.env.JWT_REFRESH_SECRET || '').length < 32) {
+      productionErrors.push('JWT_REFRESH_SECRET must be a unique production secret with at least 32 characters');
+    }
+
+    if (process.env.JWT_SECRET === process.env.JWT_REFRESH_SECRET) {
+      productionErrors.push('JWT_SECRET and JWT_REFRESH_SECRET must be different');
+    }
+
+    if (!process.env.RAZORPAY_WEBHOOK_SECRET || isPlaceholder(process.env.RAZORPAY_WEBHOOK_SECRET)) {
+      productionErrors.push('RAZORPAY_WEBHOOK_SECRET is required in production');
+    }
+
+    if (!allowTestPaymentKeys && !String(process.env.RAZORPAY_KEY_ID || '').startsWith('rzp_live_')) {
+      productionErrors.push('RAZORPAY_KEY_ID must be a live key in production, or set ALLOW_TEST_PAYMENT_KEYS=true for staging only');
+    }
+
+    const corsOrigins = splitCsv(process.env.CORS_ORIGIN || '');
+    if (corsOrigins.length === 0) {
+      productionErrors.push('CORS_ORIGIN must include the production frontend origin');
+    }
+    if (!allowInsecureOrigins && corsOrigins.some((origin) => !isHttpsUrl(origin) || isLocalOrigin(origin))) {
+      productionErrors.push('CORS_ORIGIN must use public HTTPS origins in production');
+    }
+
+    if (!allowInsecureOrigins && (!isHttpsUrl(process.env.APP_URL || '') || isLocalOrigin(process.env.APP_URL || ''))) {
+      productionErrors.push('APP_URL must be the public HTTPS frontend URL in production');
+    }
+
+    if (!process.env.HEALTH_CHECK_TOKEN || String(process.env.HEALTH_CHECK_TOKEN).length < 24) {
+      productionErrors.push('HEALTH_CHECK_TOKEN must be set to a random value with at least 24 characters in production');
+    }
+
+    if (
+      isPlaceholder(process.env.CLOUDINARY_CLOUD_NAME) ||
+      isPlaceholder(process.env.CLOUDINARY_API_KEY) ||
+      isPlaceholder(process.env.CLOUDINARY_API_SECRET)
+    ) {
+      productionErrors.push('Cloudinary credentials are required for production image uploads');
+    }
+
+    if (process.env.ENABLE_EMAIL_NOTIFICATIONS === 'true') {
+      if (
+        isPlaceholder(process.env.SMTP_USER) ||
+        isPlaceholder(process.env.SMTP_PASS) ||
+        isPlaceholder(process.env.SMTP_FROM_EMAIL)
+      ) {
+        productionErrors.push('SMTP credentials are required when ENABLE_EMAIL_NOTIFICATIONS=true');
+      }
+    }
+
+    if (process.env.ENABLE_WHATSAPP_NOTIFICATIONS === 'true') {
+      if (
+        isPlaceholder(process.env.WHATSAPP_ACCESS_TOKEN) ||
+        isPlaceholder(process.env.WHATSAPP_PHONE_NUMBER_ID) ||
+        isPlaceholder(process.env.WHATSAPP_VERIFY_TOKEN) ||
+        isPlaceholder(process.env.WHATSAPP_APP_SECRET)
+      ) {
+        productionErrors.push('WhatsApp credentials are required when ENABLE_WHATSAPP_NOTIFICATIONS=true');
+      }
+    }
+
+    if (productionErrors.length > 0) {
+      throw new Error(`Production configuration is not safe: ${productionErrors.join('; ')}`);
+    }
+  }
+
+  if (processRole === PROCESS_ROLES.WORKER && process.env.ENABLE_JOB_WORKER === 'false') {
+    throw new Error('PROCESS_ROLE=worker requires ENABLE_JOB_WORKER=true');
+  }
+
+  if (process.env.NODE_ENV === 'production' && processRole === PROCESS_ROLES.WORKER && queueMode !== 'bullmq') {
+    throw new Error('PROCESS_ROLE=worker requires JOB_QUEUE_MODE=bullmq in production');
+  }
 };
+
+const dbMaxPoolSize = parsePositiveInt(process.env.DB_POOL_SIZE, 50);
+const dbMinPoolSize = Math.min(
+  parseNonNegativeInt(process.env.DB_MIN_POOL_SIZE, Math.min(10, dbMaxPoolSize)),
+  dbMaxPoolSize
+);
 
 const env = {
   nodeEnv: process.env.NODE_ENV || 'development',
+  processRole: normalizeProcessRole(process.env.PROCESS_ROLE),
   port: parseInt(process.env.PORT, 10) || 5000,
   corsOrigin: process.env.CORS_ORIGIN || 'http://localhost:3000',
   mongoUri: process.env.MONGODB_URI,
+
+  db: {
+    maxPoolSize: dbMaxPoolSize,
+    minPoolSize: dbMinPoolSize,
+    serverSelectionTimeoutMs: parsePositiveInt(process.env.DB_SERVER_SELECTION_TIMEOUT_MS, 5000),
+    socketTimeoutMs: parsePositiveInt(process.env.DB_SOCKET_TIMEOUT_MS, 45000),
+    heartbeatFrequencyMs: parsePositiveInt(process.env.DB_HEARTBEAT_FREQUENCY_MS, 10000),
+  },
 
   jwt: {
     secret: process.env.JWT_SECRET,
@@ -110,10 +276,9 @@ const env = {
   },
 
   jobs: {
-    queueMode: process.env.NODE_ENV === 'production'
-      ? 'bullmq'
-      : (process.env.JOB_QUEUE_MODE || (process.env.REDIS_URL ? 'bullmq' : 'inline')),
+    queueMode: normalizeQueueMode(),
     workerEnabled: process.env.ENABLE_JOB_WORKER !== 'false',
+    workerConcurrency: parsePositiveInt(process.env.JOB_WORKER_CONCURRENCY, 5),
     defaultAttempts: parsePositiveInt(process.env.JOB_DEFAULT_ATTEMPTS, 3),
     backoffMs: parsePositiveInt(process.env.JOB_BACKOFF_MS, 5000),
     removeOnCompleteAgeSeconds: parsePositiveInt(process.env.JOB_REMOVE_ON_COMPLETE_AGE_SECONDS, 86400),
@@ -143,6 +308,17 @@ const env = {
     alertWebhookToken: process.env.OPERATIONAL_ALERT_WEBHOOK_TOKEN || '',
     alertCooldownMinutes: parsePositiveInt(process.env.OPERATIONAL_ALERT_COOLDOWN_MINUTES, 15),
     alertWebhookTimeoutMs: parsePositiveInt(process.env.OPERATIONAL_ALERT_WEBHOOK_TIMEOUT_MS, 3000),
+  },
+
+  logging: {
+    applicationErrorEventsEnabled: process.env.ENABLE_APPLICATION_ERROR_EVENTS !== 'false',
+    applicationErrorRetentionDays: Math.min(parsePositiveInt(process.env.APPLICATION_ERROR_RETENTION_DAYS, 14), 90),
+    applicationErrorMinWriteIntervalSeconds: Math.min(
+      parsePositiveInt(process.env.APPLICATION_ERROR_MIN_WRITE_INTERVAL_SECONDS, 60),
+      3600
+    ),
+    paymentWebhookEventRetentionDays: Math.min(parsePositiveInt(process.env.PAYMENT_WEBHOOK_EVENT_RETENTION_DAYS, 90), 365),
+    paymentEmbeddedWebhookEventLimit: Math.min(parsePositiveInt(process.env.PAYMENT_EMBEDDED_WEBHOOK_EVENT_LIMIT, 50), 100),
   },
 
   codAbuse: {
@@ -204,4 +380,9 @@ const env = {
   isProd: () => env.nodeEnv === 'production',
 };
 
-module.exports = { env, validateEnv };
+module.exports = {
+  PROCESS_ROLES,
+  env,
+  normalizeProcessRole,
+  validateEnv,
+};

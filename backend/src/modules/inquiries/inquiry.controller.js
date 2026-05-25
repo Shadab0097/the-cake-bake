@@ -1,4 +1,5 @@
 const inquiryService = require('./inquiry.service');
+const inquiryQuoteService = require('./inquiryQuote.service');
 const uploadService = require('../media/upload.service');
 const asyncHandler = require('../../utils/asyncHandler');
 const ApiResponse = require('../../utils/ApiResponse');
@@ -74,4 +75,19 @@ const getMyInquiries = asyncHandler(async (req, res) => {
   ApiResponse.ok(inquiries).send(res);
 });
 
-module.exports = { submitCustomCake, submitCorporate, getMyInquiries };
+const getQuote = asyncHandler(async (req, res) => {
+  const quote = await inquiryQuoteService.getPublicQuote(req.params.token);
+  ApiResponse.ok(quote).send(res);
+});
+
+const acceptQuote = asyncHandler(async (req, res) => {
+  const result = await inquiryQuoteService.acceptQuote(req.params.token, req.body);
+  ApiResponse.ok(result, 'Quote accepted').send(res);
+});
+
+const verifyQuotePayment = asyncHandler(async (req, res) => {
+  const result = await inquiryQuoteService.verifyQuotePayment(req.params.token, req.body);
+  ApiResponse.ok(result, 'Payment verified').send(res);
+});
+
+module.exports = { submitCustomCake, submitCorporate, getMyInquiries, getQuote, acceptQuote, verifyQuotePayment };

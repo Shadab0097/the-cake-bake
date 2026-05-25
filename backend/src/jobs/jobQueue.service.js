@@ -114,7 +114,7 @@ const startWorker = (queueName, processor) => {
   const worker = new Worker(queueName, processor, {
     connection: buildRedisConnectionOptions(),
     prefix: `${env.redis.keyPrefix}:jobs`,
-    concurrency: 5,
+    concurrency: env.jobs.workerConcurrency,
   });
 
   worker.on('completed', (job) => {
@@ -130,7 +130,7 @@ const startWorker = (queueName, processor) => {
   });
 
   workers.push(worker);
-  logger.info(`[Jobs] BullMQ worker started for queue "${queueName}"`);
+  logger.info(`[Jobs] BullMQ worker started for queue "${queueName}" with concurrency ${env.jobs.workerConcurrency}`);
   return worker;
 };
 

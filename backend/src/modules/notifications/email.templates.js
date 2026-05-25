@@ -399,6 +399,33 @@ const EMAIL_TEMPLATES = {
     `),
   },
 
+  inquiry_quote: {
+    subject: (d) => `Your ${d.inquiryType} quote is ready - The Cake Bake`,
+    html: (d) => baseLayout('Your Cake Quote is Ready', `
+      ${hero(`Your ${d.inquiryType} quote is ready ${badge('Approval Needed', '#1565c0')}`)}
+      <p style="color:${BRAND.muted};font-size:15px;margin:0 0 20px;">
+        Hi <strong>${d.customerName}</strong>, our team has reviewed your request and prepared the final quote below.
+        Please approve and complete payment to confirm the order.
+      </p>
+      ${infoCard(`
+        ${infoRow('Inquiry Type', d.inquiryType)}
+        ${infoRow('Quoted Amount', `<strong style="font-size:17px;">${d.amount}</strong>`)}
+        ${infoRow('Valid Until', d.expiresAt)}
+        ${d.summary ? infoRow('Request Summary', d.summary) : ''}
+      `)}
+      ${d.notes ? `
+        <div style="background:${BRAND.accent};border:1px solid ${BRAND.border};border-radius:10px;padding:16px 20px;margin-bottom:24px;">
+          <p style="margin:0 0 6px;color:${BRAND.muted};font-size:13px;font-weight:600;text-transform:uppercase;letter-spacing:1px;">Quote Notes</p>
+          <p style="margin:0;color:${BRAND.dark};font-size:14px;line-height:1.6;">${d.notes}</p>
+        </div>
+      ` : ''}
+      ${ctaButton('Approve Quote & Pay', d.approvalUrl)}
+      <p style="color:${BRAND.muted};font-size:13px;text-align:center;margin:0;">
+        This secure approval link is unique to your quote. If it expires, reply to this email for an updated quote.
+      </p>
+    `),
+  },
+
 };
 
 module.exports = EMAIL_TEMPLATES;

@@ -1,5 +1,5 @@
 const mongoose = require('mongoose');
-const { INQUIRY_STATUSES } = require('../utils/constants');
+const { INQUIRY_QUOTE_STATUSES, INQUIRY_STATUSES } = require('../utils/constants');
 
 const customCakeInquirySchema = new mongoose.Schema(
   {
@@ -35,6 +35,11 @@ const customCakeInquirySchema = new mongoose.Schema(
     weight: {
       type: String,
       default: '',
+    },
+    message: {
+      type: String,
+      default: '',
+      maxlength: 120,
     },
     servingCount: {
       type: Number,
@@ -79,10 +84,39 @@ const customCakeInquirySchema = new mongoose.Schema(
       type: Number,
       default: 0,
     },
+    latestQuote: {
+      type: mongoose.Schema.Types.ObjectId,
+      ref: 'InquiryQuote',
+      default: null,
+    },
+    quoteStatus: {
+      type: String,
+      enum: ['', ...Object.values(INQUIRY_QUOTE_STATUSES)],
+      default: '',
+      index: true,
+    },
+    quoteSentAt: {
+      type: Date,
+    },
+    quoteAcceptedAt: {
+      type: Date,
+    },
+    quoteExpiresAt: {
+      type: Date,
+    },
+    convertedOrder: {
+      type: mongoose.Schema.Types.ObjectId,
+      ref: 'Order',
+      default: null,
+    },
+    convertedAt: {
+      type: Date,
+    },
   },
   { timestamps: true }
 );
 
 customCakeInquirySchema.index({ status: 1, createdAt: -1 });
+customCakeInquirySchema.index({ quoteStatus: 1, createdAt: -1 });
 
 module.exports = mongoose.model('CustomCakeInquiry', customCakeInquirySchema);

@@ -20,6 +20,8 @@ router.get('/dashboard', adminController.getDashboard);
 router.get('/analytics', adminController.getAnalytics);
 router.get('/audit-logs', adminController.getAuditLogs);
 router.get('/operational-alerts', adminController.getOperationalAlerts);
+router.get('/application-errors', adminController.getApplicationErrors);
+router.get('/payment-diagnostics', adminController.getPaymentDiagnostics);
 router.get('/refunds', adminController.getRefunds);
 router.put('/refunds/:id/approve', validate(adminValidation.paramId), adminAuditService.audit('refund.approve', { resourceType: 'refund' }), adminController.approveRefund);
 router.put('/refunds/:id/process', validate(adminValidation.paramId), adminAuditService.audit('refund.process', { resourceType: 'refund' }), adminController.processRefund);
@@ -69,6 +71,7 @@ router.delete('/addons/:id', validate(adminValidation.paramId), adminAuditServic
 router.get('/inquiries/custom', adminController.getCustomInquiries);
 router.get('/inquiries/corporate', adminController.getCorporateInquiries);
 router.put('/inquiries/:id', validate(adminValidation.updateInquiry), adminAuditService.audit('inquiry.update', { resourceType: 'inquiry' }), adminController.updateInquiry);
+router.post('/inquiries/:id/quote', validate(adminValidation.sendInquiryQuote), adminAuditService.audit('inquiry.quote.send', { resourceType: 'inquiry' }), adminController.sendInquiryQuote);
 
 // Customers
 router.get('/customers', adminController.getCustomers);

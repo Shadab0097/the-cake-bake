@@ -112,6 +112,15 @@ const updateInquiry = {
   }).messages(joiXssMessages),
 };
 
+const sendInquiryQuote = {
+  params: idParam,
+  body: Joi.object({
+    amount: Joi.number().positive().max(10000000).required(),
+    notes: Joi.string().allow('').max(1000).default('').custom(joiSanitize),
+    expiresInDays: Joi.number().integer().min(1).max(30).default(7),
+  }).messages(joiXssMessages),
+};
+
 // ---- Manual Notification ----
 const sendNotification = {
   body: Joi.object({
@@ -131,6 +140,7 @@ module.exports = {
   updateAddOn,
   updateCoupon,
   updateInquiry,
+  sendInquiryQuote,
   sendNotification,
   // Loyalty Points
   adjustPoints: {

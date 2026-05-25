@@ -75,6 +75,10 @@ if (cluster.isPrimary) {
   process.on('SIGINT', () => shutdown('SIGINT'));
 
 } else {
+  // Cluster is for HTTP scaling only. Background workers and schedulers must
+  // run as separate processes so jobs are not duplicated across API workers.
+  process.env.PROCESS_ROLE = process.env.PROCESS_ROLE || 'web';
+
   // Worker process — load the actual server
   require('./server');
 }

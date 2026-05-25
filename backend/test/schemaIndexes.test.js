@@ -5,6 +5,7 @@ const Cart = require('../src/models/Cart');
 const ChatbotLog = require('../src/models/ChatbotLog');
 const Coupon = require('../src/models/Coupon');
 const CouponUsage = require('../src/models/CouponUsage');
+const InquiryQuote = require('../src/models/InquiryQuote');
 const Order = require('../src/models/Order');
 const Payment = require('../src/models/Payment');
 const Product = require('../src/models/Product');
@@ -93,4 +94,16 @@ test('refund workflow indexes cover unique order/payment refunds and admin queue
     )),
     true
   );
+});
+
+test('inquiry quote indexes cover token, inquiry, and expiry lookups', () => {
+  assert.equal(
+    hasIndex(InquiryQuote, { tokenHash: 1 }, (options) => (
+      options.unique === true &&
+      options.partialFilterExpression?.tokenHash?.$gt === ''
+    )),
+    true
+  );
+  assert.equal(hasIndex(InquiryQuote, { inquiryType: 1, inquiry: 1, version: -1 }), true);
+  assert.equal(hasIndex(InquiryQuote, { status: 1, expiresAt: 1 }), true);
 });

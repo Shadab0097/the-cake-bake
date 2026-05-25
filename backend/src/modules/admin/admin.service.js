@@ -126,7 +126,7 @@ class AdminService {
         .populate('user', 'name email phone')
         .sort({ createdAt: -1 })
         .limit(10)
-        .select('orderNumber user guestInfo items shippingAddress total status paymentStatus paymentMethod deliveryDate deliverySlot createdAt')
+        .select('orderNumber user guestInfo items shippingAddress total status paymentStatus paymentMethod source sourceInquiryType sourceInquiry sourceQuote deliveryDate deliverySlot createdAt')
         .lean(),
 
       Order.aggregate([

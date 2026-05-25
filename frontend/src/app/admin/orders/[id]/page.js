@@ -1,6 +1,7 @@
 'use client';
 
 import { useEffect, useState, useCallback, use } from 'react';
+import Image from 'next/image';
 import { useRouter } from 'next/navigation';
 import adminApi, { formatPrice, formatDate, formatDateTime, ORDER_STATUSES } from '@/lib/adminApi';
 import { StatusBadge, AdminToast, useAdminToast } from '@/components/admin/AdminUI';
@@ -93,6 +94,7 @@ export default function AdminOrderDetailPage({ params }) {
             <StatusBadge status={order.status} />
             <StatusBadge status={order.paymentStatus} />
             {order.paymentMethod === 'cod' && <span className="admin-badge" style={{ background: '#78350f22', color: '#d97706', border: '1px solid #d9770640' }}>COD</span>}
+            {order.source === 'inquiry' && <span className="admin-badge" style={{ background: '#8b5cf622', color: '#8b5cf6', border: '1px solid #8b5cf640' }}>FROM INQUIRY</span>}
           </div>
           <div style={{ fontSize: '0.8125rem', color: 'var(--admin-text-muted)', marginTop: '0.25rem' }}>
             Placed on {formatDateTime(order.createdAt)}
@@ -145,7 +147,7 @@ export default function AdminOrderDetailPage({ params }) {
                 <div key={i} style={{ display: 'flex', gap: '1rem', padding: '1rem', background: 'var(--admin-bg)', borderRadius: 'var(--admin-radius-sm)', border: '1px solid var(--admin-border)' }}>
                   {/* Image */}
                   {item.image ? (
-                    <img src={item.image} alt={item.name} style={{ width: 72, height: 72, borderRadius: 8, objectFit: 'cover', flexShrink: 0 }} />
+                    <Image src={item.image} alt={item.name} width={72} height={72} style={{ width: 72, height: 72, borderRadius: 8, objectFit: 'cover', flexShrink: 0 }} />
                   ) : (
                     <div style={{ width: 72, height: 72, borderRadius: 8, background: 'var(--admin-surface-hover)', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: '1.5rem', flexShrink: 0 }}>🎂</div>
                   )}
@@ -313,6 +315,7 @@ export default function AdminOrderDetailPage({ params }) {
           <div className="admin-card">
             <h3 style={{ marginTop: 0, display: 'flex', alignItems: 'center', gap: '0.5rem' }}><HiOutlineCreditCard /> Payment</h3>
             <div style={{ fontSize: '0.875rem', display: 'flex', flexDirection: 'column', gap: '0.375rem' }}>
+              {order.source === 'inquiry' && <InfoRow label="Source" value={`${order.sourceInquiryType === 'corporate' ? 'Corporate' : 'Custom Cake'} inquiry quote`} />}
               <InfoRow label="Method" value={order.paymentMethod === 'cod' ? '💵 Cash on Delivery' : '💳 Online'} />
               <InfoRow label="Status" value={<StatusBadge status={order.paymentStatus} />} />
               {order.paymentId?.razorpayOrderId && <InfoRow label="Razorpay Order" value={order.paymentId.razorpayOrderId} />}

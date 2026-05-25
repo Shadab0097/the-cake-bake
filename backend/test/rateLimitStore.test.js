@@ -125,11 +125,19 @@ test('production environment validation requires Redis URL for distributed limit
   try {
     process.env.NODE_ENV = 'production';
     process.env.MONGODB_URI = 'mongodb://localhost:27017/test';
-    process.env.JWT_SECRET = 'jwt-secret';
-    process.env.JWT_REFRESH_SECRET = 'refresh-secret';
-    process.env.RAZORPAY_KEY_ID = 'rzp_test';
+    process.env.JWT_SECRET = 'prod-access-token-signing-key-64chars-a1b2c3d4e5f6';
+    process.env.JWT_REFRESH_SECRET = 'prod-refresh-token-signing-key-64chars-f6e5d4c3b2a1';
+    process.env.RAZORPAY_KEY_ID = 'rzp_live_testkey';
     process.env.RAZORPAY_KEY_SECRET = 'razorpay-secret';
+    process.env.RAZORPAY_WEBHOOK_SECRET = 'webhook-secret';
+    process.env.CORS_ORIGIN = 'https://thecakebake.in';
+    process.env.APP_URL = 'https://thecakebake.in';
+    process.env.HEALTH_CHECK_TOKEN = 'health-token-32-characters-min';
+    process.env.CLOUDINARY_CLOUD_NAME = 'cakebake';
+    process.env.CLOUDINARY_API_KEY = 'cloudinary-key';
+    process.env.CLOUDINARY_API_SECRET = 'cloudinary-secret';
     process.env.WHATSAPP_APP_SECRET = 'meta-secret';
+    process.env.JOB_QUEUE_MODE = 'bullmq';
     delete process.env.REDIS_URL;
 
     assert.throws(

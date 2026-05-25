@@ -1,6 +1,7 @@
 const logger = require('./logger');
 const ApiError = require('../utils/ApiError');
 const operationalAlertService = require('../modules/monitoring/operationalAlert.service');
+const applicationErrorEventService = require('../modules/monitoring/applicationErrorEvent.service');
 
 /**
  * Global error handler middleware
@@ -33,6 +34,10 @@ const errorHandler = (err, req, res, next) => {
       stack: error.stack,
     });
     setImmediate(() => {
+      applicationErrorEventService.recordFromError(error, req, error.statusCode).catch((eventError) => {
+        logger.warn(`[ApplicationErrorEvent] Failed to record API error: ${eventError.message}`);
+      });
+
       operationalAlertService.recordAlert({
         type: 'api_5xx_error',
         severity: 'critical',

@@ -48,6 +48,19 @@ const INQUIRY_STATUSES = {
   CANCELLED: 'cancelled',
 };
 
+const INQUIRY_QUOTE_STATUSES = {
+  SENT: 'sent',
+  ACCEPTED: 'accepted',
+  CONVERTED: 'converted',
+  EXPIRED: 'expired',
+  CANCELLED: 'cancelled',
+};
+
+const ORDER_SOURCES = {
+  CATALOG: 'catalog',
+  INQUIRY: 'inquiry',
+};
+
 const NOTIFICATION_CHANNELS = {
   WHATSAPP: 'whatsapp',
   EMAIL: 'email',
@@ -70,6 +83,7 @@ const NOTIFICATION_TYPES = {
   WELCOME: 'welcome',
   PASSWORD_RESET: 'password_reset',
   INQUIRY_ALERT: 'inquiry_alert',
+  INQUIRY_QUOTE: 'inquiry_quote',
 };
 
 const LOYALTY_TYPES = {
@@ -119,6 +133,8 @@ module.exports = {
   USER_ROLES,
   COUPON_TYPES,
   INQUIRY_STATUSES,
+  INQUIRY_QUOTE_STATUSES,
+  ORDER_SOURCES,
   NOTIFICATION_CHANNELS,
   NOTIFICATION_TYPES,
   LOYALTY_TYPES,

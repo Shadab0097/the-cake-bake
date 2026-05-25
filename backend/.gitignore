@@ -1,6 +1,40 @@
+# Dependencies
 node_modules/
+
+# Local environment and secrets
 .env
+.env.*
+!.env.example
+!.env.*.example
+*.pem
+*.key
+*.crt
+*.p12
+
+# Runtime data
 uploads/
 logs/
+scratch/
 *.log
+*.pid
+
+# Build, cache, and test output
+coverage/
+dist/
+build/
+.cache/
+.nyc_output/
+
+# Local database/dumps
+*.sqlite
+*.sqlite3
+*.db
+*.dump
+
+# OS/editor files
 .DS_Store
+Thumbs.db
+Desktop.ini
+.idea/
+.vscode/*
+!.vscode/extensions.json

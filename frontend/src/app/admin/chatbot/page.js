@@ -64,7 +64,7 @@ export default function AdminChatbotPage() {
       setRulesTotal(d.pagination?.total || 0);
     } catch { showToast('Failed to load rules', 'error'); }
     finally { setRulesLoading(false); }
-  }, [rulesPage, categoryFilter, searchText]);
+  }, [rulesPage, categoryFilter, searchText, showToast]);
 
   const fetchLogs = useCallback(async () => {
     setLogsLoading(true);
@@ -78,7 +78,7 @@ export default function AdminChatbotPage() {
       setLogsTotal(d.pagination?.total || 0);
     } catch { showToast('Failed to load logs', 'error'); }
     finally { setLogsLoading(false); }
-  }, [logsPage, matchedFilter]);
+  }, [logsPage, matchedFilter, showToast]);
 
   useEffect(() => { fetchStats(); }, [fetchStats]);
   useEffect(() => { if (tab === 'rules') fetchRules(); }, [tab, fetchRules]);

@@ -1,6 +1,7 @@
 'use client';
 
 import { useEffect, useState, useCallback } from 'react';
+import Image from 'next/image';
 import adminApi, { BANNER_POSITIONS } from '@/lib/adminApi';
 import { AdminModal, ConfirmDialog, AdminToast, useAdminToast, EmptyState, LoadingSkeleton, RefreshButton } from '@/components/admin/AdminUI';
 import AdminImageUpload from '@/components/admin/AdminImageUpload';
@@ -121,7 +122,7 @@ export default function AdminBannersPage() {
             <div key={b._id} className="admin-card">
               {(b.imageUrl || b.image?.desktop) && (
                 <div style={{ height: 120, borderRadius: 'var(--admin-radius-sm)', overflow: 'hidden', marginBottom: '0.75rem', background: 'var(--admin-bg)' }}>
-                  <img src={b.imageUrl || b.image?.desktop} alt={b.title} style={{ width: '100%', height: '100%', objectFit: 'cover' }} />
+                  <Image src={b.imageUrl || b.image?.desktop} alt={b.title} width={680} height={240} style={{ width: '100%', height: '100%', objectFit: 'cover' }} />
                 </div>
               )}
               <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '0.5rem' }}>

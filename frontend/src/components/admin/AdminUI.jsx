@@ -1,8 +1,16 @@
 'use client';
 
-import { useState, useCallback, useRef } from 'react';
+import { useCallback, useRef, useState } from 'react';
+import {
+  HiOutlineArrowPath,
+  HiOutlineCheckCircle,
+  HiOutlineChevronLeft,
+  HiOutlineChevronRight,
+  HiOutlineXCircle,
+  HiOutlineXMark,
+} from 'react-icons/hi2';
 
-export function StatusBadge({ status, type = 'order' }) {
+export function StatusBadge({ status }) {
   const label = status?.replace(/_/g, ' ') || 'unknown';
   return (
     <span className={`admin-badge badge-${status}`}>
@@ -17,7 +25,7 @@ export function Pagination({ page, totalPages, total, onPageChange }) {
   const pages = [];
   const start = Math.max(1, page - 2);
   const end = Math.min(totalPages, page + 2);
-  for (let i = start; i <= end; i++) pages.push(i);
+  for (let i = start; i <= end; i += 1) pages.push(i);
 
   return (
     <div className="admin-pagination">
@@ -27,13 +35,14 @@ export function Pagination({ page, totalPages, total, onPageChange }) {
           className="admin-page-btn"
           disabled={page <= 1}
           onClick={() => onPageChange(page - 1)}
+          aria-label="Previous page"
         >
-          ‹
+          <HiOutlineChevronLeft />
         </button>
         {start > 1 && (
           <>
             <button className="admin-page-btn" onClick={() => onPageChange(1)}>1</button>
-            {start > 2 && <span style={{ padding: '0 4px', color: 'var(--admin-text-muted)' }}>…</span>}
+            {start > 2 && <span style={{ padding: '0 4px', color: 'var(--admin-text-muted)' }}>...</span>}
           </>
         )}
         {pages.map((p) => (
@@ -41,13 +50,14 @@ export function Pagination({ page, totalPages, total, onPageChange }) {
             key={p}
             className={`admin-page-btn ${p === page ? 'active' : ''}`}
             onClick={() => onPageChange(p)}
+            aria-current={p === page ? 'page' : undefined}
           >
             {p}
           </button>
         ))}
         {end < totalPages && (
           <>
-            {end < totalPages - 1 && <span style={{ padding: '0 4px', color: 'var(--admin-text-muted)' }}>…</span>}
+            {end < totalPages - 1 && <span style={{ padding: '0 4px', color: 'var(--admin-text-muted)' }}>...</span>}
             <button className="admin-page-btn" onClick={() => onPageChange(totalPages)}>{totalPages}</button>
           </>
         )}
@@ -55,8 +65,9 @@ export function Pagination({ page, totalPages, total, onPageChange }) {
           className="admin-page-btn"
           disabled={page >= totalPages}
           onClick={() => onPageChange(page + 1)}
+          aria-label="Next page"
         >
-          ›
+          <HiOutlineChevronRight />
         </button>
       </div>
     </div>
@@ -92,7 +103,9 @@ export function AdminModal({ open, title, onClose, children, width = 600 }) {
       <div className="admin-modal" style={{ maxWidth: width }} onClick={(e) => e.stopPropagation()}>
         <div className="admin-modal-header">
           <h3 style={{ margin: 0 }}>{title}</h3>
-          <button className="admin-btn admin-btn-ghost admin-btn-icon" onClick={onClose}>✕</button>
+          <button className="admin-btn admin-btn-ghost admin-btn-icon" onClick={onClose} aria-label="Close modal">
+            <HiOutlineXMark />
+          </button>
         </div>
         <div className="admin-modal-body">
           {children}
@@ -128,21 +141,18 @@ export function LoadingSkeleton({ rows = 5, cols = 4 }) {
 
 export function StatCard({ label, value, icon, trend, color }) {
   return (
-    <div className="admin-card" style={{ display: 'flex', alignItems: 'center', gap: '1rem' }}>
-      <div style={{
-        width: 48, height: 48, borderRadius: 'var(--admin-radius)',
-        background: color || 'var(--admin-accent-soft)',
-        display: 'flex', alignItems: 'center', justifyContent: 'center',
-        fontSize: '1.25rem', flexShrink: 0,
-      }}>
+    <div className="admin-card admin-stat-card">
+      <div className="admin-stat-icon" style={{ background: color || 'var(--admin-accent-soft)' }}>
         {icon}
       </div>
-      <div>
-        <div style={{ fontSize: '0.8125rem', color: 'var(--admin-text-secondary)', marginBottom: '0.125rem' }}>{label}</div>
-        <div style={{ fontSize: '1.375rem', fontWeight: 700, color: 'var(--admin-text)' }}>{value}</div>
-        {trend && <div style={{ fontSize: '0.75rem', color: trend > 0 ? 'var(--admin-success)' : 'var(--admin-danger)', marginTop: '0.125rem' }}>
-          {trend > 0 ? '↑' : '↓'} {Math.abs(trend)}%
-        </div>}
+      <div className="admin-stat-body">
+        <div className="admin-stat-label">{label}</div>
+        <div className="admin-stat-value">{value}</div>
+        {trend && (
+          <div className="admin-stat-trend" style={{ color: trend > 0 ? 'var(--admin-success)' : 'var(--admin-danger)' }}>
+            {trend > 0 ? '+' : '-'} {Math.abs(trend)}%
+          </div>
+        )}
       </div>
     </div>
   );
@@ -152,13 +162,15 @@ export function AdminToast({ message, type = 'success', onClose }) {
   if (!message) return null;
   return (
     <div className={`admin-toast admin-toast-${type}`}>
-      {type === 'success' ? '✓' : '✕'} {message}
-      <button onClick={onClose} style={{ background: 'none', border: 'none', color: 'inherit', cursor: 'pointer', marginLeft: '0.5rem', fontSize: '1rem' }}>✕</button>
+      {type === 'success' ? <HiOutlineCheckCircle /> : <HiOutlineXCircle />}
+      <span>{message}</span>
+      <button onClick={onClose} className="admin-toast-close" aria-label="Dismiss notification">
+        <HiOutlineXMark />
+      </button>
     </div>
   );
 }
 
-// Hook for toast state
 export function useAdminToast() {
   const [toast, setToast] = useState({ message: '', type: 'success' });
   const timerRef = useRef(null);
@@ -177,7 +189,6 @@ export function useAdminToast() {
   return { toast, showToast, hideToast };
 }
 
-// Refresh button — only calls the onRefresh fn passed to it; no global effects
 export function RefreshButton({ onRefresh }) {
   const [spinning, setSpinning] = useState(false);
   const [lastUpdated, setLastUpdated] = useState(null);
@@ -198,9 +209,9 @@ export function RefreshButton({ onRefresh }) {
     : null;
 
   return (
-    <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
+    <div className="admin-refresh">
       {timeLabel && (
-        <span style={{ fontSize: '0.7rem', color: 'var(--admin-text-muted)', whiteSpace: 'nowrap' }}>
+        <span className="admin-refresh-time">
           Updated {timeLabel}
         </span>
       )}
@@ -209,20 +220,16 @@ export function RefreshButton({ onRefresh }) {
         disabled={spinning}
         title="Refresh this page data"
         className="admin-btn admin-btn-secondary admin-btn-sm"
-        style={{ display: 'inline-flex', alignItems: 'center', gap: '0.375rem', minWidth: 90 }}
+        style={{ minWidth: 98 }}
       >
-        <span
+        <HiOutlineArrowPath
           style={{
-            display: 'inline-block',
-            fontSize: '0.875rem',
             transition: 'transform 0.6s ease',
             transform: spinning ? 'rotate(360deg)' : 'rotate(0deg)',
             animation: spinning ? 'adminSpin 0.6s linear infinite' : 'none',
           }}
-        >
-          ↻
-        </span>
-        {spinning ? 'Refreshing…' : 'Refresh'}
+        />
+        {spinning ? 'Refreshing...' : 'Refresh'}
       </button>
     </div>
   );

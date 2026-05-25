@@ -12,6 +12,8 @@ const buildReservationItems = (items) => items
     quantity: item.quantity,
   }));
 
+const hasReservableItems = (items) => buildReservationItems(items).length > 0;
+
 class InventoryReservationService {
   async reserveForOrder({ order, items, user = null, guestInfo = {}, status = 'reserved', expiresAt = null, reason = '', session }) {
     if (!session) throw new Error('reserveForOrder requires a mongoose session');
@@ -56,6 +58,10 @@ class InventoryReservationService {
     const orderId = orderOrId?._id || orderOrId;
     const reservation = await InventoryReservation.findOne({ order: orderId }).session(session);
     if (!reservation && orderOrId?.items) {
+      if (!hasReservableItems(orderOrId.items)) {
+        return { changed: false, reason: 'no_reservable_items' };
+      }
+
       if (orderOrId.paymentStatus === 'paid') {
         const legacyConfirmedReservation = await InventoryReservation.create([{
           order: orderOrId._id,
@@ -189,3 +195,4 @@ class InventoryReservationService {
 module.exports = new InventoryReservationService();
 module.exports.InventoryReservationService = InventoryReservationService;
 module.exports.buildReservationItems = buildReservationItems;
+module.exports.hasReservableItems = hasReservableItems;

@@ -34,8 +34,9 @@ export default function AdminInquiriesPage() {
   const [total, setTotal] = useState(0);
   const [statusFilter, setStatusFilter] = useState('');
   const [editModal, setEditModal] = useState({ open: false, data: null });
-  const [editForm, setEditForm] = useState({ status: '', adminNotes: '', quotedPrice: '' });
+  const [editForm, setEditForm] = useState({ status: '', adminNotes: '', quotedPrice: '', quoteNotes: '', quoteExpiresInDays: 7 });
   const [saving, setSaving] = useState(false);
+  const [sendingQuote, setSendingQuote] = useState(false);
   // Track which row is currently saving a quick status update: { [id]: true }
   const [quickSaving, setQuickSaving] = useState({});
   const { toast, showToast, hideToast } = useAdminToast();
@@ -65,6 +66,8 @@ export default function AdminInquiriesPage() {
       status: item.status || 'new',
       adminNotes: item.adminNotes || '',
       quotedPrice: item.quotedPrice || '',
+      quoteNotes: '',
+      quoteExpiresInDays: 7,
     });
     setEditModal({ open: true, data: item });
   };
@@ -90,6 +93,40 @@ export default function AdminInquiriesPage() {
   };
 
   // ── Inline quick-status update ───────────────────────────────
+  const handleSendQuote = async () => {
+    const amount = Number(editForm.quotedPrice);
+    if (!amount || amount <= 0) {
+      showToast('Enter a quoted price before sending the quote', 'error');
+      return;
+    }
+
+    setSendingQuote(true);
+    try {
+      const res = await adminApi.inquiries.sendQuote(editModal.data._id, {
+        amount,
+        notes: editForm.quoteNotes || editForm.adminNotes || '',
+        expiresInDays: Number(editForm.quoteExpiresInDays) || 7,
+      });
+      const quote = res.data.data.quote;
+      const patch = {
+        status: 'quoted',
+        quotedPrice: amount,
+        latestQuote: quote._id,
+        quoteStatus: quote.status,
+        quoteSentAt: quote.sentAt,
+        quoteExpiresAt: quote.expiresAt,
+      };
+      setItems(prev => prev.map(i => (i._id === editModal.data._id ? { ...i, ...patch } : i)));
+      setEditModal(prev => ({ ...prev, data: { ...prev.data, ...patch } }));
+      setEditForm(prev => ({ ...prev, status: 'quoted' }));
+      showToast('Quote sent to customer with approval and payment link', 'success');
+    } catch (err) {
+      showToast(err.response?.data?.message || 'Failed to send quote', 'error');
+    } finally {
+      setSendingQuote(false);
+    }
+  };
+
   const handleQuickStatus = async (item, newStatus) => {
     if (newStatus === item.status) return;
     setQuickSaving(prev => ({ ...prev, [item._id]: true }));
@@ -195,6 +232,11 @@ export default function AdminInquiriesPage() {
                             </select>
                           )}
                         </div>
+                        {item.quoteStatus && (
+                          <div style={{ marginTop: '0.35rem' }}>
+                            <span className="admin-pill admin-pill-guest">Quote {item.quoteStatus}</span>
+                          </div>
+                        )}
                       </td>
 
                       <td style={{ color: 'var(--admin-text-secondary)', fontSize: '0.8125rem', whiteSpace: 'nowrap' }}>{formatDate(item.createdAt)}</td>
@@ -225,6 +267,7 @@ export default function AdminInquiriesPage() {
               {editModal.data.occasion && <div><strong>Occasion:</strong> {editModal.data.occasion}</div>}
               {editModal.data.flavor && <div><strong>Flavor:</strong> {editModal.data.flavor}</div>}
               {editModal.data.weight && <div><strong>Weight:</strong> {editModal.data.weight}</div>}
+              {editModal.data.message && <div><strong>Cake Message:</strong> {editModal.data.message}</div>}
               {editModal.data.designDescription && <div><strong>Design:</strong> {editModal.data.designDescription}</div>}
               {editModal.data.budget && <div><strong>Budget:</strong> ₹{editModal.data.budget}</div>}
               {editModal.data.companyName && <div><strong>Company:</strong> {editModal.data.companyName}</div>}
@@ -233,6 +276,10 @@ export default function AdminInquiriesPage() {
               {editModal.data.requirements && <div><strong>Requirements:</strong> {editModal.data.requirements}</div>}
               {editModal.data.city && <div><strong>City:</strong> {editModal.data.city}</div>}
               {editModal.data.deliveryDate && <div><strong>Delivery Date:</strong> {formatDate(editModal.data.deliveryDate)}</div>}
+              {editModal.data.quoteStatus && <div><strong>Quote Status:</strong> {editModal.data.quoteStatus}</div>}
+              {editModal.data.quoteSentAt && <div><strong>Quote Sent:</strong> {formatDate(editModal.data.quoteSentAt)}</div>}
+              {editModal.data.quoteExpiresAt && <div><strong>Quote Expires:</strong> {formatDate(editModal.data.quoteExpiresAt)}</div>}
+              {editModal.data.convertedOrder && <div><strong>Converted Order:</strong> Created from inquiry quote</div>}
               {editModal.data.referenceImages?.length > 0 && (
                 <div style={{ marginTop: '0.75rem' }}>
                   <strong>Reference Images:</strong>
@@ -283,6 +330,31 @@ export default function AdminInquiriesPage() {
             </div>
 
             <div className="admin-field">
+              <label className="admin-label">Customer Quote Notes</label>
+              <textarea
+                className="admin-input admin-textarea"
+                value={editForm.quoteNotes}
+                onChange={e => setEditForm(f => ({ ...f, quoteNotes: e.target.value }))}
+                placeholder="Visible to customer in the quote email and approval page"
+                rows={3}
+              />
+            </div>
+
+            <div className="admin-field">
+              <label className="admin-label">Quote Valid For</label>
+              <select
+                className="admin-input admin-select"
+                value={editForm.quoteExpiresInDays}
+                onChange={e => setEditForm(f => ({ ...f, quoteExpiresInDays: e.target.value }))}
+              >
+                <option value={3}>3 days</option>
+                <option value={7}>7 days</option>
+                <option value={14}>14 days</option>
+                <option value={30}>30 days</option>
+              </select>
+            </div>
+
+            <div className="admin-field">
               <label className="admin-label">Admin Notes</label>
               <textarea
                 className="admin-input admin-textarea"
@@ -295,6 +367,9 @@ export default function AdminInquiriesPage() {
 
             <div className="admin-modal-footer" style={{ padding: '1rem 0 0', borderTop: 'none' }}>
               <button className="admin-btn admin-btn-secondary" onClick={() => setEditModal({ open: false, data: null })}>Cancel</button>
+              <button className="admin-btn admin-btn-secondary" onClick={handleSendQuote} disabled={sendingQuote || saving || editModal.data.convertedOrder}>
+                {sendingQuote ? 'Sending Quote...' : 'Send Quote'}
+              </button>
               <button className="admin-btn admin-btn-primary" onClick={handleUpdate} disabled={saving}>
                 {saving ? 'Saving…' : 'Save Changes'}
               </button>

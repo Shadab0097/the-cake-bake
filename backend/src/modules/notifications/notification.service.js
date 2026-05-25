@@ -522,6 +522,36 @@ class NotificationService {
   // READ / ADMIN QUERIES
   // ═══════════════════════════════════════════════════════════════════════════
 
+  async sendInquiryQuote(quote, inquiry, inquiryType, approvalUrl) {
+    const email = inquiry.email || quote.customer?.email || '';
+    if (!env.notifications.emailEnabled || !email) {
+      logger.info('[Notification] Email disabled or missing customer email - inquiry quote skipped');
+      return;
+    }
+
+    const customerName = quote.customer?.name || inquiry.name || inquiry.contactName || 'Customer';
+    const summary = inquiryType === 'corporate'
+      ? [inquiry.companyName, inquiry.eventType, inquiry.quantity ? `${inquiry.quantity} items` : ''].filter(Boolean).join(' - ')
+      : [inquiry.occasion, inquiry.weight, inquiry.flavor].filter(Boolean).join(' - ');
+
+    return this._queueEmail({
+      userId: inquiry.user || null,
+      type: NOTIFICATION_TYPES.INQUIRY_QUOTE,
+      email,
+      templateKey: 'inquiry_quote',
+      templateData: {
+        customerName,
+        inquiryType: inquiryType === 'corporate' ? 'Corporate Order' : 'Custom Cake',
+        amount: `Rs. ${(quote.amount / 100).toFixed(2)}`,
+        expiresAt: new Date(quote.expiresAt).toLocaleDateString('en-IN'),
+        notes: quote.notes || '',
+        summary,
+        approvalUrl,
+      },
+      dedupeKey: `quote:${quote._id}:email`,
+    });
+  }
+
   async processQueuedNotification(jobName, data) {
     if (jobName === notificationQueue.JOBS.SEND_EMAIL) {
       return this._sendEmail({

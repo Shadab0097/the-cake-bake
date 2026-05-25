@@ -6,18 +6,35 @@ import { FiArrowRight } from 'react-icons/fi';
 import api from '@/lib/api';
 import ProductCard from '@/components/ui/ProductCard';
 
+const fetchBestsellers = () =>
+  api.get('/products/bestsellers?limit=6').then((res) => res.data?.data || []);
+
 export default function BestsellerSection() {
   const [products, setProducts] = useState([]);
   const [error, setError] = useState(false);
 
-  const fetchData = () => {
+  const handleRetry = () => {
     setError(false);
-    api.get('/products/bestsellers?limit=6')
-      .then((res) => setProducts(res.data?.data || []))
+    fetchBestsellers()
+      .then(setProducts)
       .catch(() => setError(true));
   };
 
-  useEffect(() => { fetchData(); }, []);
+  useEffect(() => {
+    let isCurrent = true;
+
+    fetchBestsellers()
+      .then((items) => {
+        if (isCurrent) setProducts(items);
+      })
+      .catch(() => {
+        if (isCurrent) setError(true);
+      });
+
+    return () => {
+      isCurrent = false;
+    };
+  }, []);
 
   if (!error && products.length === 0) return null;
 
@@ -45,7 +62,7 @@ export default function BestsellerSection() {
         {error ? (
           <div className="text-center py-8">
             <p className="text-sm text-outline mb-3">Couldn&apos;t load bestsellers right now.</p>
-            <button onClick={fetchData} className="px-5 py-2 rounded-full text-sm font-semibold text-pink-deep border border-pink-deep hover:bg-pink-light/20 transition-colors">
+            <button onClick={handleRetry} className="px-5 py-2 rounded-full text-sm font-semibold text-pink-deep border border-pink-deep hover:bg-pink-light/20 transition-colors">
               Try Again
             </button>
           </div>

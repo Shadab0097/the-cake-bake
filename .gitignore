@@ -1,0 +1,56 @@
+# OS and editor files
+.DS_Store
+Thumbs.db
+Desktop.ini
+*.swp
+*.swo
+.idea/
+.vscode/*
+!.vscode/extensions.json
+
+# Local environment and secrets
+.env
+.env.*
+!.env.example
+!.env.*.example
+*.pem
+*.key
+*.crt
+*.p12
+
+# Dependencies and package manager caches
+node_modules/
+.pnp/
+.pnp.*
+.yarn/*
+!.yarn/patches/
+!.yarn/plugins/
+!.yarn/releases/
+!.yarn/versions/
+
+# Build, cache, and test output
+.next/
+out/
+dist/
+build/
+coverage/
+.nyc_output/
+.cache/
+.turbo/
+*.tsbuildinfo
+next-env.d.ts
+
+# Runtime data
+logs/
+*.log
+uploads/
+scratch/
+*.pid
+*.seed
+*.sqlite
+*.sqlite3
+*.db
+
+# Deployment provider metadata
+.vercel/
+.netlify/

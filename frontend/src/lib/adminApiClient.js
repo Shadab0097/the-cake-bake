@@ -91,10 +91,9 @@ adminApiClient.interceptors.response.use(
         processQueue(refreshError, null);
         localStorage.removeItem('adminAccessToken');
         localStorage.removeItem('adminRefreshToken');
-        // Redirect to admin login
-        if (typeof window !== 'undefined') {
-          window.location.href = '/admin-login';
-        }
+        // Do not hard-reload here. The admin login page also probes /users/me;
+        // reloading it after a failed refresh restarts the probe and loops.
+        // Protected admin pages redirect through AdminGuard instead.
         return Promise.reject(refreshError);
       } finally {
         isRefreshing = false;

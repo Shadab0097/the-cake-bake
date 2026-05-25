@@ -53,11 +53,12 @@ export default function Navbar() {
   const { isMobileMenuOpen } = useSelector((s) => s.ui);
 
   const [scrolled,       setScrolled]       = useState(false);
-  const [activeDropdown, setActiveDropdown]  = useState(null);
+  const [activeDropdown, setActiveDropdown]  = useState({ pathname: '', label: null });
   const categories = useSelector((s) => s.categories.items);
   const dropdownRef = useRef(null);
 
   const isHeroPage = pathname === '/';
+  const activeDropdownLabel = activeDropdown.pathname === pathname ? activeDropdown.label : null;
 
   /* ── Scroll ──────────────────────────────────────────────────────────── */
   useEffect(() => {
@@ -70,7 +71,7 @@ export default function Navbar() {
   useEffect(() => {
     const handleClickOutside = (e) => {
       if (dropdownRef.current && !dropdownRef.current.contains(e.target)) {
-        setActiveDropdown(null);
+        setActiveDropdown((current) => ({ ...current, label: null }));
       }
     };
     document.addEventListener('mousedown', handleClickOutside);
@@ -80,7 +81,6 @@ export default function Navbar() {
   /* ── Close everything on route change ────────────────────────────────── */
   useEffect(() => {
     dispatch(closeMobileMenu());
-    setActiveDropdown(null);
   }, [pathname, dispatch]);
 
   /* ── Build nav links with dynamic categories ────────────────────────── */
@@ -146,7 +146,11 @@ export default function Navbar() {
                       </Link>
                       <button
                         onClick={() =>
-                          setActiveDropdown(activeDropdown === link.label ? null : link.label)
+                          setActiveDropdown(
+                            activeDropdownLabel === link.label
+                              ? { pathname, label: null }
+                              : { pathname, label: link.label }
+                          )
                         }
                         className={`px-1 py-2 text-sm font-medium rounded-r-lg transition-colors ${
                           pathname.startsWith(link.href) && link.href !== '/'
@@ -156,7 +160,7 @@ export default function Navbar() {
                       >
                         <FiChevronDown
                           className={`w-3.5 h-3.5 transition-transform ${
-                            activeDropdown === link.label ? 'rotate-180' : ''
+                            activeDropdownLabel === link.label ? 'rotate-180' : ''
                           }`}
                         />
                       </button>
@@ -176,7 +180,7 @@ export default function Navbar() {
 
                   {/* Dropdown — unified simple style */}
                   <AnimatePresence>
-                    {link.children && activeDropdown === link.label && (
+                    {link.children && activeDropdownLabel === link.label && (
                       <motion.div
                         initial={{ opacity: 0, y: -8 }}
                         animate={{ opacity: 1, y: 0 }}
@@ -326,7 +330,9 @@ export default function Navbar() {
                           <button
                             onClick={() =>
                               setActiveDropdown(
-                                activeDropdown === link.label ? null : link.label
+                                activeDropdownLabel === link.label
+                                  ? { pathname, label: null }
+                                  : { pathname, label: link.label }
                               )
                             }
                             className="flex items-center justify-between w-full px-3 py-3 text-sm font-medium text-dark rounded-lg hover:bg-pink-light/20 transition-colors"
@@ -334,11 +340,11 @@ export default function Navbar() {
                             {link.label}
                             <FiChevronDown
                               className={`w-4 h-4 transition-transform ${
-                                activeDropdown === link.label ? 'rotate-180' : ''
+                                activeDropdownLabel === link.label ? 'rotate-180' : ''
                               }`}
                             />
                           </button>
-                          {activeDropdown === link.label && (
+                          {activeDropdownLabel === link.label && (
                             <div className="pl-4 space-y-0.5 mt-1">
                               {link.children.map((child) => (
                                 <div key={child.href}>
