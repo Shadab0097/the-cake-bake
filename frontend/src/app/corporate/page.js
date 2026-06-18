@@ -6,6 +6,7 @@ import AppShell from '@/components/layout/AppShell';
 import InquiryImageUpload from '@/components/ui/InquiryImageUpload';
 import { addToast } from '@/store/slices/toastSlice';
 import api from '@/lib/api';
+import { getApiErrorMessage } from '@/lib/apiError.mjs';
 import { IMAGE_UPLOAD, validateImageFiles } from '@/lib/uploadApi';
 
 export default function CorporatePage() {
@@ -77,7 +78,7 @@ export default function CorporatePage() {
       setForm({ companyName: '', contactName: '', email: '', phone: '', eventType: '', quantity: '', deliveryDate: '', requirements: '' });
       clearReferenceFiles();
     } catch (err) {
-      dispatch(addToast({ message: err?.response?.data?.message || 'Failed to submit. Please try again.', type: 'error' }));
+      dispatch(addToast({ message: getApiErrorMessage(err, 'Failed to submit. Please try again.'), type: 'error' }));
     }
     setSubmitting(false);
   };

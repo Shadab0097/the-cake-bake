@@ -156,10 +156,10 @@ class PaymentService {
     try {
       await session.withTransaction(async () => {
         const currentOrder = await Order.findById(payment.order).session(session);
-        if (!currentOrder) throw ApiError.notFound('Order not found for payment');
+        if (!currentOrder) throw ApiError.notFound('Order not found for payment', [], 'ORDER_NOT_FOUND');
 
         if (!this.canFinalizeCapturedOrder(currentOrder, payment)) {
-          throw ApiError.badRequest('This order cannot be confirmed automatically. Please contact support.');
+          throw ApiError.badRequest('This order cannot be confirmed automatically. Please contact support.', [], 'ORDER_NOT_CONFIRMABLE');
         }
 
         if (currentOrder.paymentStatus === 'paid') {
@@ -174,7 +174,7 @@ class PaymentService {
           status: PAYMENT_STATUSES.CAPTURED,
         }).session(session);
         if (!currentPayment) {
-          throw ApiError.badRequest('Payment is not captured yet');
+          throw ApiError.badRequest('Payment is not captured yet', [], 'PAYMENT_NOT_CAPTURED');
         }
 
         await loyaltyService.reapplyRestoredRedemptionForCapture(currentOrder, { session });
@@ -261,9 +261,34 @@ class PaymentService {
     );
   }
 
+  /**
+   * Defense-in-depth: the amount captured at the provider must equal the amount
+   * we created the order/payment with. Razorpay already enforces the order amount
+   * at capture, so this guards against partial-payment misconfig or tampering.
+   * Only a definite mismatch fails; a missing provider amount proceeds.
+   */
+  capturedAmountMatches(payment, providerAmount, providerCurrency) {
+    if (providerAmount === undefined || providerAmount === null || providerAmount === '') return true;
+
+    const expected = Number(payment?.amount);
+    const actual = Number(providerAmount);
+    if (!Number.isFinite(expected) || !Number.isFinite(actual)) return true;
+    if (actual !== expected) return false;
+
+    if (
+      providerCurrency &&
+      payment?.currency &&
+      String(providerCurrency).toUpperCase() !== String(payment.currency).toUpperCase()
+    ) {
+      return false;
+    }
+
+    return true;
+  }
+
   verifySignature(payload, signature, secret, failureMessage) {
     if (!secret) {
-      throw ApiError.badRequest(failureMessage);
+      throw ApiError.badRequest(failureMessage, [], 'INVALID_SIGNATURE');
     }
 
     const expectedSignature = crypto
@@ -272,7 +297,7 @@ class PaymentService {
       .digest('hex');
 
     if (!timingSafeEqualHex(signature, expectedSignature)) {
-      throw ApiError.badRequest(failureMessage);
+      throw ApiError.badRequest(failureMessage, [], 'INVALID_SIGNATURE');
     }
   }
 
@@ -313,11 +338,11 @@ class PaymentService {
     // If no active payment was found, allow only true idempotent captured returns.
     if (!payment) {
       const existingPayment = await Payment.findOne({ razorpayOrderId, user: userId });
-      if (!existingPayment) throw ApiError.notFound('Payment record not found');
+      if (!existingPayment) throw ApiError.notFound('Payment record not found', [], 'PAYMENT_NOT_FOUND');
 
       const existingOrder = await Order.findById(existingPayment.order).lean();
       if (existingPayment.status !== PAYMENT_STATUSES.CAPTURED || existingOrder?.paymentStatus !== 'paid') {
-        throw ApiError.badRequest('This payment session is no longer active. Please start checkout again.');
+        throw ApiError.badRequest('This payment session is no longer active. Please start checkout again.', [], 'PAYMENT_SESSION_INACTIVE');
       }
 
       logger.info(`Payment already captured for order ${existingOrder?.orderNumber} (idempotent return)`);
@@ -325,7 +350,7 @@ class PaymentService {
     }
 
     const order = await Order.findOne({ _id: payment.order, user: userId, paymentMethod: 'online' });
-    if (!order) throw ApiError.notFound('Order not found for payment');
+    if (!order) throw ApiError.notFound('Order not found for payment', [], 'ORDER_NOT_FOUND');
 
     const finalized = await this.confirmCapturedPayment(payment, {
       userId,
@@ -377,7 +402,7 @@ class PaymentService {
 
       const record = await RazorpayWebhookEvent.findOne({ eventId });
       if (!record) {
-        throw ApiError.conflict('Webhook event is already being processed');
+        throw ApiError.conflict('Webhook event is already being processed', [], 'WEBHOOK_EVENT_IN_PROGRESS');
       }
 
       if (record.status === 'completed') {
@@ -494,6 +519,15 @@ class PaymentService {
 
     await this.recordPaymentWebhookEvent(payment._id, eventId, eventType, paymentEntity);
 
+    if (!this.capturedAmountMatches(payment, paymentEntity.amount, paymentEntity.currency)) {
+      logger.error(`[Payment] Captured amount mismatch for ${razorpayOrderId}: expected ${payment.amount} ${payment.currency}, got ${paymentEntity.amount} ${paymentEntity.currency || ''}`);
+      await this.flagCapturedPaymentForManualReview(
+        payment,
+        `Captured amount ${paymentEntity.amount} ${paymentEntity.currency || ''} does not match expected ${payment.amount} ${payment.currency}`
+      );
+      return;
+    }
+
     try {
       await this.confirmCapturedPayment(payment, {
         userId: payment.user,
@@ -561,6 +595,15 @@ class PaymentService {
 
     if (!paymentRecord) {
       return { repaired: false, reason: 'not_capturable' };
+    }
+
+    if (!this.capturedAmountMatches(paymentRecord, providerPayment.amount, providerPayment.currency)) {
+      logger.error(`[Payment] Reconciled amount mismatch for ${paymentRecord.razorpayOrderId}: expected ${paymentRecord.amount} ${paymentRecord.currency}, got ${providerPayment.amount} ${providerPayment.currency || ''}`);
+      await this.flagCapturedPaymentForManualReview(
+        paymentRecord,
+        `Reconciled captured amount ${providerPayment.amount} ${providerPayment.currency || ''} does not match expected ${paymentRecord.amount} ${paymentRecord.currency}`
+      );
+      return { repaired: false, reason: 'amount_mismatch' };
     }
 
     await this.recordPaymentWebhookEvent(

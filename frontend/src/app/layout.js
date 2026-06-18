@@ -1,5 +1,7 @@
 import { Montserrat, Great_Vibes } from 'next/font/google';
 import StoreProvider from '@/store/StoreProvider';
+import Toast from '@/components/ui/Toast';
+import DevTools from '@/components/DevTools';
 import './globals.css';
 
 const montserrat = Montserrat({
@@ -63,6 +65,8 @@ export default function RootLayout({ children }) {
       <body className="min-h-screen flex flex-col font-montserrat antialiased">
         <StoreProvider>
           {children}
+          <Toast />
+          <DevTools />
         </StoreProvider>
       </body>
     </html>

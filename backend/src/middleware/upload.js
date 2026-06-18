@@ -1,6 +1,7 @@
 const multer = require('multer');
 const path = require('path');
 const ApiError = require('../utils/ApiError');
+const { isAllowedImageBuffer } = require('../utils/fileSignature');
 
 const storage = multer.memoryStorage();
 
@@ -31,4 +32,23 @@ const upload = multer({
   },
 });
 
+// Post-multer guard: verify each uploaded buffer is a real image by its magic
+// bytes, not just its (spoofable) extension/MIME. Mount after upload.single/array.
+const verifyImageMagicBytes = (req, res, next) => {
+  const files = req.files
+    ? (Array.isArray(req.files) ? req.files : Object.values(req.files).flat())
+    : (req.file ? [req.file] : []);
+
+  for (const file of files) {
+    if (!isAllowedImageBuffer(file.buffer)) {
+      return next(new ApiError(400, 'Uploaded file is not a valid image', [
+        { field: file.fieldname, code: 'INVALID_IMAGE_CONTENT', message: 'Uploaded file is not a valid image' },
+      ], 'INVALID_IMAGE_CONTENT'));
+    }
+  }
+
+  next();
+};
+
 module.exports = upload;
+module.exports.verifyImageMagicBytes = verifyImageMagicBytes;

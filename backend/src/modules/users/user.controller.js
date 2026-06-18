@@ -2,6 +2,7 @@ const userService = require('./user.service');
 const uploadService = require('../media/upload.service');
 const asyncHandler = require('../../utils/asyncHandler');
 const ApiResponse = require('../../utils/ApiResponse');
+const { invalidateUserCache } = require('../../middleware/auth');
 
 const getProfile = asyncHandler(async (req, res) => {
   const user = await userService.getProfile(req.user._id);
@@ -15,6 +16,7 @@ const getPoints = asyncHandler(async (req, res) => {
 
 const updateProfile = asyncHandler(async (req, res) => {
   const user = await userService.updateProfile(req.user._id, req.body);
+  await invalidateUserCache(req.user._id);
   ApiResponse.ok(user, 'Profile updated').send(res);
 });
 
@@ -57,6 +59,7 @@ const updateAvatar = asyncHandler(async (req, res) => {
     ).select('-passwordHash -refreshToken -adminRefreshToken');
 
     await uploadService.deleteImage(currentUser?.avatarPublicId);
+    await invalidateUserCache(req.user._id);
     ApiResponse.ok({ avatar: user.avatar, avatarPublicId: user.avatarPublicId }, 'Avatar updated').send(res);
   } catch (err) {
     await uploadService.deleteImage(uploaded.publicId);

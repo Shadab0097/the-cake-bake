@@ -78,7 +78,7 @@ class InquiryQuoteService {
     const corporate = await CorporateInquiry.findById(id);
     if (corporate) return { inquiry: corporate, inquiryType: 'corporate', Model: CorporateInquiry };
 
-    throw ApiError.notFound('Inquiry not found');
+    throw ApiError.notFound('Inquiry not found', [], 'INQUIRY_NOT_FOUND');
   }
 
   getPublicInquiryDetails(inquiry, inquiryType) {
@@ -166,12 +166,16 @@ class InquiryQuoteService {
   async sendQuote(inquiryId, data, adminId) {
     const amount = toPaise(data.amount);
     if (!Number.isFinite(amount) || amount <= 0) {
-      throw ApiError.badRequest('Quote amount must be greater than zero');
+      throw ApiError.badRequest(
+        'Quote amount must be greater than zero',
+        [{ field: 'amount', code: 'INVALID_QUOTE_AMOUNT', message: 'Quote amount must be greater than zero' }],
+        'INVALID_QUOTE_AMOUNT'
+      );
     }
 
     const { inquiry, inquiryType, Model } = await this.findInquiryById(inquiryId);
     if (inquiry.convertedOrder) {
-      throw ApiError.conflict('This inquiry is already converted to an order');
+      throw ApiError.conflict('This inquiry is already converted to an order', [], 'INQUIRY_ALREADY_CONVERTED');
     }
 
     const acceptedQuotes = await InquiryQuote.find({
@@ -181,17 +185,17 @@ class InquiryQuoteService {
     }).lean();
     for (const acceptedQuote of acceptedQuotes) {
       if (acceptedQuote.status === INQUIRY_QUOTE_STATUSES.CONVERTED) {
-        throw ApiError.conflict('This inquiry is already converted to an order');
+        throw ApiError.conflict('This inquiry is already converted to an order', [], 'INQUIRY_ALREADY_CONVERTED');
       }
 
       const acceptedOrder = acceptedQuote.order ? await Order.findById(acceptedQuote.order).select('status paymentStatus').lean() : null;
       if (acceptedOrder?.paymentStatus === 'paid') {
-        throw ApiError.conflict('This inquiry already has a paid order');
+        throw ApiError.conflict('This inquiry already has a paid order', [], 'INQUIRY_ALREADY_PAID');
       }
 
       const paymentStillActive = acceptedOrder?.status === ORDER_STATUSES.PENDING && acceptedOrder?.paymentStatus !== 'paid';
       if (paymentStillActive) {
-        throw ApiError.conflict('This inquiry already has an accepted quote awaiting payment');
+        throw ApiError.conflict('This inquiry already has an accepted quote awaiting payment', [], 'QUOTE_AWAITING_PAYMENT');
       }
 
       await InquiryQuote.updateOne(
@@ -255,11 +259,11 @@ class InquiryQuoteService {
 
   async findQuoteByToken(token) {
     const quote = await InquiryQuote.findOne({ tokenHash: quoteTokenHash(token) }).select('+tokenHash');
-    if (!quote) throw ApiError.notFound('Quote link is invalid or expired');
+    if (!quote) throw ApiError.notFound('Quote link is invalid or expired', [], 'QUOTE_NOT_FOUND');
 
     const Model = inquiryModels[quote.inquiryType];
     const inquiry = await Model.findById(quote.inquiry);
-    if (!inquiry) throw ApiError.notFound('Inquiry not found for this quote');
+    if (!inquiry) throw ApiError.notFound('Inquiry not found for this quote', [], 'INQUIRY_NOT_FOUND');
 
     await this.markExpiredIfNeeded(quote, quote.inquiryType);
     return { quote, inquiry, inquiryType: quote.inquiryType, Model };
@@ -279,11 +283,19 @@ class InquiryQuoteService {
     });
 
     if (!zone) {
-      throw ApiError.badRequest(`Delivery not available in ${city}`);
+      throw ApiError.badRequest(
+        `Delivery not available in ${city}`,
+        [{ field: 'city', code: 'DELIVERY_UNAVAILABLE', message: `Delivery not available in ${city}` }],
+        'DELIVERY_UNAVAILABLE'
+      );
     }
 
     if (zone.pincodes.length > 0 && !zone.pincodes.includes(shippingAddress.pincode)) {
-      throw ApiError.badRequest(`Delivery not available for pincode ${shippingAddress.pincode}`);
+      throw ApiError.badRequest(
+        `Delivery not available for pincode ${shippingAddress.pincode}`,
+        [{ field: 'pincode', code: 'DELIVERY_PINCODE_UNAVAILABLE', message: `Delivery not available for pincode ${shippingAddress.pincode}` }],
+        'DELIVERY_PINCODE_UNAVAILABLE'
+      );
     }
   }
 
@@ -370,7 +382,7 @@ class InquiryQuoteService {
     ]);
 
     if (!order || !payment) {
-      throw ApiError.conflict('Quote acceptance is still being processed. Please retry in a moment.');
+      throw ApiError.conflict('Quote acceptance is still being processed. Please retry in a moment.', [], 'QUOTE_PROCESSING');
     }
 
     if (order.paymentStatus === 'paid') {
@@ -400,7 +412,7 @@ class InquiryQuoteService {
       { $set: { status: INQUIRY_QUOTE_STATUSES.CANCELLED } }
     );
 
-    throw ApiError.badRequest('This quote payment session is no longer active. Please contact us to reissue the quote.');
+    throw ApiError.badRequest('This quote payment session is no longer active. Please contact us to reissue the quote.', [], 'QUOTE_SESSION_INACTIVE');
   }
 
   async acceptQuote(token, data) {
@@ -411,19 +423,23 @@ class InquiryQuoteService {
     }
 
     if (quote.status !== INQUIRY_QUOTE_STATUSES.SENT) {
-      throw ApiError.badRequest('This quote is no longer available for payment');
+      throw ApiError.badRequest('This quote is no longer available for payment', [], 'QUOTE_NOT_AVAILABLE');
     }
 
     if (quote.expiresAt <= new Date()) {
       await this.markExpiredIfNeeded(quote, inquiryType);
-      throw ApiError.badRequest('This quote has expired. Please contact us for an updated quote.');
+      throw ApiError.badRequest('This quote has expired. Please contact us for an updated quote.', [], 'QUOTE_EXPIRED');
     }
 
     const deliveryDate = new Date(data.deliveryDate);
     const todayStart = new Date();
     todayStart.setHours(0, 0, 0, 0);
     if (deliveryDate < todayStart) {
-      throw ApiError.badRequest('Delivery date cannot be in the past');
+      throw ApiError.badRequest(
+        'Delivery date cannot be in the past',
+        [{ field: 'deliveryDate', code: 'INVALID_DELIVERY_DATE', message: 'Delivery date cannot be in the past' }],
+        'INVALID_DELIVERY_DATE'
+      );
     }
 
     await this.assertDeliverySupported(data.shippingAddress);
@@ -586,7 +602,7 @@ class InquiryQuoteService {
   async verifyQuotePayment(token, data) {
     const { quote } = await this.findQuoteByToken(token);
     if (!quote.order || !quote.payment) {
-      throw ApiError.badRequest('This quote has not been accepted yet');
+      throw ApiError.badRequest('This quote has not been accepted yet', [], 'QUOTE_NOT_ACCEPTED');
     }
 
     const body = `${data.razorpayOrderId}|${data.razorpayPaymentId}`;
@@ -623,7 +639,7 @@ class InquiryQuoteService {
           trackingToken: await this.issueGuestTrackingToken(existingOrder),
         };
       }
-      throw ApiError.badRequest('This payment session is no longer active. Please contact support.');
+      throw ApiError.badRequest('This payment session is no longer active. Please contact support.', [], 'PAYMENT_SESSION_INACTIVE');
     }
 
     const finalized = await paymentService.confirmCapturedPayment(payment, {

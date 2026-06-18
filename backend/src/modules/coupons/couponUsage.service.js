@@ -103,22 +103,22 @@ class CouponUsageService {
 
   async validateForCheckout({ couponCode, userId, guestInfo, subtotal, session = null }) {
     const coupon = await this.findValidCoupon(couponCode, subtotal, session);
-    if (!coupon) throw ApiError.badRequest('Coupon is no longer valid for this order');
+    if (!coupon) throw ApiError.badRequest('Coupon is no longer valid for this order', [{ field: 'couponCode', code: 'COUPON_INVALID', message: 'Coupon is no longer valid for this order' }], 'COUPON_INVALID');
 
     if (coupon.usageLimit > 0 && coupon.usageCount >= coupon.usageLimit) {
-      throw ApiError.badRequest('Coupon usage limit reached');
+      throw ApiError.badRequest('Coupon usage limit reached', [{ field: 'couponCode', code: 'COUPON_USAGE_LIMIT_REACHED', message: 'Coupon usage limit reached' }], 'COUPON_USAGE_LIMIT_REACHED');
     }
 
     if (coupon.perUserLimit > 0) {
       const identities = this.getIdentities({ userId, guestInfo });
       if (identities.length === 0) {
-        throw ApiError.badRequest('Coupon cannot be applied without customer details');
+        throw ApiError.badRequest('Coupon cannot be applied without customer details', [], 'COUPON_CUSTOMER_DETAILS_REQUIRED');
       }
 
       for (const identity of identities) {
         const usageCount = await this.getIdentityUsageCount(coupon._id, identity, session);
         if (usageCount >= coupon.perUserLimit) {
-          throw ApiError.badRequest('You have already used this coupon');
+          throw ApiError.badRequest('You have already used this coupon', [{ field: 'couponCode', code: 'COUPON_ALREADY_USED', message: 'You have already used this coupon' }], 'COUPON_ALREADY_USED');
         }
       }
     }
@@ -177,7 +177,7 @@ class CouponUsageService {
         new: true,
         upsert: true,
       });
-      if (!counter) throw ApiError.badRequest('You have already used this coupon');
+      if (!counter) throw ApiError.badRequest('You have already used this coupon', [{ field: 'couponCode', code: 'COUPON_ALREADY_USED', message: 'You have already used this coupon' }], 'COUPON_ALREADY_USED');
     } catch (error) {
       if (error.code !== 11000) throw error;
 
@@ -185,7 +185,7 @@ class CouponUsageService {
         session,
         new: true,
       });
-      if (!counter) throw ApiError.badRequest('You have already used this coupon');
+      if (!counter) throw ApiError.badRequest('You have already used this coupon', [{ field: 'couponCode', code: 'COUPON_ALREADY_USED', message: 'You have already used this coupon' }], 'COUPON_ALREADY_USED');
     }
   }
 
@@ -215,7 +215,7 @@ class CouponUsageService {
 
     const identities = this.getIdentities({ userId, guestInfo });
     if (resolvedCoupon.perUserLimit > 0 && identities.length === 0) {
-      throw ApiError.badRequest('Coupon cannot be applied without customer details');
+      throw ApiError.badRequest('Coupon cannot be applied without customer details', [], 'COUPON_CUSTOMER_DETAILS_REQUIRED');
     }
 
     try {
@@ -255,7 +255,7 @@ class CouponUsageService {
     );
 
     if (couponUpdate.modifiedCount !== 1) {
-      throw ApiError.badRequest('Coupon usage limit reached');
+      throw ApiError.badRequest('Coupon usage limit reached', [{ field: 'couponCode', code: 'COUPON_USAGE_LIMIT_REACHED', message: 'Coupon usage limit reached' }], 'COUPON_USAGE_LIMIT_REACHED');
     }
 
     for (const identity of identities) {

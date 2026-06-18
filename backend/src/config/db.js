@@ -74,6 +74,15 @@ const connectDB = async () => {
 
     logger.info(`MongoDB connected: ${conn.connection.host}/${conn.connection.name} (pool: ${conn.connection.getClient().options.maxPoolSize})`);
 
+    // Connection-budget advisory: total connections ≈ pool size × process count.
+    // Keep the sum under your MongoDB/Atlas connection limit to avoid exhaustion.
+    if (env.db.connectionBudget > 0 && env.db.maxPoolSize > env.db.connectionBudget) {
+      logger.warn(
+        `[DB] DB_POOL_SIZE (${env.db.maxPoolSize}) exceeds this process's DB_CONNECTION_BUDGET (${env.db.connectionBudget}). ` +
+        'Set DB_CONNECTION_BUDGET = (cluster connection limit) / (total app processes) and lower DB_POOL_SIZE accordingly.'
+      );
+    }
+
     mongoose.connection.on('error', (err) => {
       logger.error('MongoDB connection error:', err);
     });

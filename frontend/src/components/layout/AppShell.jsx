@@ -13,7 +13,6 @@ import Footer from '@/components/layout/Footer';
 import MobileBottomNav from '@/components/layout/MobileBottomNav';
 import CartDrawer from '@/components/ui/CartDrawer';
 import SearchOverlay from '@/components/ui/SearchOverlay';
-import Toast from '@/components/ui/Toast';
 
 // Module-level flag to prevent duplicate fetchProfile calls across remounts
 let sessionInitStarted = false;
@@ -71,7 +70,6 @@ export default function AppShell({ children }) {
       <MobileBottomNav />
       <CartDrawer />
       <SearchOverlay />
-      <Toast />
     </>
   );
 }

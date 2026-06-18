@@ -84,9 +84,15 @@ router.post(
     if (error) {
       const errors = error.details.map((d) => ({
         field: d.path.join('.'),
+        code: (d.type || 'invalid').toUpperCase().replace(/[^A-Z0-9]+/g, '_'),
         message: d.message.replace(/"/g, ''),
       }));
-      throw ApiError.badRequest('Validation failed', errors);
+      const [first] = errors;
+      const extra = errors.length - 1;
+      const summary = extra > 0
+        ? `${first.message} (and ${extra} more validation ${extra === 1 ? 'issue' : 'issues'})`
+        : first.message;
+      throw ApiError.badRequest(summary, errors, 'VALIDATION_ERROR');
     }
 
     const { guestInfo, shippingAddress, items, deliveryDate, deliverySlot } = value;
@@ -115,11 +121,11 @@ router.post(
     });
 
     if (!zone) {
-      throw ApiError.badRequest(`Delivery not available in ${shippingAddress.city}`);
+      throw ApiError.badRequest(`Delivery not available in ${shippingAddress.city}`, [{ field: 'shippingAddress.city', code: 'DELIVERY_NOT_AVAILABLE', message: `Delivery not available in ${shippingAddress.city}` }], 'DELIVERY_NOT_AVAILABLE');
     }
 
     if (zone.pincodes.length > 0 && !zone.pincodes.includes(shippingAddress.pincode)) {
-      throw ApiError.badRequest(`Delivery not available for pincode ${shippingAddress.pincode}`);
+      throw ApiError.badRequest(`Delivery not available for pincode ${shippingAddress.pincode}`, [{ field: 'shippingAddress.pincode', code: 'DELIVERY_NOT_AVAILABLE_PINCODE', message: `Delivery not available for pincode ${shippingAddress.pincode}` }], 'DELIVERY_NOT_AVAILABLE_PINCODE');
     }
 
     // ── FIX: Server-side price calculation ──────────────────────────────────
@@ -134,13 +140,13 @@ router.post(
       ]);
 
       if (!product) {
-        throw ApiError.badRequest(`Product not found or unavailable`);
+        throw ApiError.badRequest(`Product not found or unavailable`, [], 'PRODUCT_NOT_FOUND');
       }
       if (!variant) {
-        throw ApiError.badRequest(`Variant not found or unavailable for product "${product.name}"`);
+        throw ApiError.badRequest(`Variant not found or unavailable for product "${product.name}"`, [], 'VARIANT_NOT_FOUND');
       }
       if (variant.stock < item.quantity) {
-        throw ApiError.badRequest(`Insufficient stock for "${product.name}" (${variant.weight})`);
+        throw ApiError.badRequest(`Insufficient stock for "${product.name}" (${variant.weight})`, [{ field: 'quantity', code: 'INSUFFICIENT_STOCK', message: `Insufficient stock for "${product.name}" (${variant.weight})` }], 'INSUFFICIENT_STOCK');
       }
 
       // Server-calculated unit price
@@ -182,7 +188,7 @@ router.post(
     }
 
     const total = subtotal + deliveryCharge;
-    if (total <= 0) throw ApiError.badRequest('Invalid order total');
+    if (total <= 0) throw ApiError.badRequest('Invalid order total', [], 'INVALID_ORDER_TOTAL');
 
     const codRiskAssessment = await codAbuseService.assertCanUseCOD({
       guestInfo,
@@ -291,7 +297,7 @@ router.post(
       await session.abortTransaction();
       logger.error('[GuestCheckout] Transaction failed:', error);
       if (error instanceof ApiError) throw error;
-      throw ApiError.internal('Failed to place guest order. Please try again.');
+      throw ApiError.internal('Failed to place guest order. Please try again.', [], 'GUEST_ORDER_CREATION_FAILED');
     } finally {
       session.endSession();
     }

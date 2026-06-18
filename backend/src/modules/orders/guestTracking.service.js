@@ -17,7 +17,7 @@ class GuestTrackingService {
 
   getSecret() {
     const secret = env.jwt.secret || process.env.JWT_SECRET;
-    if (!secret) throw ApiError.internal('Guest order tracking is not configured');
+    if (!secret) throw ApiError.internal('Guest order tracking is not configured', [], 'TRACKING_NOT_CONFIGURED');
     return secret;
   }
 
@@ -66,19 +66,19 @@ class GuestTrackingService {
     const rawToken = String(token || '').trim();
     const [payload, signature, extra] = rawToken.split(TOKEN_SEPARATOR);
     if (!payload || !signature || extra !== undefined) {
-      throw ApiError.forbidden('Invalid guest tracking token');
+      throw ApiError.forbidden('Invalid guest tracking token', [{ field: 'token', code: 'INVALID_TRACKING_TOKEN', message: 'Invalid guest tracking token' }], 'INVALID_TRACKING_TOKEN');
     }
 
     const expectedSignature = this.signPayload(payload);
     if (!this.timingSafeEqual(signature, expectedSignature)) {
-      throw ApiError.forbidden('Invalid guest tracking token');
+      throw ApiError.forbidden('Invalid guest tracking token', [{ field: 'token', code: 'INVALID_TRACKING_TOKEN', message: 'Invalid guest tracking token' }], 'INVALID_TRACKING_TOKEN');
     }
 
     let decoded;
     try {
       decoded = JSON.parse(Buffer.from(payload, 'base64url').toString('utf8'));
     } catch (error) {
-      throw ApiError.forbidden('Invalid guest tracking token');
+      throw ApiError.forbidden('Invalid guest tracking token', [{ field: 'token', code: 'INVALID_TRACKING_TOKEN', message: 'Invalid guest tracking token' }], 'INVALID_TRACKING_TOKEN');
     }
 
     if (
@@ -87,7 +87,7 @@ class GuestTrackingService {
       !decoded?.on ||
       decoded.on !== String(orderNumber)
     ) {
-      throw ApiError.forbidden('Invalid guest tracking token');
+      throw ApiError.forbidden('Invalid guest tracking token', [{ field: 'token', code: 'INVALID_TRACKING_TOKEN', message: 'Invalid guest tracking token' }], 'INVALID_TRACKING_TOKEN');
     }
 
     return decoded;
@@ -173,7 +173,7 @@ class GuestTrackingService {
       .select('+guestTrackingTokenHash')
       .lean();
 
-    if (!order) throw ApiError.notFound('Order not found');
+    if (!order) throw ApiError.notFound('Order not found', [], 'ORDER_NOT_FOUND');
 
     return this.buildPublicOrder(order);
   }

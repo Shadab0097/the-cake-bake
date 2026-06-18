@@ -56,7 +56,7 @@ const normalizeFolder = (folder) => folder.replace(/^\/+|\/+$/g, '');
 const getUploadFolder = (context) => {
   const contextFolder = CONTEXT_FOLDERS[context];
   if (!contextFolder) {
-    throw ApiError.badRequest('Invalid upload context');
+    throw ApiError.badRequest('Invalid upload context', [], 'INVALID_UPLOAD_CONTEXT');
   }
   return `${normalizeFolder(env.cloudinary.folder)}/${contextFolder}`;
 };
@@ -68,23 +68,23 @@ const assertCloudinaryReady = () => {
 };
 
 const validateImageFile = (file) => {
-  if (!file) throw ApiError.badRequest('No image file uploaded');
+  if (!file) throw ApiError.badRequest('No image file uploaded', [{ field: 'image', code: 'NO_FILE_UPLOADED', message: 'No image file uploaded' }], 'NO_FILE_UPLOADED');
 
   const extension = getExtension(file.originalname);
   if (file.mimetype === 'image/svg+xml' || extension === '.svg') {
-    throw ApiError.badRequest('SVG files are not allowed');
+    throw ApiError.badRequest('SVG files are not allowed', [{ field: 'image', code: 'INVALID_FILE_TYPE', message: 'SVG files are not allowed' }], 'INVALID_FILE_TYPE');
   }
 
   if (!ALLOWED_MIME_TYPES.has(file.mimetype) || !ALLOWED_EXTENSIONS.has(extension)) {
-    throw ApiError.badRequest('Only JPEG, PNG, GIF, and WebP images are allowed');
+    throw ApiError.badRequest('Only JPEG, PNG, GIF, and WebP images are allowed', [{ field: 'image', code: 'INVALID_FILE_TYPE', message: 'Only JPEG, PNG, GIF, and WebP images are allowed' }], 'INVALID_FILE_TYPE');
   }
 
   if (!file.buffer || !hasAllowedMagicBytes(file.buffer)) {
-    throw ApiError.badRequest('Uploaded file is not a valid image');
+    throw ApiError.badRequest('Uploaded file is not a valid image', [{ field: 'image', code: 'INVALID_FILE_CONTENT', message: 'Uploaded file is not a valid image' }], 'INVALID_FILE_CONTENT');
   }
 
   if (file.size > env.upload.maxFileSize) {
-    throw ApiError.badRequest(`Image size must be ${Math.floor(env.upload.maxFileSize / 1024 / 1024)}MB or less`);
+    throw ApiError.badRequest(`Image size must be ${Math.floor(env.upload.maxFileSize / 1024 / 1024)}MB or less`, [{ field: 'image', code: 'FILE_TOO_LARGE', message: `Image size must be ${Math.floor(env.upload.maxFileSize / 1024 / 1024)}MB or less` }], 'FILE_TOO_LARGE');
   }
 };
 
@@ -135,8 +135,8 @@ const uploadImage = async (file, { context }) => {
 
 const uploadImages = async (files, { context, maxFiles = 10 }) => {
   const list = Array.isArray(files) ? files : [];
-  if (list.length === 0) throw ApiError.badRequest('No image files uploaded');
-  if (list.length > maxFiles) throw ApiError.badRequest(`You can upload up to ${maxFiles} images`);
+  if (list.length === 0) throw ApiError.badRequest('No image files uploaded', [{ field: 'images', code: 'NO_FILES_UPLOADED', message: 'No image files uploaded' }], 'NO_FILES_UPLOADED');
+  if (list.length > maxFiles) throw ApiError.badRequest(`You can upload up to ${maxFiles} images`, [{ field: 'images', code: 'TOO_MANY_FILES', message: `You can upload up to ${maxFiles} images` }], 'TOO_MANY_FILES');
 
   const uploaded = [];
   try {

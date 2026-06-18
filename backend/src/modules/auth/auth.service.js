@@ -127,13 +127,13 @@ class AuthService {
   async register({ name, email, phone, password }) {
     const existingUser = await User.findOne({ email });
     if (existingUser) {
-      throw ApiError.conflict('Email already registered');
+      throw ApiError.conflict('Email already registered', [{ field: 'email', code: 'EMAIL_EXISTS', message: 'Email already registered' }], 'EMAIL_EXISTS');
     }
 
     if (phone) {
       const phoneExists = await User.findOne({ phone });
       if (phoneExists) {
-        throw ApiError.conflict('Phone number already registered');
+        throw ApiError.conflict('Phone number already registered', [{ field: 'phone', code: 'PHONE_EXISTS', message: 'Phone number already registered' }], 'PHONE_EXISTS');
       }
     }
 
@@ -173,18 +173,18 @@ class AuthService {
     const refreshTokenField = this.getRefreshTokenField(refreshScope);
     const user = await User.findOne({ email }).select(`+passwordHash +${refreshTokenField} +failedLoginAttempts +lockUntil`);
     if (!user) {
-      throw ApiError.unauthorized('Invalid email or password');
+      throw ApiError.unauthorized('Invalid email or password', [], 'INVALID_CREDENTIALS');
     }
 
     // Check if account is active
     if (user.isActive === false) {
-      throw ApiError.unauthorized('Your account has been disabled. Please contact support.');
+      throw ApiError.unauthorized('Your account has been disabled. Please contact support.', [], 'ACCOUNT_DISABLED');
     }
 
     // Check if account is currently locked
     if (user.isLocked()) {
       const unlockMinutes = Math.ceil((user.lockUntil - Date.now()) / 60000);
-      throw ApiError.unauthorized(`Account temporarily locked due to too many failed attempts. Try again in ${unlockMinutes} minute(s).`);
+      throw ApiError.unauthorized(`Account temporarily locked due to too many failed attempts. Try again in ${unlockMinutes} minute(s).`, [], 'ACCOUNT_LOCKED');
     }
 
     const isMatch = await user.comparePassword(password);
@@ -199,18 +199,18 @@ class AuthService {
         user.lockUntil = new Date(Date.now() + LOCK_DURATION_MS);
         user.failedLoginAttempts = 0; // reset counter; lockUntil is the guard now
         await user.save();
-        throw ApiError.unauthorized('Account temporarily locked after too many failed attempts. Try again in 15 minutes.');
+        throw ApiError.unauthorized('Account temporarily locked after too many failed attempts. Try again in 15 minutes.', [], 'ACCOUNT_LOCKED');
       }
 
       await user.save();
-      throw ApiError.unauthorized('Invalid email or password');
+      throw ApiError.unauthorized('Invalid email or password', [], 'INVALID_CREDENTIALS');
     }
 
     if (refreshScope === REFRESH_SCOPES.ADMIN && !this.isAdminUser(user)) {
-      throw ApiError.forbidden('Admin access required');
+      throw ApiError.forbidden('Admin access required', [], 'ADMIN_ACCESS_REQUIRED');
     }
     if (refreshScope === REFRESH_SCOPES.CUSTOMER && this.isAdminUser(user)) {
-      throw ApiError.forbidden('Customer access required');
+      throw ApiError.forbidden('Customer access required', [], 'CUSTOMER_ACCESS_REQUIRED');
     }
 
     // Successful login — reset lockout counters
@@ -238,18 +238,18 @@ class AuthService {
     const reuseField = this.getRefreshReuseField(refreshScope);
 
     if (!refreshToken) {
-      throw ApiError.unauthorized('Refresh token is required');
+      throw ApiError.unauthorized('Refresh token is required', [], 'REFRESH_TOKEN_REQUIRED');
     }
 
     try {
       const decoded = jwt.verify(refreshToken, env.jwt.refreshSecret);
       if (decoded.scope && decoded.scope !== refreshScope) {
-        throw ApiError.unauthorized('Invalid refresh token');
+        throw ApiError.unauthorized('Invalid refresh token', [], 'INVALID_REFRESH_TOKEN');
       }
 
       const user = await User.findById(decoded.id).select(`+${refreshTokenField}`);
       if (!user) {
-        throw ApiError.unauthorized('Invalid refresh token');
+        throw ApiError.unauthorized('Invalid refresh token', [], 'INVALID_REFRESH_TOKEN');
       }
 
       if (refreshScope === REFRESH_SCOPES.ADMIN && !this.isAdminUser(user)) {
@@ -257,14 +257,14 @@ class AuthService {
           { _id: user._id },
           { $set: { [refreshTokenField]: '' } }
         );
-        throw ApiError.forbidden('Admin access required');
+        throw ApiError.forbidden('Admin access required', [], 'ADMIN_ACCESS_REQUIRED');
       }
       if (refreshScope === REFRESH_SCOPES.CUSTOMER && this.isAdminUser(user)) {
         await User.updateOne(
           { _id: user._id },
           { $set: { [refreshTokenField]: '' } }
         );
-        throw ApiError.forbidden('Customer access required');
+        throw ApiError.forbidden('Customer access required', [], 'CUSTOMER_ACCESS_REQUIRED');
       }
 
       const incomingHash = this.hashRefreshToken(refreshToken);
@@ -278,7 +278,7 @@ class AuthService {
             },
           }
         );
-        throw ApiError.unauthorized('Invalid refresh token');
+        throw ApiError.unauthorized('Invalid refresh token', [], 'INVALID_REFRESH_TOKEN');
       }
 
       const tokens = this.generateTokens(user, refreshScope);
@@ -305,7 +305,7 @@ class AuthService {
             },
           }
         );
-        throw ApiError.unauthorized('Invalid refresh token');
+        throw ApiError.unauthorized('Invalid refresh token', [], 'INVALID_REFRESH_TOKEN');
       }
 
       return {
@@ -314,7 +314,7 @@ class AuthService {
       };
     } catch (error) {
       if (error instanceof ApiError) throw error;
-      throw ApiError.unauthorized('Invalid or expired refresh token');
+      throw ApiError.unauthorized('Invalid or expired refresh token', [], 'INVALID_REFRESH_TOKEN');
     }
   }
 
@@ -370,7 +370,7 @@ class AuthService {
     });
 
     if (!user) {
-      throw ApiError.badRequest('Invalid or expired reset token');
+      throw ApiError.badRequest('Invalid or expired reset token', [], 'INVALID_RESET_TOKEN');
     }
 
     user.passwordHash = newPassword;

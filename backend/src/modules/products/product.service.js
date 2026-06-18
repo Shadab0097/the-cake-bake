@@ -8,6 +8,12 @@ const uploadService = require('../media/upload.service');
 
 const SEARCH_MAX_LENGTH = 80;
 
+// Public catalog reads are cache-fronted and tolerate brief replication lag, so
+// route them to replicas to keep read load off the primary (which handles
+// checkout transactions). Falls back to primary automatically if no secondary
+// exists. NEVER use for admin reads or anything checkout-authoritative.
+const READ_SECONDARY = 'secondaryPreferred';
+
 const sanitizeSearchTerm = (value) => String(value || '')
   .normalize('NFKC')
   .replace(/[^\p{L}\p{N}\s-]+/gu, ' ')
@@ -107,6 +113,7 @@ class ProductService {
         : { isActive: true };
       const [products, total] = await Promise.all([
         Product.find(filter)
+          .read(READ_SECONDARY)
           .populate('category', 'name slug')
           .populate({ path: 'variants', match: variantMatch, options: { sort: { price: 1 } } })
           .sort(sort)
@@ -131,10 +138,14 @@ class ProductService {
 
     const hasFilter = Object.keys(validationFilter).some((key) => !['isActive', '_id'].includes(key));
     if (!searchTerm && !hasFilter && !availableOnly) {
-      throw ApiError.badRequest('Search term or filter is required');
+      throw ApiError.badRequest('Search term or filter is required', [], 'SEARCH_QUERY_REQUIRED');
     }
     if (query.q && searchTerm.length < 2) {
-      throw ApiError.badRequest('Search term must contain at least 2 searchable characters');
+      throw ApiError.badRequest(
+        'Search term must contain at least 2 searchable characters',
+        [{ field: 'q', code: 'SEARCH_TERM_TOO_SHORT', message: 'Search term must contain at least 2 searchable characters' }],
+        'SEARCH_TERM_TOO_SHORT'
+      );
     }
 
     const hasTextSearch = Boolean(validationFilter.$text);
@@ -163,6 +174,7 @@ class ProductService {
         : { isActive: true };
       const [products, total] = await Promise.all([
         Product.find(filter, projection)
+          .read(READ_SECONDARY)
           .populate('category', 'name slug')
           .populate({ path: 'variants', match: variantMatch, options: { sort: { price: 1 } } })
           .sort(sort)
@@ -183,6 +195,7 @@ class ProductService {
     const cacheKey = `products:slug:${slug}`;
     return cache.getOrSet(cacheKey, async () => {
       const product = await Product.findOne({ slug, isActive: true })
+        .read(READ_SECONDARY)
         .populate('category', 'name slug')
         .populate({
           path: 'variants',
@@ -191,7 +204,7 @@ class ProductService {
         })
         .lean();
 
-      if (!product) throw ApiError.notFound('Product not found');
+      if (!product) throw ApiError.notFound('Product not found', [], 'PRODUCT_NOT_FOUND');
       return product;
     }, 120); // Cache 2 minutes
   }
@@ -202,6 +215,7 @@ class ProductService {
   async getFeaturedProducts(limit = 12) {
     return cache.getOrSet(`products:featured:${limit}`, () => {
       return Product.find({ isActive: true, isFeatured: true })
+        .read(READ_SECONDARY)
         .populate('category', 'name slug')
         .populate({ path: 'variants', match: { isActive: true }, options: { sort: { price: 1 } } })
         .sort({ sortOrder: 1, createdAt: -1 })
@@ -216,6 +230,7 @@ class ProductService {
   async getBestsellers(limit = 12) {
     return cache.getOrSet(`products:bestsellers:${limit}`, () => {
       return Product.find({ isActive: true })
+        .read(READ_SECONDARY)
         .populate('category', 'name slug')
         .populate({ path: 'variants', match: { isActive: true }, options: { sort: { price: 1 } } })
         .sort({ totalOrders: -1 })
@@ -230,6 +245,7 @@ class ProductService {
   async getTrending(limit = 12) {
     return cache.getOrSet(`products:trending:${limit}`, () => {
       return Product.find({ isActive: true, tags: 'trending' })
+        .read(READ_SECONDARY)
         .populate('category', 'name slug')
         .populate({ path: 'variants', match: { isActive: true }, options: { sort: { price: 1 } } })
         .sort({ createdAt: -1 })
@@ -316,7 +332,7 @@ class ProductService {
       runValidators: true,
     });
 
-    if (!product) throw ApiError.notFound('Product not found');
+    if (!product) throw ApiError.notFound('Product not found', [], 'PRODUCT_NOT_FOUND');
 
     if (existingProduct?.images && data.images) {
       const nextPublicIds = new Set((product.images || []).map((image) => image.publicId).filter(Boolean));
@@ -335,7 +351,7 @@ class ProductService {
    */
   async deleteProduct(productId) {
     const product = await Product.findByIdAndUpdate(productId, { isActive: false }, { new: true });
-    if (!product) throw ApiError.notFound('Product not found');
+    if (!product) throw ApiError.notFound('Product not found', [], 'PRODUCT_NOT_FOUND');
     await cache.invalidatePattern('products:');
     return product;
   }
@@ -345,7 +361,7 @@ class ProductService {
    */
   async addVariant(productId, data) {
     const product = await Product.findById(productId);
-    if (!product) throw ApiError.notFound('Product not found');
+    if (!product) throw ApiError.notFound('Product not found', [], 'PRODUCT_NOT_FOUND');
 
     const variant = await Variant.create({ ...data, product: productId });
     await cache.invalidatePattern('products:');
@@ -361,7 +377,7 @@ class ProductService {
       data,
       { new: true, runValidators: true }
     );
-    if (!variant) throw ApiError.notFound('Variant not found');
+    if (!variant) throw ApiError.notFound('Variant not found', [], 'VARIANT_NOT_FOUND');
     await cache.invalidatePattern('products:');
     return variant;
   }

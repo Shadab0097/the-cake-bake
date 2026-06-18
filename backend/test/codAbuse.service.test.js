@@ -159,7 +159,7 @@ test('COD assessment blocks disabled users and disposable guest emails', async (
       total: 100000,
       isGuest: true,
     }),
-    /unavailable for this checkout/
+    /temporary or disposable email/
   );
 });
 
@@ -172,6 +172,29 @@ test('COD assessment blocks addresses with repeated COD cancellations', async ()
       total: 100000,
       requestContext: { ip: '203.0.113.10' },
     }),
-    /recent cancellations/
+    /repeated COD cancellations at this address/
+  );
+});
+
+
+test('COD block surfaces the specific cause and a structured error payload', async () => {
+  const service = serviceWithCounts({ counts: [0, 0] });
+
+  await assert.rejects(
+    () => service.assertCanUseCOD({
+      guestInfo: { email: 'guest@example.com', phone: '9876543210' },
+      shippingAddress: { ...baseAddress, phone: '9876543210' },
+      total: 100000,
+      isGuest: true,
+      requestContext: { ip: '203.0.113.10' },
+    }),
+    (err) => {
+      assert.equal(err.statusCode, 400);
+      assert.match(err.message, /valid mobile number/);
+      assert.equal(err.errors.length, 1);
+      assert.equal(err.errors[0].field, 'phone');
+      assert.equal(err.errors[0].code, 'invalid_phone');
+      return true;
+    }
   );
 });

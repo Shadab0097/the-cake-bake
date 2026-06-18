@@ -24,6 +24,11 @@ const isWhatsAppWebhookPost = (req) => (
   matchesRoutePath(req, '/api/v1/chatbot/webhook')
 );
 
+const isPaymentWebhookPost = (req) => (
+  req.method === 'POST' &&
+  matchesRoutePath(req, '/api/v1/payments/webhook')
+);
+
 const isHealthRoute = (req) => (
   req.method === 'GET' && (
     matchesRoutePath(req, '/api/v1/health') ||
@@ -36,7 +41,7 @@ const apiLimiter = createLimiter('api', {
   max: 300,
   standardHeaders: true,
   legacyHeaders: false,
-  skip: (req) => isWhatsAppWebhookPost(req) || isHealthRoute(req),
+  skip: (req) => isWhatsAppWebhookPost(req) || isPaymentWebhookPost(req) || isHealthRoute(req),
   message: {
     success: false,
     message: 'Too many requests, please try again after 15 minutes',
@@ -138,6 +143,20 @@ const whatsappWebhookLimiter = createLimiter('webhook-whatsapp', {
   },
 });
 
+// Razorpay webhook: excluded from the global per-IP apiLimiter (signature-verified
+// upstream). Keep a generous dedicated cap so a flood is still bounded without
+// throttling legitimate provider bursts during payment peaks.
+const razorpayWebhookLimiter = createLimiter('webhook-razorpay', {
+  windowMs: ONE_MINUTE,
+  max: 1000,
+  standardHeaders: true,
+  legacyHeaders: false,
+  message: {
+    success: false,
+    message: 'Too many webhook requests, please slow down',
+  },
+});
+
 const searchLimiter = createLimiter('search', {
   windowMs: ONE_MINUTE,
   max: 60,
@@ -192,6 +211,7 @@ module.exports = {
   adminLoginLimiter,
   paymentLimiter,
   whatsappWebhookLimiter,
+  razorpayWebhookLimiter,
   searchLimiter,
   inquiryLimiter,
   orderLimiter,

@@ -36,9 +36,9 @@ class CartService {
       Variant.findOne({ _id: variantId, product: productId, isActive: true }),
     ]);
 
-    if (!product) throw ApiError.notFound('Product not found');
-    if (!variant) throw ApiError.notFound('Variant not found');
-    if (variant.stock < quantity) throw ApiError.badRequest('Insufficient stock');
+    if (!product) throw ApiError.notFound('Product not found', [], 'PRODUCT_NOT_FOUND');
+    if (!variant) throw ApiError.notFound('Variant not found', [], 'VARIANT_NOT_FOUND');
+    if (variant.stock < quantity) throw ApiError.badRequest('Insufficient stock', [{ field: 'quantity', code: 'INSUFFICIENT_STOCK', message: 'Insufficient stock' }], 'INSUFFICIENT_STOCK');
 
     // Validate add-ons
     let validAddOns = [];
@@ -86,16 +86,16 @@ class CartService {
    */
   async updateItem(userId, itemId, updateData) {
     const cart = await Cart.findOne({ user: userId });
-    if (!cart) throw ApiError.notFound('Cart not found');
+    if (!cart) throw ApiError.notFound('Cart not found', [], 'CART_NOT_FOUND');
 
     const item = cart.items.id(itemId);
-    if (!item) throw ApiError.notFound('Item not found in cart');
+    if (!item) throw ApiError.notFound('Item not found in cart', [], 'CART_ITEM_NOT_FOUND');
 
     if (updateData.quantity !== undefined) {
-      if (updateData.quantity < 1) throw ApiError.badRequest('Quantity must be at least 1');
+      if (updateData.quantity < 1) throw ApiError.badRequest('Quantity must be at least 1', [{ field: 'quantity', code: 'INVALID_QUANTITY', message: 'Quantity must be at least 1' }], 'INVALID_QUANTITY');
       const variant = await Variant.findById(item.variant);
       if (variant && variant.stock < updateData.quantity) {
-        throw ApiError.badRequest('Insufficient stock');
+        throw ApiError.badRequest('Insufficient stock', [{ field: 'quantity', code: 'INSUFFICIENT_STOCK', message: 'Insufficient stock' }], 'INSUFFICIENT_STOCK');
       }
       item.quantity = updateData.quantity;
     }
@@ -116,7 +116,7 @@ class CartService {
    */
   async removeItem(userId, itemId) {
     const cart = await Cart.findOne({ user: userId });
-    if (!cart) throw ApiError.notFound('Cart not found');
+    if (!cart) throw ApiError.notFound('Cart not found', [], 'CART_NOT_FOUND');
 
     cart.items = cart.items.filter((item) => item._id.toString() !== itemId);
     await cart.save();
@@ -129,7 +129,7 @@ class CartService {
   async applyCoupon(userId, couponCode) {
     const cart = await Cart.findOne({ user: userId });
     if (!cart || cart.items.length === 0) {
-      throw ApiError.badRequest('Cart is empty');
+      throw ApiError.badRequest('Cart is empty', [], 'CART_EMPTY');
     }
 
     const populatedCart = await this.getCart(userId);

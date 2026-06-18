@@ -11,7 +11,7 @@ router.use(auth); // All user routes require auth
 router.get('/me', userController.getProfile);
 router.get('/me/points', userController.getPoints);
 router.put('/me', validate(userValidation.updateProfile), userController.updateProfile);
-router.put('/me/avatar', upload.single('avatar'), userController.updateAvatar);
+router.put('/me/avatar', upload.single('avatar'), upload.verifyImageMagicBytes, userController.updateAvatar);
 
 router.get('/me/addresses', userController.getAddresses);
 router.post('/me/addresses', validate(userValidation.createAddress), userController.createAddress);

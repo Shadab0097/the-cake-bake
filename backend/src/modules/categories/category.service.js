@@ -16,7 +16,7 @@ class CategoryService {
   async getCategoryBySlug(slug) {
     return cache.getOrSet(`categories:slug:${slug}`, async () => {
       const category = await Category.findOne({ slug, isActive: true }).lean();
-      if (!category) throw ApiError.notFound('Category not found');
+      if (!category) throw ApiError.notFound('Category not found', [], 'CATEGORY_NOT_FOUND');
       return category;
     }, 300);
   }
@@ -24,7 +24,11 @@ class CategoryService {
   async createCategory(data) {
     data.slug = generateSlug(data.name);
     const existing = await Category.findOne({ slug: data.slug });
-    if (existing) throw ApiError.conflict('Category with this name already exists');
+    if (existing) throw ApiError.conflict(
+      'Category with this name already exists',
+      [{ field: 'name', code: 'CATEGORY_NAME_EXISTS', message: 'Category with this name already exists' }],
+      'CATEGORY_NAME_EXISTS'
+    );
     const category = await Category.create(data);
     await cache.invalidatePattern('categories:');
     await cache.invalidatePattern('products:');
@@ -37,7 +41,7 @@ class CategoryService {
       ? await Category.findById(id).select('imagePublicId').lean()
       : null;
     const category = await Category.findByIdAndUpdate(id, data, { new: true, runValidators: true });
-    if (!category) throw ApiError.notFound('Category not found');
+    if (!category) throw ApiError.notFound('Category not found', [], 'CATEGORY_NOT_FOUND');
     if (
       existingCategory?.imagePublicId &&
       existingCategory.imagePublicId !== category.imagePublicId
@@ -51,7 +55,7 @@ class CategoryService {
 
   async deleteCategory(id) {
     const category = await Category.findByIdAndUpdate(id, { isActive: false }, { new: true });
-    if (!category) throw ApiError.notFound('Category not found');
+    if (!category) throw ApiError.notFound('Category not found', [], 'CATEGORY_NOT_FOUND');
     await cache.invalidatePattern('categories:');
     await cache.invalidatePattern('products:');
     return category;
@@ -78,7 +82,7 @@ class CategoryService {
 
     return cache.getOrSet(cacheKey, async () => {
       const category = await Category.findOne({ slug, isActive: true }).lean();
-      if (!category) throw ApiError.notFound('Category not found');
+      if (!category) throw ApiError.notFound('Category not found', [], 'CATEGORY_NOT_FOUND');
 
       const filter = { category: category._id, isActive: true };
       if (query.isEggless === 'true') filter.isEggless = true;

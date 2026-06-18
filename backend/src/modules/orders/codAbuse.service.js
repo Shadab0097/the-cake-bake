@@ -238,27 +238,89 @@ class CodAbuseService {
     assessment.score = score;
     assessment.decision = blocks.length > 0 ? 'online_required' : (flags.length > 0 ? 'review' : 'allow');
     assessment.allowed = blocks.length === 0;
-    assessment.message = this.messageForBlocks(blocks);
+    const detail = this.buildBlockDetail(blocks);
+    assessment.message = blocks.length > 0 ? detail.message : '';
+    assessment.reasonCode = blocks.length > 0 ? detail.code : '';
+    assessment.reasonField = blocks.length > 0 ? detail.field : '';
     return assessment;
   }
 
-  messageForBlocks(blocks) {
+  // Maps each block reason to a specific, user-actionable detail.
+  // The message tells the customer the real reason and how to fix it, while
+  // `field`/`code` let the frontend highlight the offending input. Velocity and
+  // fraud-pattern reasons stay actionable without leaking exact thresholds.
+  buildBlockDetail(blocks = []) {
+    const cfg = this.config || {};
+
     if (blocks.includes('cod_disabled_user')) {
-      return 'Cash on Delivery is unavailable for this account. Please choose online payment.';
+      return {
+        code: 'cod_disabled_user',
+        field: 'paymentMethod',
+        message: 'Cash on Delivery is unavailable for this account because COD has been disabled on it. Please choose online payment.',
+      };
     }
+
     if (blocks.includes('cod_amount_too_high')) {
-      return 'Cash on Delivery is unavailable for this order amount. Please choose online payment.';
+      const limit = Number(cfg.maxOrderAmount) || 0;
+      const limitText = limit
+        ? ` Cash on Delivery is only available for orders up to ₹${limit.toLocaleString('en-IN')}.`
+        : '';
+      return {
+        code: 'cod_amount_too_high',
+        field: 'paymentMethod',
+        message: `Cash on Delivery is unavailable for this order amount.${limitText} Please choose online payment for higher-value orders.`,
+      };
     }
-    if (blocks.includes('phone_velocity_exceeded') || blocks.includes('guest_ip_velocity_exceeded')) {
-      return 'Cash on Delivery is temporarily unavailable due to recent order activity. Please choose online payment.';
+
+    if (blocks.includes('phone_velocity_exceeded')) {
+      return {
+        code: 'phone_velocity_exceeded',
+        field: 'phone',
+        message: 'Cash on Delivery is temporarily unavailable because too many COD orders were recently placed from this phone number. Please try again later or choose online payment.',
+      };
     }
+
+    if (blocks.includes('guest_ip_velocity_exceeded')) {
+      return {
+        code: 'guest_ip_velocity_exceeded',
+        field: 'paymentMethod',
+        message: 'Cash on Delivery is temporarily unavailable because too many guest COD orders were recently placed from this network. Please try again later or choose online payment.',
+      };
+    }
+
     if (blocks.includes('address_cancellation_velocity_exceeded')) {
-      return 'Cash on Delivery is unavailable for this address due to recent cancellations. Please choose online payment.';
+      return {
+        code: 'address_cancellation_velocity_exceeded',
+        field: 'shippingAddress',
+        message: 'Cash on Delivery is unavailable for this delivery address because of repeated COD cancellations at this address. Please choose online payment.',
+      };
     }
-    if (blocks.includes('suspicious_phone') || blocks.includes('disposable_email')) {
-      return 'Cash on Delivery is unavailable for this checkout. Please choose online payment.';
+
+    if (blocks.includes('suspicious_phone')) {
+      return {
+        code: 'invalid_phone',
+        field: 'phone',
+        message: 'The phone number entered does not appear to be a valid mobile number. Please provide a genuine 10-digit phone number to use Cash on Delivery, or choose online payment.',
+      };
     }
-    return 'Cash on Delivery is unavailable. Please choose online payment.';
+
+    if (blocks.includes('disposable_email')) {
+      return {
+        code: 'disposable_email',
+        field: 'email',
+        message: 'Cash on Delivery is not available for temporary or disposable email addresses. Please use a permanent email address, or choose online payment.',
+      };
+    }
+
+    return {
+      code: 'cod_unavailable',
+      field: 'paymentMethod',
+      message: 'Cash on Delivery is unavailable for this checkout. Please choose online payment.',
+    };
+  }
+
+  messageForBlocks(blocks) {
+    return this.buildBlockDetail(blocks).message;
   }
 
   async recordAssessment(assessment, input = {}) {
@@ -292,11 +354,16 @@ class CodAbuseService {
     await this.recordAssessment(assessment, input);
 
     if (!assessment.allowed) {
+      const errors = [{
+        field: assessment.reasonField || 'paymentMethod',
+        code: assessment.reasonCode || 'cod_unavailable',
+        message: assessment.message,
+      }];
       const isVelocityBlock = assessment.flags.includes('phone_velocity_exceeded') ||
         assessment.flags.includes('guest_ip_velocity_exceeded');
       throw (isVelocityBlock
-        ? ApiError.tooMany(assessment.message)
-        : ApiError.badRequest(assessment.message));
+        ? ApiError.tooMany(assessment.message, errors)
+        : ApiError.badRequest(assessment.message, errors));
     }
 
     return assessment;

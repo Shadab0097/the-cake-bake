@@ -19,6 +19,9 @@ const validate = (schema) => (req, res, next) => {
         error.details.forEach((detail) => {
           validationErrors.push({
             field: detail.path.join('.'),
+            // Stable machine-readable code derived from the Joi rule, e.g.
+            // 'any.required' -> 'ANY_REQUIRED', 'string.email' -> 'STRING_EMAIL'.
+            code: String(detail.type || 'invalid').toUpperCase().replace(/[^A-Z0-9]+/g, '_'),
             message: detail.message.replace(/"/g, ''),
           });
         });
@@ -29,7 +32,13 @@ const validate = (schema) => (req, res, next) => {
   });
 
   if (validationErrors.length > 0) {
-    return next(ApiError.badRequest('Validation failed', validationErrors));
+    // Surface the actual first problem instead of a generic "Validation failed".
+    const [first] = validationErrors;
+    const extra = validationErrors.length - 1;
+    const summary = extra > 0
+      ? `${first.message} (and ${extra} more validation ${extra === 1 ? 'issue' : 'issues'})`
+      : first.message;
+    return next(ApiError.badRequest(summary, validationErrors, 'VALIDATION_ERROR'));
   }
 
   next();

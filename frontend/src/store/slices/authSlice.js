@@ -1,5 +1,7 @@
 import { createSlice, createAsyncThunk } from '@reduxjs/toolkit';
 import api from '@/lib/api';
+import { getApiErrorMessage } from '@/lib/apiError.mjs';
+import { setAccessToken, clearAccessToken } from '@/lib/authToken.mjs';
 
 // ─── Async Thunks ─────────────────────────────────────────────────────────────
 
@@ -9,11 +11,10 @@ export const login = createAsyncThunk(
     try {
       const res = await api.post('/auth/login', { email, password });
       const { accessToken, user } = res.data.data;
-      localStorage.setItem('accessToken', accessToken);
-      localStorage.removeItem('refreshToken');
+      setAccessToken(accessToken);
       return user;
     } catch (err) {
-      return rejectWithValue(err.response?.data?.message || 'Login failed');
+      return rejectWithValue(getApiErrorMessage(err, 'Login failed'));
     }
   }
 );
@@ -24,11 +25,10 @@ export const register = createAsyncThunk(
     try {
       const res = await api.post('/auth/register', { name, email, phone, password });
       const { accessToken, user } = res.data.data;
-      localStorage.setItem('accessToken', accessToken);
-      localStorage.removeItem('refreshToken');
+      setAccessToken(accessToken);
       return user;
     } catch (err) {
-      return rejectWithValue(err.response?.data?.message || 'Registration failed');
+      return rejectWithValue(getApiErrorMessage(err, 'Registration failed'));
     }
   }
 );
@@ -41,7 +41,7 @@ export const fetchProfile = createAsyncThunk(
       const res = await api.get('/users/me');
       return res.data.data;
     } catch (err) {
-      return rejectWithValue(err.response?.data?.message || 'Not authenticated');
+      return rejectWithValue(getApiErrorMessage(err, 'Not authenticated'));
     }
   }
 );
@@ -54,8 +54,7 @@ export const logout = createAsyncThunk(
     } catch {
       // Ignore logout errors
     } finally {
-      localStorage.removeItem('accessToken');
-      localStorage.removeItem('refreshToken');
+      clearAccessToken();
     }
   }
 );

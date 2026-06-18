@@ -106,7 +106,7 @@ class DeliveryService {
   }
   async updateSlot(id, data) {
     const slot = await DeliverySlot.findByIdAndUpdate(id, data, { new: true });
-    if (!slot) throw ApiError.notFound('Slot not found');
+    if (!slot) throw ApiError.notFound('Slot not found', [], 'DELIVERY_SLOT_NOT_FOUND');
     await cache.invalidatePattern('delivery:');
     return slot;
   }
@@ -117,7 +117,7 @@ class DeliveryService {
   }
   async updateZone(id, data) {
     const zone = await DeliveryZone.findByIdAndUpdate(id, data, { new: true });
-    if (!zone) throw ApiError.notFound('Zone not found');
+    if (!zone) throw ApiError.notFound('Zone not found', [], 'DELIVERY_ZONE_NOT_FOUND');
     await cache.invalidatePattern('delivery:');
     return zone;
   }

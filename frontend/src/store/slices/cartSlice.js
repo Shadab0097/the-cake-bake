@@ -1,5 +1,6 @@
 import { createSlice, createAsyncThunk } from '@reduxjs/toolkit';
 import api from '@/lib/api';
+import { getApiErrorMessage } from '@/lib/apiError.mjs';
 
 const GUEST_CART_KEY = 'guestCart';
 const PENDING_ADDONS_KEY = 'pendingAddOns';
@@ -66,7 +67,7 @@ export const fetchCart = createAsyncThunk(
       const res = await api.get('/cart');
       return res.data.data;
     } catch (err) {
-      return rejectWithValue(err.response?.data?.message || 'Failed to fetch cart');
+      return rejectWithValue(getApiErrorMessage(err, 'Failed to fetch cart'));
     }
   }
 );
@@ -88,7 +89,7 @@ export const addToCart = createAsyncThunk(
       const res = await api.post('/cart/items', payload);
       return res.data.data;
     } catch (err) {
-      return rejectWithValue(err.response?.data?.message || 'Failed to add item');
+      return rejectWithValue(getApiErrorMessage(err, 'Failed to add item'));
     }
   }
 );
@@ -100,7 +101,7 @@ export const updateCartItem = createAsyncThunk(
       const res = await api.put(`/cart/items/${itemId}`, data);
       return res.data.data;
     } catch (err) {
-      return rejectWithValue(err.response?.data?.message || 'Failed to update item');
+      return rejectWithValue(getApiErrorMessage(err, 'Failed to update item'));
     }
   }
 );
@@ -112,7 +113,7 @@ export const removeCartItem = createAsyncThunk(
       const res = await api.delete(`/cart/items/${itemId}`);
       return res.data.data;
     } catch (err) {
-      return rejectWithValue(err.response?.data?.message || 'Failed to remove item');
+      return rejectWithValue(getApiErrorMessage(err, 'Failed to remove item'));
     }
   }
 );
@@ -124,7 +125,7 @@ export const applyCoupon = createAsyncThunk(
       const res = await api.post('/cart/coupon', { code });
       return res.data.data;
     } catch (err) {
-      return rejectWithValue(err.response?.data?.message || 'Invalid coupon');
+      return rejectWithValue(getApiErrorMessage(err, 'Invalid coupon'));
     }
   }
 );
@@ -136,7 +137,7 @@ export const removeCoupon = createAsyncThunk(
       const res = await api.delete('/cart/coupon');
       return res.data.data;
     } catch (err) {
-      return rejectWithValue(err.response?.data?.message || 'Failed to remove coupon');
+      return rejectWithValue(getApiErrorMessage(err, 'Failed to remove coupon'));
     }
   }
 );
@@ -148,7 +149,7 @@ export const clearCart = createAsyncThunk(
       await api.delete('/cart');
       return null;
     } catch (err) {
-      return rejectWithValue(err.response?.data?.message || 'Failed to clear cart');
+      return rejectWithValue(getApiErrorMessage(err, 'Failed to clear cart'));
     }
   }
 );
@@ -201,7 +202,7 @@ export const mergeGuestCartToServer = createAsyncThunk(
       const res = await api.get('/cart');
       return { cart: res.data.data, localIdToProductVariant };
     } catch (err) {
-      return rejectWithValue(err.response?.data?.message || 'Failed to merge cart');
+      return rejectWithValue(getApiErrorMessage(err, 'Failed to merge cart'));
     }
   }
 );
@@ -229,7 +230,7 @@ export const syncAddOnsToServerCart = createAsyncThunk(
       const res = await api.get('/cart');
       return res.data.data;
     } catch (err) {
-      return rejectWithValue(err.response?.data?.message || 'Failed to sync add-ons');
+      return rejectWithValue(getApiErrorMessage(err, 'Failed to sync add-ons'));
     }
   }
 );

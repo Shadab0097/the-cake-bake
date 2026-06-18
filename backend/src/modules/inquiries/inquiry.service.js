@@ -81,7 +81,7 @@ class InquiryService {
     if (!inquiry) {
       inquiry = await CorporateInquiry.findByIdAndUpdate(id, data, { new: true });
     }
-    if (!inquiry) throw ApiError.notFound('Inquiry not found');
+    if (!inquiry) throw ApiError.notFound('Inquiry not found', [], 'INQUIRY_NOT_FOUND');
     return inquiry;
   }
 }

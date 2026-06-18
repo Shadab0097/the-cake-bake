@@ -20,7 +20,7 @@ class InventoryReservationService {
 
     const reservationItems = buildReservationItems(items);
     if (reservationItems.length === 0) {
-      throw ApiError.badRequest('Order has no reservable inventory items');
+      throw ApiError.badRequest('Order has no reservable inventory items', [], 'NO_RESERVABLE_ITEMS');
     }
 
     const bulkOps = reservationItems.map((item) => ({
@@ -33,7 +33,7 @@ class InventoryReservationService {
     const result = await Variant.bulkWrite(bulkOps, { session, ordered: true });
     if (result.modifiedCount !== bulkOps.length) {
       logger.warn(`[InventoryReservation] Stock reservation failed for order ${order.orderNumber}: expected=${bulkOps.length} modified=${result.modifiedCount}`);
-      throw ApiError.badRequest('Some items are no longer available in the requested quantity. Please refresh your cart and try again.');
+      throw ApiError.badRequest('Some items are no longer available in the requested quantity. Please refresh your cart and try again.', [{ field: 'quantity', code: 'INSUFFICIENT_STOCK', message: 'Some items are no longer available in the requested quantity. Please refresh your cart and try again.' }], 'INSUFFICIENT_STOCK');
     }
 
     const now = new Date();
@@ -90,14 +90,14 @@ class InventoryReservationService {
     }
 
     if (!reservation) {
-      throw ApiError.badRequest('Inventory reservation was not found for this order. Please contact support.');
+      throw ApiError.badRequest('Inventory reservation was not found for this order. Please contact support.', [], 'RESERVATION_NOT_FOUND');
     }
 
     if (reservation.status === 'confirmed') return { changed: false, reservation };
 
     if (reservation.status === 'released' || reservation.status === 'expired') {
       if (!orderOrId?.items) {
-        throw ApiError.badRequest('Inventory reservation is no longer active for this payment. Please contact support.');
+        throw ApiError.badRequest('Inventory reservation is no longer active for this payment. Please contact support.', [], 'RESERVATION_NOT_ACTIVE');
       }
 
       const reservationItems = buildReservationItems(orderOrId.items);
@@ -111,12 +111,12 @@ class InventoryReservationService {
       const result = await Variant.bulkWrite(bulkOps, { session, ordered: true });
       if (result.modifiedCount !== bulkOps.length) {
         logger.warn(`[InventoryReservation] Re-reservation failed for order ${orderOrId.orderNumber}: expected=${bulkOps.length} modified=${result.modifiedCount}`);
-        throw ApiError.badRequest('Payment was captured but inventory is no longer available. Please contact support for refund or fulfillment review.');
+        throw ApiError.badRequest('Payment was captured but inventory is no longer available. Please contact support for refund or fulfillment review.', [], 'INVENTORY_UNAVAILABLE_AFTER_PAYMENT');
       }
 
       reservation.items = reservationItems;
     } else if (reservation.status !== 'reserved') {
-      throw ApiError.badRequest('Inventory reservation is no longer active for this payment. Please contact support.');
+      throw ApiError.badRequest('Inventory reservation is no longer active for this payment. Please contact support.', [], 'RESERVATION_NOT_ACTIVE');
     }
 
     reservation.status = 'confirmed';

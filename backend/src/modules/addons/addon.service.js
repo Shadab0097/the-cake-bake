@@ -30,7 +30,7 @@ class AddOnService {
       ? await AddOn.findById(id).select('imagePublicId').lean()
       : null;
     const addon = await AddOn.findByIdAndUpdate(id, data, { new: true, runValidators: true });
-    if (!addon) throw ApiError.notFound('Add-on not found');
+    if (!addon) throw ApiError.notFound('Add-on not found', [], 'ADDON_NOT_FOUND');
     if (existingAddOn?.imagePublicId && existingAddOn.imagePublicId !== addon.imagePublicId) {
       uploadService.deleteImage(existingAddOn.imagePublicId);
     }
@@ -40,7 +40,7 @@ class AddOnService {
 
   async deleteAddOn(id) {
     const addon = await AddOn.findByIdAndUpdate(id, { isActive: false }, { new: true });
-    if (!addon) throw ApiError.notFound('Add-on not found');
+    if (!addon) throw ApiError.notFound('Add-on not found', [], 'ADDON_NOT_FOUND');
     await cache.invalidatePattern('addons:');
     return addon;
   }

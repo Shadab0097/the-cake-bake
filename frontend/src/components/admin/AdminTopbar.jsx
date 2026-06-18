@@ -3,6 +3,7 @@
 import { useRouter } from 'next/navigation';
 import { HiOutlineBars3, HiOutlineArrowRightStartOnRectangle } from 'react-icons/hi2';
 import adminApiClient from '@/lib/adminApiClient';
+import { clearAdminAccessToken } from '@/lib/authToken.mjs';
 
 export default function AdminTopbar({ user, title = 'Admin', subtitle = '', onMenuToggle }) {
   const router = useRouter();
@@ -14,8 +15,7 @@ export default function AdminTopbar({ user, title = 'Admin', subtitle = '', onMe
     } catch {
       // Client cleanup below still removes local access if the server session already expired.
     } finally {
-      localStorage.removeItem('adminAccessToken');
-      localStorage.removeItem('adminRefreshToken');
+      clearAdminAccessToken();
       router.replace('/admin-login');
     }
   };

@@ -5,7 +5,7 @@ const ApiError = require('../../utils/ApiError');
 class UserService {
   async getProfile(userId) {
     const user = await User.findById(userId);
-    if (!user) throw ApiError.notFound('User not found');
+    if (!user) throw ApiError.notFound('User not found', [], 'USER_NOT_FOUND');
     return user;
   }
 
@@ -14,7 +14,7 @@ class UserService {
     const { env } = require('../../config/env');
 
     const user = await User.findById(userId).select('loyaltyPoints');
-    if (!user) throw ApiError.notFound('User not found');
+    if (!user) throw ApiError.notFound('User not found', [], 'USER_NOT_FOUND');
 
     const transactions = await LoyaltyPoints.find({ user: userId })
       .sort({ createdAt: -1 })
@@ -36,7 +36,7 @@ class UserService {
       new: true,
       runValidators: true,
     });
-    if (!user) throw ApiError.notFound('User not found');
+    if (!user) throw ApiError.notFound('User not found', [], 'USER_NOT_FOUND');
     return user;
   }
 
@@ -67,13 +67,13 @@ class UserService {
       { new: true, runValidators: true }
     );
 
-    if (!address) throw ApiError.notFound('Address not found');
+    if (!address) throw ApiError.notFound('Address not found', [], 'ADDRESS_NOT_FOUND');
     return address;
   }
 
   async deleteAddress(userId, addressId) {
     const address = await Address.findOneAndDelete({ _id: addressId, user: userId });
-    if (!address) throw ApiError.notFound('Address not found');
+    if (!address) throw ApiError.notFound('Address not found', [], 'ADDRESS_NOT_FOUND');
 
     // If deleted address was default, make another one default
     if (address.isDefault) {
@@ -96,7 +96,7 @@ class UserService {
       { new: true }
     );
 
-    if (!address) throw ApiError.notFound('Address not found');
+    if (!address) throw ApiError.notFound('Address not found', [], 'ADDRESS_NOT_FOUND');
     return address;
   }
 }

@@ -5,6 +5,7 @@ import { useRouter } from 'next/navigation';
 import { FiCheckCircle, FiClock, FiCreditCard, FiMapPin } from 'react-icons/fi';
 import AppShell from '@/components/layout/AppShell';
 import api from '@/lib/api';
+import { getApiErrorMessage } from '@/lib/apiError.mjs';
 import { resolveImageUrl } from '@/lib/uploadApi';
 
 const RAZORPAY_SCRIPT_ID = 'razorpay-checkout-script';
@@ -82,7 +83,7 @@ export default function QuoteApprovalPage({ params }) {
         deliveryDate: inquiry.deliveryDate ? new Date(inquiry.deliveryDate).toISOString().slice(0, 10) : prev.deliveryDate,
       }));
     } catch (err) {
-      setError(err.response?.data?.message || 'Quote link is invalid or expired');
+      setError(getApiErrorMessage(err, 'Quote link is invalid or expired'));
     } finally {
       setLoading(false);
     }
@@ -164,7 +165,7 @@ export default function QuoteApprovalPage({ params }) {
       razorpay.open();
     } catch (err) {
       setSubmitting(false);
-      setError(err.response?.data?.message || err.message || 'Failed to start payment');
+      setError(getApiErrorMessage(err, 'Failed to start payment'));
     }
   };
 

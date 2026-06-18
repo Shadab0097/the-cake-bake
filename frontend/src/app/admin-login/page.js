@@ -3,6 +3,7 @@
 import { useState, useEffect } from 'react';
 import { useRouter } from 'next/navigation';
 import adminApiClient from '@/lib/adminApiClient';
+import { setAdminAccessToken } from '@/lib/authToken.mjs';
 
 export default function AdminLoginPage() {
   const [email, setEmail] = useState('');
@@ -41,8 +42,7 @@ export default function AdminLoginPage() {
         return;
       }
 
-      localStorage.setItem('adminAccessToken', accessToken);
-      localStorage.removeItem('adminRefreshToken');
+      setAdminAccessToken(accessToken);
       router.replace('/admin');
     } catch (err) {
       setError(err.response?.data?.message || 'Login failed. Please try again.');

@@ -34,7 +34,7 @@ class IdempotencyService {
 
   async execute({ key, scope, user = null, guestFingerprint = '', payload, ttlMs = DEFAULT_TTL_MS, lockMs = DEFAULT_LOCK_MS, handler }) {
     if (!key || typeof key !== 'string' || key.trim().length < 12 || key.length > 200) {
-      throw ApiError.badRequest('A valid idempotency key is required for this request. Please refresh and try again.');
+      throw ApiError.badRequest('A valid idempotency key is required for this request. Please refresh and try again.', [{ field: 'idempotencyKey', code: 'IDEMPOTENCY_KEY_REQUIRED', message: 'A valid idempotency key is required for this request. Please refresh and try again.' }], 'IDEMPOTENCY_KEY_REQUIRED');
     }
 
     const normalizedKey = key.trim();
@@ -59,16 +59,16 @@ class IdempotencyService {
       if (error.code !== 11000) throw error;
 
       record = await IdempotencyKey.findOne({ scope, key: normalizedKey });
-      if (!record) throw ApiError.conflict('Checkout is already being processed. Please wait a moment and retry.');
+      if (!record) throw ApiError.conflict('Checkout is already being processed. Please wait a moment and retry.', [], 'CHECKOUT_IN_PROGRESS');
 
       const sameUser = String(record.user || '') === String(user || '');
       const sameGuest = !guestFingerprint || record.guestFingerprint === guestFingerprint;
       if (!sameUser || !sameGuest) {
-        throw ApiError.conflict('This idempotency key is not valid for this checkout attempt. Please refresh and try again.');
+        throw ApiError.conflict('This idempotency key is not valid for this checkout attempt. Please refresh and try again.', [], 'IDEMPOTENCY_KEY_MISMATCH');
       }
 
       if (record.requestHash !== requestHash) {
-        throw ApiError.conflict('This idempotency key was already used for a different request. Please refresh and try again.');
+        throw ApiError.conflict('This idempotency key was already used for a different request. Please refresh and try again.', [], 'IDEMPOTENCY_KEY_REUSED');
       }
 
       if (record.status === 'completed') {
@@ -77,7 +77,7 @@ class IdempotencyService {
       }
 
       if (record.status === 'processing' && record.lockedUntil > now) {
-        throw ApiError.conflict('This request is already being processed. Please wait a moment.');
+        throw ApiError.conflict('This request is already being processed. Please wait a moment.', [], 'REQUEST_IN_PROGRESS');
       }
 
       record.status = 'processing';

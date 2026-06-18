@@ -33,10 +33,10 @@ class RefundService {
 
   async requestForOrder({ order, payment, amount, reason = '', requestedBy = 'customer', requestedByUser = null, session }) {
     if (!session) throw new Error('requestForOrder requires a mongoose session');
-    if (!order || !payment) throw ApiError.badRequest('Refund cannot be requested without a payment record');
+    if (!order || !payment) throw ApiError.badRequest('Refund cannot be requested without a payment record', [], 'REFUND_PAYMENT_REQUIRED');
     if (order.paymentMethod !== 'online' || order.paymentStatus !== 'paid') return null;
     if (!REFUNDABLE_PAYMENT_STATUSES.has(payment.status)) {
-      throw ApiError.badRequest('Only captured online payments can enter the refund workflow');
+      throw ApiError.badRequest('Only captured online payments can enter the refund workflow', [], 'REFUND_NOT_ALLOWED');
     }
 
     const refundAmount = amount || order.total;
@@ -92,7 +92,7 @@ class RefundService {
       { new: true }
     );
 
-    if (!refund) throw ApiError.badRequest('Refund is not awaiting approval');
+    if (!refund) throw ApiError.badRequest('Refund is not awaiting approval', [], 'REFUND_NOT_AWAITING_APPROVAL');
     await this.PaymentModel.updateOne({ _id: refund.payment }, { $set: { refundStatus: REFUND_STATUSES.APPROVED } });
     await this.OrderModel.updateOne({ _id: refund.order }, { $set: { refundStatus: REFUND_STATUSES.APPROVED } });
     return refund;
@@ -100,9 +100,9 @@ class RefundService {
 
   async markFailed(refundId, adminId, reason = 'Refund failed') {
     const refund = await this.RefundModel.findById(refundId);
-    if (!refund) throw ApiError.notFound('Refund not found');
+    if (!refund) throw ApiError.notFound('Refund not found', [], 'REFUND_NOT_FOUND');
     if (refund.status === REFUND_STATUSES.REFUNDED) {
-      throw ApiError.badRequest('Refund is already completed');
+      throw ApiError.badRequest('Refund is already completed', [], 'REFUND_ALREADY_COMPLETED');
     }
 
     refund.status = REFUND_STATUSES.FAILED;
@@ -187,7 +187,7 @@ class RefundService {
       { new: true }
     );
 
-    if (!refund) throw ApiError.badRequest('Refund is not approved for processing');
+    if (!refund) throw ApiError.badRequest('Refund is not approved for processing', [], 'REFUND_NOT_APPROVED');
 
     await Promise.all([
       this.PaymentModel.updateOne({ _id: refund.payment }, { $set: { refundStatus: REFUND_STATUSES.PROCESSING } }),

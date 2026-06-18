@@ -14,6 +14,7 @@ import { formatPrice } from '@/lib/utils';
 import { addToast } from '@/store/slices/toastSlice';
 import { clearGuestCart, resetCart, fetchCart, clearPendingAddOns, syncAddOnsToServerCart } from '@/store/slices/cartSlice';
 import api from '@/lib/api';
+import { getApiErrorMessage } from '@/lib/apiError.mjs';
 
 const STEPS_GUEST  = ['How to Checkout', 'Your Details', 'Delivery', 'Payment'];
 const STEPS_AUTHED = ['Delivery Address', 'Delivery Time', 'Payment'];
@@ -59,14 +60,7 @@ function createCheckoutIdempotencyKey() {
 }
 
 function getCheckoutErrorMessage(err, fallback) {
-  const data = err?.response?.data;
-  const firstError = data?.errors?.[0];
-
-  if (firstError?.message) {
-    return firstError.field ? `${firstError.field}: ${firstError.message}` : firstError.message;
-  }
-
-  return data?.message || err?.message || fallback;
+  return getApiErrorMessage(err, fallback);
 }
 
 function loadRazorpayCheckoutScript() {
@@ -900,7 +894,7 @@ export default function CheckoutPage() {
                               dispatch(addToast({ message: 'Address saved!', type: 'success' }));
                             }
                           } catch (err) {
-                            dispatch(addToast({ message: err?.response?.data?.message || 'Failed to save address', type: 'error' }));
+                            dispatch(addToast({ message: getApiErrorMessage(err, 'Failed to save address'), type: 'error' }));
                           } finally {
                             setSavingAddress(false);
                           }
@@ -1110,7 +1104,7 @@ export default function CheckoutPage() {
                                 setAppliedCoupon({ code: data.coupon.code, discount: data.discount, description: data.coupon.description });
                                 setCouponCode('');
                               } catch (err) {
-                                dispatch(addToast({ message: err?.response?.data?.message || 'Invalid coupon', type: 'error' }));
+                                dispatch(addToast({ message: getApiErrorMessage(err, 'Invalid coupon'), type: 'error' }));
                               } finally {
                                 setCouponLoading(false);
                               }

@@ -1,10 +1,11 @@
 import axios from 'axios';
+import { getAdminAccessToken, setAdminAccessToken, clearAdminAccessToken } from './authToken.mjs';
 
 const API_BASE_URL = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:5000/api/v1';
 
 /**
  * Separate axios instance for admin panel.
- * Uses a localStorage access token and an HttpOnly admin refresh cookie,
+ * Uses an in-memory access token and an HttpOnly admin refresh cookie,
  * so admin refresh sessions don't collide with customer sessions.
  */
 const adminApiClient = axios.create({
@@ -19,11 +20,9 @@ const adminApiClient = axios.create({
 // Request interceptor — attach admin JWT
 adminApiClient.interceptors.request.use(
   (config) => {
-    if (typeof window !== 'undefined') {
-      const token = localStorage.getItem('adminAccessToken');
-      if (token) {
-        config.headers.Authorization = `Bearer ${token}`;
-      }
+    const token = getAdminAccessToken();
+    if (token) {
+      config.headers.Authorization = `Bearer ${token}`;
     }
     return config;
   },
@@ -81,16 +80,14 @@ adminApiClient.interceptors.response.use(
         );
 
         const { accessToken } = res.data.data;
-        localStorage.setItem('adminAccessToken', accessToken);
-        localStorage.removeItem('adminRefreshToken');
+        setAdminAccessToken(accessToken);
 
         processQueue(null, accessToken);
         originalRequest.headers.Authorization = `Bearer ${accessToken}`;
         return adminApiClient(originalRequest);
       } catch (refreshError) {
         processQueue(refreshError, null);
-        localStorage.removeItem('adminAccessToken');
-        localStorage.removeItem('adminRefreshToken');
+        clearAdminAccessToken();
         // Do not hard-reload here. The admin login page also probes /users/me;
         // reloading it after a failed refresh restarts the probe and loops.
         // Protected admin pages redirect through AdminGuard instead.

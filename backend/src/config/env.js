@@ -13,6 +13,20 @@ const parseNonNegativeInt = (value, fallback) => {
   return Number.isFinite(parsed) && parsed >= 0 ? parsed : fallback;
 };
 
+// Express "trust proxy" setting. Controls how req.ip / X-Forwarded-For is derived,
+// which underpins per-IP rate limiting and COD-abuse checks. Set TRUST_PROXY to the
+// number of proxy hops in front of the app (e.g. CDN + Nginx = 2). Also accepts
+// true/false, a CIDR, 'loopback', or a comma-separated list. Defaults to 1.
+const parseTrustProxy = (value) => {
+  if (value === undefined || value === null || value === '') return 1;
+  const normalized = String(value).trim();
+  if (normalized.toLowerCase() === 'true') return true;
+  if (normalized.toLowerCase() === 'false') return false;
+  const num = Number(normalized);
+  if (Number.isInteger(num) && num >= 0) return num;
+  return normalized;
+};
+
 const PROCESS_ROLES = Object.freeze({
   ALL: 'all',
   WEB: 'web',
@@ -192,6 +206,7 @@ const env = {
   processRole: normalizeProcessRole(process.env.PROCESS_ROLE),
   port: parseInt(process.env.PORT, 10) || 5000,
   corsOrigin: process.env.CORS_ORIGIN || 'http://localhost:3000',
+  trustProxy: parseTrustProxy(process.env.TRUST_PROXY),
   mongoUri: process.env.MONGODB_URI,
 
   db: {
@@ -200,6 +215,9 @@ const env = {
     serverSelectionTimeoutMs: parsePositiveInt(process.env.DB_SERVER_SELECTION_TIMEOUT_MS, 5000),
     socketTimeoutMs: parsePositiveInt(process.env.DB_SOCKET_TIMEOUT_MS, 45000),
     heartbeatFrequencyMs: parsePositiveInt(process.env.DB_HEARTBEAT_FREQUENCY_MS, 10000),
+    // Per-process connection budget = (cluster connection limit) / (total app processes).
+    // 0 disables the startup advisory. Used to catch pool-vs-Atlas-cap misconfig early.
+    connectionBudget: parseNonNegativeInt(process.env.DB_CONNECTION_BUDGET, 0),
   },
 
   jwt: {

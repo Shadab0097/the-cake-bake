@@ -6,8 +6,8 @@ const { auth } = require('../../middleware/auth');
 const { adminAuth } = require('../../middleware/adminAuth');
 
 router.use('/admin', auth, adminAuth);
-router.post('/admin/image', upload.single('image'), uploadController.uploadAdminImage);
-router.post('/admin/images', upload.array('images', 10), uploadController.uploadAdminImages);
+router.post('/admin/image', upload.single('image'), upload.verifyImageMagicBytes, uploadController.uploadAdminImage);
+router.post('/admin/images', upload.array('images', 10), upload.verifyImageMagicBytes, uploadController.uploadAdminImages);
 router.delete('/admin/image', uploadController.deleteAdminImage);
 
 module.exports = router;

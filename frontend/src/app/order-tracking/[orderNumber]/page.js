@@ -15,6 +15,7 @@ import AppShell from '@/components/layout/AppShell';
 import { addToast } from '@/store/slices/toastSlice';
 import { formatPrice, formatDate } from '@/lib/utils';
 import api from '@/lib/api';
+import { getApiErrorMessage } from '@/lib/apiError.mjs';
 
 // ── Status pipeline (matches backend ORDER_STATUSES) ─────────────────────────
 const STATUS_STEPS = [
@@ -97,7 +98,7 @@ export default function OrderTrackingPage() {
       setOrder(res.data?.data || null);
       setError('');
     } catch (err) {
-      setError(err?.response?.data?.message || 'Order not found.');
+      setError(getApiErrorMessage(err, 'Order not found.'));
     } finally {
       setLoading(false);
       setRefreshing(false);
@@ -126,7 +127,7 @@ export default function OrderTrackingPage() {
       setShowCancelModal(false);
       await fetchOrder(true);
     } catch (err) {
-      dispatch(addToast({ message: err?.response?.data?.message || 'Failed to cancel order.', type: 'error' }));
+      dispatch(addToast({ message: getApiErrorMessage(err, 'Failed to cancel order.'), type: 'error' }));
     } finally {
       setCancelling(false);
     }

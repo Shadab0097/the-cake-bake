@@ -19,7 +19,7 @@ class WishlistService {
 
   async addToWishlist(userId, productId) {
     const product = await Product.findOne({ _id: productId, isActive: true });
-    if (!product) throw ApiError.notFound('Product not found');
+    if (!product) throw ApiError.notFound('Product not found', [], 'PRODUCT_NOT_FOUND');
 
     let wishlist = await Wishlist.findOne({ user: userId });
     if (!wishlist) {

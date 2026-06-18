@@ -1,4 +1,5 @@
 import axios from 'axios';
+import { getAccessToken, setAccessToken, clearAccessToken } from './authToken.mjs';
 
 const API_BASE_URL = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:5000/api/v1';
 
@@ -14,11 +15,9 @@ const api = axios.create({
 // Request interceptor — attach JWT
 api.interceptors.request.use(
   (config) => {
-    if (typeof window !== 'undefined') {
-      const token = localStorage.getItem('accessToken');
-      if (token) {
-        config.headers.Authorization = `Bearer ${token}`;
-      }
+    const token = getAccessToken();
+    if (token) {
+      config.headers.Authorization = `Bearer ${token}`;
     }
     return config;
   },
@@ -76,16 +75,14 @@ api.interceptors.response.use(
         );
 
         const { accessToken } = res.data.data;
-        localStorage.setItem('accessToken', accessToken);
-        localStorage.removeItem('refreshToken');
+        setAccessToken(accessToken);
 
         processQueue(null, accessToken);
         originalRequest.headers.Authorization = `Bearer ${accessToken}`;
         return api(originalRequest);
       } catch (refreshError) {
         processQueue(refreshError, null);
-        localStorage.removeItem('accessToken');
-        localStorage.removeItem('refreshToken');
+        clearAccessToken();
         // Don't hard-redirect here — the Redux auth state (isAuthenticated=false)
         // and page-level useEffect redirects handle navigation via React Router.
         // A window.location.href reload restarts the entire app, causing a loop.

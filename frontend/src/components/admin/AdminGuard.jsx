@@ -3,6 +3,7 @@
 import { useEffect, useState } from 'react';
 import { useRouter } from 'next/navigation';
 import adminApiClient from '@/lib/adminApiClient';
+import { clearAdminAccessToken } from '@/lib/authToken.mjs';
 
 export default function AdminGuard({ children }) {
   const [state, setState] = useState({ loading: true, user: null });
@@ -19,8 +20,7 @@ export default function AdminGuard({ children }) {
         setState({ loading: false, user });
       })
       .catch(() => {
-        localStorage.removeItem('adminAccessToken');
-        localStorage.removeItem('adminRefreshToken');
+        clearAdminAccessToken();
         router.replace('/admin-login');
       });
   }, [router]);

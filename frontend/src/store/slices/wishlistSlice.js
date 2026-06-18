@@ -1,5 +1,6 @@
 import { createSlice, createAsyncThunk } from '@reduxjs/toolkit';
 import api from '@/lib/api';
+import { getApiErrorMessage } from '@/lib/apiError.mjs';
 
 export const fetchWishlist = createAsyncThunk(
   'wishlist/fetchWishlist',
@@ -9,7 +10,7 @@ export const fetchWishlist = createAsyncThunk(
       // Backend returns: { user, products: [{ _id, name, slug, images, ... }] }
       return res.data.data;
     } catch (err) {
-      return rejectWithValue(err.response?.data?.message || 'Failed to fetch wishlist');
+      return rejectWithValue(getApiErrorMessage(err, 'Failed to fetch wishlist'));
     }
   }
 );
@@ -32,7 +33,7 @@ export const toggleWishlistItem = createAsyncThunk(
         return { action: 'added', data: res.data.data };
       }
     } catch (err) {
-      return rejectWithValue(err.response?.data?.message || 'Failed to update wishlist');
+      return rejectWithValue(getApiErrorMessage(err, 'Failed to update wishlist'));
     }
   }
 );

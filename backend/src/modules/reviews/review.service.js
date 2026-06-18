@@ -45,7 +45,7 @@ class ReviewService {
 
     // Check if already reviewed
     const existing = await Review.findOne({ user: userId, product: productId });
-    if (existing) throw ApiError.conflict('You have already reviewed this product');
+    if (existing) throw ApiError.conflict('You have already reviewed this product', [], 'ALREADY_REVIEWED');
 
     // Check verified purchase
     let isVerified = false;
@@ -76,7 +76,7 @@ class ReviewService {
 
   async updateReview(userId, reviewId, data) {
     const review = await Review.findOne({ _id: reviewId, user: userId });
-    if (!review) throw ApiError.notFound('Review not found');
+    if (!review) throw ApiError.notFound('Review not found', [], 'REVIEW_NOT_FOUND');
 
     if (data.rating) review.rating = data.rating;
     if (data.title !== undefined) review.title = data.title;
@@ -90,14 +90,14 @@ class ReviewService {
 
   async deleteReview(userId, reviewId) {
     const review = await Review.findOneAndDelete({ _id: reviewId, user: userId });
-    if (!review) throw ApiError.notFound('Review not found');
+    if (!review) throw ApiError.notFound('Review not found', [], 'REVIEW_NOT_FOUND');
     await this.updateProductRating(review.product);
     return review;
   }
 
   async approveReview(reviewId) {
     const review = await Review.findByIdAndUpdate(reviewId, { isApproved: true }, { new: true });
-    if (!review) throw ApiError.notFound('Review not found');
+    if (!review) throw ApiError.notFound('Review not found', [], 'REVIEW_NOT_FOUND');
     await this.updateProductRating(review.product);
     return review;
   }

@@ -32,7 +32,7 @@ class OrderService {
     if (addressId) {
       const addressQuery = Address.findOne({ _id: addressId, user: userId });
       const address = session ? await addressQuery.session(session) : await addressQuery;
-      if (!address) throw ApiError.badRequest('Invalid delivery address');
+      if (!address) throw ApiError.badRequest('Invalid delivery address', [{ field: 'addressId', code: 'INVALID_DELIVERY_ADDRESS', message: 'Invalid delivery address' }], 'INVALID_DELIVERY_ADDRESS');
       return address;
     }
 
@@ -58,7 +58,7 @@ class OrderService {
       return address;
     }
 
-    throw ApiError.badRequest('Delivery address is required');
+    throw ApiError.badRequest('Delivery address is required', [{ field: 'shippingAddress', code: 'DELIVERY_ADDRESS_REQUIRED', message: 'Delivery address is required' }], 'DELIVERY_ADDRESS_REQUIRED');
   }
 
   /**
@@ -75,19 +75,19 @@ class OrderService {
       .populate('appliedCoupon');
 
     if (!cart || cart.items.length === 0) {
-      throw ApiError.badRequest('Cart is empty');
+      throw ApiError.badRequest('Cart is empty', [], 'CART_EMPTY');
     }
 
     // Validate all items are still available
     for (const item of cart.items) {
       if (!item.product?.isActive) {
-        throw ApiError.badRequest(`Product "${item.snapshotName}" is no longer available`);
+        throw ApiError.badRequest(`Product "${item.snapshotName}" is no longer available`, [], 'PRODUCT_UNAVAILABLE');
       }
       if (!item.variant?.isActive) {
-        throw ApiError.badRequest(`Variant for "${item.snapshotName}" is no longer available`);
+        throw ApiError.badRequest(`Variant for "${item.snapshotName}" is no longer available`, [], 'VARIANT_UNAVAILABLE');
       }
       if (item.variant.stock < item.quantity) {
-        throw ApiError.badRequest(`Insufficient stock for "${item.snapshotName}"`);
+        throw ApiError.badRequest(`Insufficient stock for "${item.snapshotName}"`, [{ field: 'quantity', code: 'INSUFFICIENT_STOCK', message: `Insufficient stock for "${item.snapshotName}"` }], 'INSUFFICIENT_STOCK');
       }
     }
 
@@ -101,11 +101,11 @@ class OrderService {
     });
 
     if (!zone) {
-      throw ApiError.badRequest(`Delivery not available in ${address.city}`);
+      throw ApiError.badRequest(`Delivery not available in ${address.city}`, [{ field: 'city', code: 'DELIVERY_NOT_AVAILABLE', message: `Delivery not available in ${address.city}` }], 'DELIVERY_NOT_AVAILABLE');
     }
 
     if (zone.pincodes.length > 0 && !zone.pincodes.includes(address.pincode)) {
-      throw ApiError.badRequest(`Delivery not available for pincode ${address.pincode}`);
+      throw ApiError.badRequest(`Delivery not available for pincode ${address.pincode}`, [{ field: 'pincode', code: 'DELIVERY_NOT_AVAILABLE_PINCODE', message: `Delivery not available for pincode ${address.pincode}` }], 'DELIVERY_NOT_AVAILABLE_PINCODE');
     }
 
     return { cart, address, zone };
@@ -234,7 +234,7 @@ class OrderService {
     let pointsDiscount = 0;
 
     let total = subtotal + deliveryCharge - discount - pointsDiscount;
-    if (total <= 0) throw ApiError.badRequest('Invalid order total');
+    if (total <= 0) throw ApiError.badRequest('Invalid order total', [], 'INVALID_ORDER_TOTAL');
 
     // Generate order number
     const orderNumber = generateOrderNumber();
@@ -260,7 +260,7 @@ class OrderService {
       pointsRedeemed = loyaltyResult.pointsRedeemed;
       pointsDiscount = loyaltyResult.pointsDiscount;
       total = subtotal + deliveryCharge - discount - pointsDiscount;
-      if (total <= 0) throw ApiError.badRequest('Invalid order total');
+      if (total <= 0) throw ApiError.badRequest('Invalid order total', [], 'INVALID_ORDER_TOTAL');
 
       let orderAddress = address;
       if (!addressId && shippingAddress && checkoutData.saveAddress) {
@@ -437,7 +437,7 @@ class OrderService {
       // FIX: Use logger instead of console.error so errors appear in log files
       logger.error('Order creation failed:', error);
       if (error instanceof ApiError) throw error;
-      throw ApiError.internal('Failed to create order. Please try again.');
+      throw ApiError.internal('Failed to create order. Please try again.', [], 'ORDER_CREATION_FAILED');
     } finally {
       session.endSession();
     }
@@ -503,7 +503,7 @@ class OrderService {
       .populate('paymentId')
       .lean();
 
-    if (!order) throw ApiError.notFound('Order not found');
+    if (!order) throw ApiError.notFound('Order not found', [], 'ORDER_NOT_FOUND');
     return {
       ...order,
       cancellationPolicy: cancellationService.evaluate(order, { actor: 'customer' }),
@@ -519,10 +519,10 @@ class OrderService {
 
     try {
       const order = await Order.findOne({ orderNumber, user: userId }).session(session);
-      if (!order) throw ApiError.notFound('Order not found');
+      if (!order) throw ApiError.notFound('Order not found', [], 'ORDER_NOT_FOUND');
 
       const policy = cancellationService.evaluate(order, { actor: 'customer' });
-      if (!policy.cancellable) throw ApiError.badRequest(policy.reason);
+      if (!policy.cancellable) throw ApiError.badRequest(policy.reason, [], 'ORDER_NOT_CANCELLABLE');
 
       if (order.paymentMethod === 'online' && order.paymentStatus !== 'paid') {
         const result = await cancelUnpaidOnlineOrder(order, {
@@ -535,7 +535,7 @@ class OrderService {
         });
 
         if (!result.changed) {
-          throw ApiError.badRequest('Order is no longer awaiting online payment');
+          throw ApiError.badRequest('Order is no longer awaiting online payment', [], 'ORDER_NOT_AWAITING_PAYMENT');
         }
 
         await session.commitTransaction();
@@ -621,7 +621,7 @@ class OrderService {
       await session.abortTransaction();
       if (error instanceof ApiError) throw error;
       logger.error('[Order] cancelOrder transaction failed:', error);
-      throw ApiError.internal('Failed to cancel order. Please try again.');
+      throw ApiError.internal('Failed to cancel order. Please try again.', [], 'ORDER_CANCELLATION_FAILED');
     } finally {
       session.endSession();
     }
@@ -634,10 +634,10 @@ class OrderService {
       let cancelledOrderId = null;
       await session.withTransaction(async () => {
         const order = await Order.findById(orderId).session(session);
-        if (!order) throw ApiError.notFound('Order not found');
+        if (!order) throw ApiError.notFound('Order not found', [], 'ORDER_NOT_FOUND');
 
         const policy = cancellationService.evaluate(order, { actor: 'admin' });
-        if (!policy.cancellable) throw ApiError.badRequest(policy.reason);
+        if (!policy.cancellable) throw ApiError.badRequest(policy.reason, [], 'ORDER_NOT_CANCELLABLE');
 
         if (order.paymentMethod === 'online' && order.paymentStatus !== 'paid') {
           const result = await cancelUnpaidOnlineOrder(order, {
@@ -650,7 +650,7 @@ class OrderService {
           });
 
           if (!result.changed) {
-            throw ApiError.badRequest('Order is no longer awaiting online payment');
+            throw ApiError.badRequest('Order is no longer awaiting online payment', [], 'ORDER_NOT_AWAITING_PAYMENT');
           }
 
           cancelledOrderId = order._id;
@@ -736,14 +736,14 @@ class OrderService {
    */
   async updateOrderStatus(orderId, status, note, adminId) {
     const initialOrder = await Order.findById(orderId);
-    if (!initialOrder) throw ApiError.notFound('Order not found');
+    if (!initialOrder) throw ApiError.notFound('Order not found', [], 'ORDER_NOT_FOUND');
 
     if (status === ORDER_STATUSES.CANCELLED) {
       return this.cancelOrderByAdmin(orderId, note, adminId);
     }
 
     if (!canMoveOnlineOrderToStatus(initialOrder, status)) {
-      throw ApiError.badRequest('Unpaid online orders can only be cancelled');
+      throw ApiError.badRequest('Unpaid online orders can only be cancelled', [], 'UNPAID_ONLINE_ORDER_NOT_UPDATABLE');
     }
 
     if (initialOrder.paymentMethod === 'online' && initialOrder.paymentStatus !== 'paid' && status === ORDER_STATUSES.CANCELLED) {
@@ -753,7 +753,7 @@ class OrderService {
       try {
         await session.withTransaction(async () => {
           const sessionOrder = await Order.findById(orderId).session(session);
-          if (!sessionOrder) throw ApiError.notFound('Order not found');
+          if (!sessionOrder) throw ApiError.notFound('Order not found', [], 'ORDER_NOT_FOUND');
 
           const result = await cancelUnpaidOnlineOrder(sessionOrder, {
             session,
@@ -765,7 +765,7 @@ class OrderService {
           });
 
           if (!result.changed) {
-            throw ApiError.badRequest('Order is no longer awaiting online payment');
+            throw ApiError.badRequest('Order is no longer awaiting online payment', [], 'ORDER_NOT_AWAITING_PAYMENT');
           }
 
           cancelledOrderId = sessionOrder._id;
@@ -783,10 +783,10 @@ class OrderService {
     try {
       await session.withTransaction(async () => {
         const order = await Order.findById(orderId).session(session);
-        if (!order) throw ApiError.notFound('Order not found');
+        if (!order) throw ApiError.notFound('Order not found', [], 'ORDER_NOT_FOUND');
 
         if (!canMoveOnlineOrderToStatus(order, status)) {
-          throw ApiError.badRequest('Unpaid online orders can only be cancelled');
+          throw ApiError.badRequest('Unpaid online orders can only be cancelled', [], 'UNPAID_ONLINE_ORDER_NOT_UPDATABLE');
         }
 
         order.status = status;

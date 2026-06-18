@@ -23,8 +23,11 @@ const app = express();
 app.use(requestId);
 
 // ---- Trust Proxy (required behind Nginx/load balancer for correct IP) ----
+// Set TRUST_PROXY to match the number of proxy hops in front of the app
+// (e.g. CDN + Nginx = 2) so req.ip is the real client IP for rate limiting and
+// COD-abuse checks. Defaults to 1.
 if (env.isProd()) {
-  app.set('trust proxy', 1);
+  app.set('trust proxy', env.trustProxy);
 }
 
 // ---- Security Middleware ----

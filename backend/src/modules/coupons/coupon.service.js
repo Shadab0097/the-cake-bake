@@ -27,20 +27,20 @@ class CouponService {
   async createCoupon(data) {
     data.code = data.code.toUpperCase();
     const existing = await Coupon.findOne({ code: data.code });
-    if (existing) throw ApiError.conflict('Coupon code already exists');
+    if (existing) throw ApiError.conflict('Coupon code already exists', [{ field: 'code', code: 'COUPON_CODE_EXISTS', message: 'Coupon code already exists' }], 'COUPON_CODE_EXISTS');
     return Coupon.create(data);
   }
 
   async updateCoupon(id, data) {
     if (data.code) data.code = data.code.toUpperCase();
     const coupon = await Coupon.findByIdAndUpdate(id, data, { new: true, runValidators: true });
-    if (!coupon) throw ApiError.notFound('Coupon not found');
+    if (!coupon) throw ApiError.notFound('Coupon not found', [], 'COUPON_NOT_FOUND');
     return coupon;
   }
 
   async deleteCoupon(id) {
     const coupon = await Coupon.findByIdAndUpdate(id, { isActive: false }, { new: true });
-    if (!coupon) throw ApiError.notFound('Coupon not found');
+    if (!coupon) throw ApiError.notFound('Coupon not found', [], 'COUPON_NOT_FOUND');
     return coupon;
   }
 

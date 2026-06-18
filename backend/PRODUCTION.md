@@ -50,5 +50,39 @@ Increase API instances first when request latency rises. Increase notification w
 - Do not run `PROCESS_ROLE=all` behind PM2 cluster mode in production.
 - Do not run dedicated `worker` role with `JOB_QUEUE_MODE=inline`; use Redis/BullMQ.
 - Keep `ALLOW_TEST_PAYMENT_KEYS=false` and `ALLOW_INSECURE_PRODUCTION_ORIGINS=false` for real production.
-- Keep MongoDB Atlas connection limits in mind: `DB_POOL_SIZE * process_count` is the approximate upper bound.
+- Keep MongoDB Atlas connection limits in mind (see "Database Connection Sizing" below).
 - Store uploads in Cloudinary or another object store for production; local `uploads/` is not durable across servers.
+
+## Database Connection Sizing
+
+Total connections to MongoDB/Atlas are the sum across **every** process and server:
+
+```
+total_connections ≈ DB_POOL_SIZE × (api_instances + worker_instances + scheduler_instances) × servers
+```
+
+This sum must stay below your Atlas tier's connection limit, with headroom (~20%) for
+migrations, admin tooling, and failover. Approximate Atlas caps: M10 ≈ 1500, M20/M30 ≈ 3000, M40 ≈ 6000.
+
+Sizing steps:
+
+1. Pick the Atlas tier for your target concurrency.
+2. `per_process_budget = floor(atlas_limit × 0.8 / total_process_count)`.
+3. Set `DB_POOL_SIZE` ≤ `per_process_budget`. Set `DB_CONNECTION_BUDGET` to `per_process_budget`
+   so the app logs a warning at startup if the pool is oversized.
+
+Example — 4 servers × (2 api + 1 worker + 1 scheduler) = 16 processes, M30 (3000):
+`per_process_budget = floor(3000 × 0.8 / 16) = 150` → set `DB_POOL_SIZE=120`, `DB_CONNECTION_BUDGET=150`.
+
+> The code default `DB_POOL_SIZE` is 50, intended for small/single-box setups. **Always set it
+> explicitly in production** using the formula above; do not rely on the default at scale.
+
+## Atlas Monitoring & Alerts
+
+Configure in Atlas → Project → Alerts:
+
+- **Connections %** > 80% of tier limit (primary scaling signal — scale tier or lower `DB_POOL_SIZE`).
+- **Connections** rising toward the hard cap.
+- Replication lag, primary failovers/elections (transactions run on the primary).
+- System CPU > 80%, disk IOPS saturation, disk usage > 80%.
+- Query targeting (scanned/returned ratio) to catch missing-index regressions.

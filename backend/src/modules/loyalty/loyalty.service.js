@@ -43,7 +43,7 @@ class LoyaltyService {
 
     const query = User.findById(userId).select('loyaltyPoints');
     const user = session ? await query.session(session) : await query;
-    if (!user) throw ApiError.notFound('User not found');
+    if (!user) throw ApiError.notFound('User not found', [], 'USER_NOT_FOUND');
 
     const userBalance = Math.max(0, this.normalizePoints(user.loyaltyPoints));
     if (userBalance < env.loyalty.minRedeem) {
@@ -117,7 +117,7 @@ class LoyaltyService {
     );
 
     if (updateResult.modifiedCount !== 1) {
-      throw ApiError.badRequest('Loyalty point balance changed. Please review your cart and try again.');
+      throw ApiError.badRequest('Loyalty point balance changed. Please review your cart and try again.', [], 'LOYALTY_BALANCE_CHANGED');
     }
 
     return { changed: true };
@@ -165,7 +165,7 @@ class LoyaltyService {
       { session }
     );
     if (restoreResult.modifiedCount !== 1) {
-      throw ApiError.notFound('Customer not found for loyalty restoration');
+      throw ApiError.notFound('Customer not found for loyalty restoration', [], 'CUSTOMER_NOT_FOUND');
     }
 
     return { changed: true };
@@ -200,7 +200,7 @@ class LoyaltyService {
     );
 
     if (updateResult.modifiedCount !== 1) {
-      throw ApiError.badRequest('Payment was captured but restored loyalty points are no longer available. Please contact support.');
+      throw ApiError.badRequest('Payment was captured but restored loyalty points are no longer available. Please contact support.', [], 'LOYALTY_POINTS_UNAVAILABLE');
     }
 
     return { changed: true };
@@ -241,7 +241,7 @@ class LoyaltyService {
       { session }
     );
     if (earnResult.modifiedCount !== 1) {
-      throw ApiError.notFound('Customer not found for loyalty award');
+      throw ApiError.notFound('Customer not found for loyalty award', [], 'CUSTOMER_NOT_FOUND');
     }
 
     return { changed: true, pointsEarned };
@@ -250,7 +250,7 @@ class LoyaltyService {
   async adjustBalance({ userId, points, source = 'admin', referenceId = null, description = '', session }) {
     const rawAdjustment = Number(points);
     if (!Number.isFinite(rawAdjustment) || !Number.isInteger(rawAdjustment) || rawAdjustment === 0) {
-      throw ApiError.badRequest('Point adjustment must be a non-zero integer');
+      throw ApiError.badRequest('Point adjustment must be a non-zero integer', [{ field: 'points', code: 'INVALID_POINT_ADJUSTMENT', message: 'Point adjustment must be a non-zero integer' }], 'INVALID_POINT_ADJUSTMENT');
     }
     const adjustment = rawAdjustment;
     if (!session) throw new Error('adjustBalance requires a mongoose session');
@@ -268,8 +268,8 @@ class LoyaltyService {
 
     if (updateResult.modifiedCount !== 1) {
       const userExists = await User.exists({ _id: userId }).session(session);
-      if (!userExists) throw ApiError.notFound('Customer not found');
-      throw ApiError.badRequest('Cannot deduct more points than the customer currently has.');
+      if (!userExists) throw ApiError.notFound('Customer not found', [], 'CUSTOMER_NOT_FOUND');
+      throw ApiError.badRequest('Cannot deduct more points than the customer currently has.', [{ field: 'points', code: 'INSUFFICIENT_POINTS', message: 'Cannot deduct more points than the customer currently has.' }], 'INSUFFICIENT_POINTS');
     }
 
     await LoyaltyPoints.create([{

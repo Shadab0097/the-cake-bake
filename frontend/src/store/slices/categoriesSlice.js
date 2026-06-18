@@ -1,5 +1,6 @@
 import { createSlice, createAsyncThunk } from '@reduxjs/toolkit';
 import api from '@/lib/api';
+import { getApiErrorMessage } from '@/lib/apiError.mjs';
 
 /**
  * Categories Slice — Single source of truth for category data.
@@ -18,7 +19,7 @@ export const fetchCategories = createAsyncThunk(
       const list = Array.isArray(data) ? data : (data.docs || data.items || []);
       return list.filter((c) => c.isActive !== false);
     } catch (err) {
-      return rejectWithValue(err.response?.data?.message || 'Failed to fetch categories');
+      return rejectWithValue(getApiErrorMessage(err, 'Failed to fetch categories'));
     }
   }
 );
