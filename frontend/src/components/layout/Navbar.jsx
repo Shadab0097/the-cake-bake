@@ -3,14 +3,16 @@
 import { useState, useEffect, useRef } from 'react';
 import { useSelector, useDispatch } from 'react-redux';
 import Link from 'next/link';
+import Image from 'next/image';
 import { usePathname, useRouter } from 'next/navigation';
 import { motion, AnimatePresence } from 'framer-motion';
 import {
-  FiSearch, FiHeart, FiShoppingBag, FiUser, FiMenu, FiX, FiChevronDown, FiChevronRight,
+  FiSearch, FiHeart, FiShoppingBag, FiUser, FiMenu, FiX, FiChevronDown, FiChevronRight, FiArrowRight,
 } from 'react-icons/fi';
 import { toggleSearch, toggleMobileMenu, closeMobileMenu } from '@/store/slices/uiSlice';
 import { openCartDrawer } from '@/store/slices/cartSlice';
-import { formatOccasion, OCCASIONS } from '@/lib/utils';
+import { formatOccasion, OCCASIONS, getProductImage, formatPrice } from '@/lib/utils';
+import api from '@/lib/api';
 import DeliveryLocationWidget from '@/components/layout/DeliveryLocationWidget';
 
 /* ─── Static nav links (categories injected dynamically) ─────────────────── */
@@ -49,6 +51,11 @@ export default function Navbar() {
   const pathname    = usePathname();
   const router      = useRouter();
   const [searchQuery, setSearchQuery] = useState('');
+  const [searchResults, setSearchResults] = useState([]);
+  const [resultsQuery, setResultsQuery] = useState('');
+  const [searchLoading, setSearchLoading] = useState(false);
+  const [showSuggestions, setShowSuggestions] = useState(false);
+  const [activeSuggestion, setActiveSuggestion] = useState(-1);
   const { isAuthenticated, user } = useSelector((s) => s.auth);
   const { itemCount, guestItemCount } = useSelector((s) => s.cart);
   const totalCartCount = isAuthenticated ? itemCount : guestItemCount;
@@ -60,6 +67,7 @@ export default function Navbar() {
   const categories = useSelector((s) => s.categories.items);
   const dropdownRef = useRef(null);
   const closeTimerRef = useRef(null);
+  const searchRef = useRef(null);
 
   const activeDropdownLabel = activeDropdown.pathname === pathname ? activeDropdown.label : null;
 
@@ -86,6 +94,7 @@ export default function Navbar() {
   const handleSearchSubmit = (e) => {
     e.preventDefault();
     const q = searchQuery.trim();
+    setShowSuggestions(false);
     if (q) router.push(`/search?q=${encodeURIComponent(q)}`);
   };
 
@@ -101,6 +110,47 @@ export default function Navbar() {
     const handleClickOutside = (e) => {
       if (dropdownRef.current && !dropdownRef.current.contains(e.target)) {
         setActiveDropdown((current) => ({ ...current, label: null }));
+      }
+    };
+    document.addEventListener('mousedown', handleClickOutside);
+    return () => document.removeEventListener('mousedown', handleClickOutside);
+  }, []);
+
+  /* ── Search suggestions: debounced fetch ─────────────────────────────── */
+  useEffect(() => {
+    const q = searchQuery.trim();
+    if (q.length < 2) return undefined;
+
+    let cancelled = false;
+    const timer = setTimeout(() => {
+      setSearchLoading(true);
+      api.get(`/products/search?q=${encodeURIComponent(q)}&limit=6`)
+        .then((res) => {
+          if (cancelled) return;
+          const data = res.data?.data;
+          const items = Array.isArray(data) ? data : (data?.items || data?.docs || []);
+          setSearchResults(items);
+          setResultsQuery(q);
+          setActiveSuggestion(-1);
+        })
+        .catch(() => {
+          if (cancelled) return;
+          setSearchResults([]);
+          setResultsQuery(q);
+        })
+        .finally(() => {
+          if (!cancelled) setSearchLoading(false);
+        });
+    }, 250);
+
+    return () => { cancelled = true; clearTimeout(timer); };
+  }, [searchQuery]);
+
+  /* ── Close search suggestions on outside click ───────────────────────── */
+  useEffect(() => {
+    const handleClickOutside = (e) => {
+      if (searchRef.current && !searchRef.current.contains(e.target)) {
+        setShowSuggestions(false);
       }
     };
     document.addEventListener('mousedown', handleClickOutside);
@@ -129,6 +179,12 @@ export default function Navbar() {
     return link;
   });
 
+  const trimmedSearch = searchQuery.trim();
+  const searchResultsReady = resultsQuery === trimmedSearch;
+  const suggestions = searchResultsReady ? searchResults : [];
+  const showSearchLoading = searchLoading || (!searchResultsReady && trimmedSearch.length >= 2);
+  const searchDropdownOpen = showSuggestions && trimmedSearch.length >= 2;
+
   return (
     <>
       {/* Announcement Bar */}
@@ -148,7 +204,7 @@ export default function Navbar() {
               {/* Logo + delivery location (desktop) */}
               <div className="flex items-center gap-3 shrink-0">
                 <Link href="/" className="flex items-center shrink-0">
-                  <span className="text-xl sm:text-2xl md:text-3xl lg:text-4xl font-script text-pink-deep whitespace-nowrap">
+                  <span className="text-2xl sm:text-3xl md:text-3xl lg:text-4xl font-script text-pink-deep whitespace-nowrap">
                     The Cake Bake
                   </span>
                 </Link>
@@ -158,23 +214,135 @@ export default function Navbar() {
               </div>
 
               {/* Inline search (desktop) */}
-              <form onSubmit={handleSearchSubmit} className="hidden lg:flex flex-1 max-w-xl lg:ml-8" role="search">
+              <form ref={searchRef} onSubmit={handleSearchSubmit} className="hidden lg:flex flex-1 max-w-xl lg:ml-8" role="search">
                 <div className="relative w-full">
-                  <FiSearch className="absolute left-4 top-1/2 -translate-y-1/2 w-5 h-5 text-outline" />
+                  <FiSearch className="absolute left-4 top-1/2 -translate-y-1/2 w-5 h-5 text-outline z-10" />
                   <input
                     type="search"
                     value={searchQuery}
-                    onChange={(e) => setSearchQuery(e.target.value)}
+                    onChange={(e) => { setSearchQuery(e.target.value); setShowSuggestions(true); }}
+                    onFocus={() => setShowSuggestions(true)}
+                    onKeyDown={(e) => {
+                      if (e.key === 'ArrowDown') {
+                        e.preventDefault();
+                        setShowSuggestions(true);
+                        setActiveSuggestion((i) => Math.min(i + 1, suggestions.length - 1));
+                      } else if (e.key === 'ArrowUp') {
+                        e.preventDefault();
+                        setActiveSuggestion((i) => Math.max(i - 1, -1));
+                      } else if (e.key === 'Enter') {
+                        if (activeSuggestion >= 0 && suggestions[activeSuggestion]) {
+                          e.preventDefault();
+                          const product = suggestions[activeSuggestion];
+                          setShowSuggestions(false);
+                          router.push(`/products/${product.slug}`);
+                        }
+                      } else if (e.key === 'Escape') {
+                        setShowSuggestions(false);
+                      }
+                    }}
                     placeholder="Search for cakes, occasion, flavour and more…"
                     aria-label="Search"
+                    aria-expanded={searchDropdownOpen}
+                    autoComplete="off"
+                    role="combobox"
+                    aria-controls="navbar-search-suggestions"
                     className="w-full h-12 pl-12 pr-28 rounded-full bg-white text-sm text-dark placeholder:text-outline shadow-sm focus:outline-none focus:ring-2 focus:ring-pink-deep/40"
                   />
                   <button
                     type="submit"
-                    className="absolute right-1.5 top-1/2 -translate-y-1/2 h-9 px-5 rounded-full gradient-primary text-white text-sm font-semibold hover:opacity-90 transition-opacity"
+                    className="absolute right-1.5 top-1/2 -translate-y-1/2 h-9 px-5 rounded-full gradient-primary text-white text-sm font-semibold hover:opacity-90 transition-opacity z-10"
                   >
                     Search
                   </button>
+
+                  {/* ── Suggestions dropdown ── */}
+                  <AnimatePresence>
+                    {searchDropdownOpen && (
+                      <motion.div
+                        id="navbar-search-suggestions"
+                        initial={{ opacity: 0, y: 8 }}
+                        animate={{ opacity: 1, y: 0 }}
+                        exit={{ opacity: 0, y: 8 }}
+                        transition={{ duration: 0.15, ease: 'easeOut' }}
+                        className="absolute top-full left-0 right-0 mt-2 z-50"
+                      >
+                        <div className="overflow-hidden rounded-2xl bg-white shadow-[0_20px_48px_rgba(26,28,26,0.16)] ring-1 ring-outline-variant/20">
+                          {showSearchLoading ? (
+                            <div className="p-3 space-y-1">
+                              {Array.from({ length: 4 }).map((_, i) => (
+                                <div key={i} className="flex items-center gap-3 p-2">
+                                  <div className="w-12 h-12 rounded-xl bg-surface-container-low animate-pulse shrink-0" />
+                                  <div className="flex-1 space-y-2">
+                                    <div className="h-3 w-2/3 rounded bg-surface-container-low animate-pulse" />
+                                    <div className="h-3 w-1/4 rounded bg-surface-container-low animate-pulse" />
+                                  </div>
+                                </div>
+                              ))}
+                            </div>
+                          ) : suggestions.length === 0 ? (
+                            <div className="px-4 py-8 text-center">
+                              <span className="text-2xl block mb-1">🔍</span>
+                              <p className="text-sm text-outline">
+                                No cakes found for <span className="font-semibold text-dark">“{trimmedSearch}”</span>
+                              </p>
+                            </div>
+                          ) : (
+                            <ul className="py-2 max-h-[60vh] overflow-y-auto">
+                              {suggestions.map((product, idx) => {
+                                const img = getProductImage(product, 0, 'productCard');
+                                const price = product.variants?.[0]?.price || product.basePrice;
+                                const active = idx === activeSuggestion;
+                                return (
+                                  <li key={product._id}>
+                                    <Link
+                                      href={`/products/${product.slug}`}
+                                      onClick={() => setShowSuggestions(false)}
+                                      onMouseEnter={() => setActiveSuggestion(idx)}
+                                      className={`flex items-center gap-3 px-3 py-2.5 transition-colors ${
+                                        active ? 'bg-pink-light/30' : 'hover:bg-pink-light/15'
+                                      }`}
+                                    >
+                                      <span className="relative w-12 h-12 rounded-xl overflow-hidden bg-surface-container-low shrink-0">
+                                        <Image
+                                          src={img}
+                                          alt={product.name}
+                                          fill
+                                          className="object-cover"
+                                          sizes="48px"
+                                          unoptimized={img.includes('placeholder')}
+                                          onError={(e) => { e.currentTarget.src = '/images/placeholder-cake.svg'; }}
+                                        />
+                                      </span>
+                                      <span className="min-w-0 flex-1">
+                                        <span className="block text-sm font-semibold text-dark truncate">{product.name}</span>
+                                        {(product.category?.name || product.minWeight) && (
+                                          <span className="block text-xs text-outline truncate">
+                                            {[product.category?.name, product.minWeight].filter(Boolean).join(' · ')}
+                                          </span>
+                                        )}
+                                      </span>
+                                      <span className="text-sm font-bold text-pink-deep shrink-0">{formatPrice(price)}</span>
+                                    </Link>
+                                  </li>
+                                );
+                              })}
+                            </ul>
+                          )}
+
+                          {!showSearchLoading && (
+                            <button
+                              type="submit"
+                              className="group/all flex items-center justify-center gap-1.5 w-full px-4 py-3 border-t border-outline-variant/15 text-sm font-semibold text-pink-deep hover:bg-pink-light/15 transition-colors"
+                            >
+                              View all results for “{trimmedSearch}”
+                              <FiArrowRight className="w-4 h-4 group-hover/all:translate-x-0.5 transition-transform" />
+                            </button>
+                          )}
+                        </div>
+                      </motion.div>
+                    )}
+                  </AnimatePresence>
                 </div>
               </form>
 
