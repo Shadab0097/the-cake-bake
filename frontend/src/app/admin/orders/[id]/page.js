@@ -100,6 +100,9 @@ export default function AdminOrderDetailPage({ params }) {
             Placed on {formatDateTime(order.createdAt)}
           </div>
         </div>
+        <button onClick={() => router.push(`/admin/orders/${order._id}/invoice`)} className="admin-btn admin-btn-secondary admin-btn-sm">
+          🧾 Invoice
+        </button>
       </div>
 
       {/* Progress Bar — only for non-cancelled orders */}

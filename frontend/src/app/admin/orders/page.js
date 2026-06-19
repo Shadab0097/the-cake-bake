@@ -101,7 +101,8 @@ export default function AdminOrdersPage() {
   const [page, setPage] = useState(1);
   const [totalPages, setTotalPages] = useState(1);
   const [total, setTotal] = useState(0);
-  const [filters, setFilters] = useState({ status: '', paymentStatus: '', orderNumber: '' });
+  const [filters, setFilters] = useState({ status: '', paymentStatus: '', orderNumber: '', city: '', from: '', to: '' });
+  const [cities, setCities] = useState([]);
   // inline quick-status: { [orderId]: true }
   const [quickSaving, setQuickSaving] = useState({});
   // address modal
@@ -115,6 +116,8 @@ export default function AdminOrdersPage() {
       if (filters.status) params.status = filters.status;
       if (filters.paymentStatus) params.paymentStatus = filters.paymentStatus;
       if (filters.orderNumber) params.orderNumber = filters.orderNumber;
+      if (filters.city) params.city = filters.city;
+      if (filters.from && filters.to) { params.from = filters.from; params.to = filters.to; }
       const res = await adminApi.orders.list(params);
       const d = res.data.data;
       setOrders(d.items || []);
@@ -128,6 +131,18 @@ export default function AdminOrdersPage() {
   }, [page, filters]);
 
   useEffect(() => { fetchOrders(); }, [fetchOrders]);
+
+  // Serviceable cities for the location filter (non-critical — load once).
+  useEffect(() => {
+    let active = true;
+    adminApi.delivery.getZones()
+      .then((res) => {
+        if (!active) return;
+        setCities(Array.from(new Set((res.data.data || []).map((zone) => zone.city).filter(Boolean))).sort());
+      })
+      .catch(() => {});
+    return () => { active = false; };
+  }, []);
 
   // ── Inline quick-status update ─────────────────────────────
   const handleQuickStatus = async (order, newStatus) => {
@@ -199,8 +214,34 @@ export default function AdminOrdersPage() {
           <option value="">All Payments</option>
           {PAYMENT_STATUSES.map(s => <option key={s} value={s}>{s}</option>)}
         </select>
-        {(filters.status || filters.paymentStatus || filters.orderNumber) && (
-          <button className="admin-btn admin-btn-ghost admin-btn-sm" onClick={() => { setFilters({ status: '', paymentStatus: '', orderNumber: '' }); setPage(1); }}>
+        <select
+          className="admin-input admin-select"
+          value={filters.city}
+          onChange={(e) => { setFilters(f => ({ ...f, city: e.target.value })); setPage(1); }}
+          style={{ maxWidth: 160 }}
+        >
+          <option value="">All Cities</option>
+          {cities.map(c => <option key={c} value={c}>{c}</option>)}
+        </select>
+        <div style={{ display: 'flex', gap: '0.4rem', alignItems: 'center' }} title="Filter by order date">
+          <input
+            type="date"
+            className="admin-input"
+            value={filters.from}
+            max={filters.to || undefined}
+            onChange={(e) => { setFilters(f => ({ ...f, from: e.target.value })); setPage(1); }}
+          />
+          <span style={{ color: 'var(--admin-text-muted)', fontSize: '0.8rem' }}>to</span>
+          <input
+            type="date"
+            className="admin-input"
+            value={filters.to}
+            min={filters.from || undefined}
+            onChange={(e) => { setFilters(f => ({ ...f, to: e.target.value })); setPage(1); }}
+          />
+        </div>
+        {(filters.status || filters.paymentStatus || filters.orderNumber || filters.city || filters.from || filters.to) && (
+          <button className="admin-btn admin-btn-ghost admin-btn-sm" onClick={() => { setFilters({ status: '', paymentStatus: '', orderNumber: '', city: '', from: '', to: '' }); setPage(1); }}>
             ✕ Clear
           </button>
         )}

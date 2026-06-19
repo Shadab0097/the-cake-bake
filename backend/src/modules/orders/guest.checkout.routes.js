@@ -167,6 +167,7 @@ router.post(
         flavor: '',
         quantity: item.quantity,
         price: unitPrice,
+        cost: variant.costPrice || 0,
         isEggless: item.isEggless,
         cakeMessage: sanitize(item.cakeMessage || ''),
         addOns: addOnSnapshots,

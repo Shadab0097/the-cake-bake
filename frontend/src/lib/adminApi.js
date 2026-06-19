@@ -5,6 +5,8 @@ const adminApi = {
   dashboard: {
     get: () => api.get('/admin/dashboard'),
     getAnalytics: (days = 30) => api.get(`/admin/analytics?days=${days}`),
+    getSales: (params) => api.get('/admin/sales', { params }),
+    getProfit: (params) => api.get('/admin/profit', { params }),
   },
 
   // Diagnostics
@@ -18,10 +20,12 @@ const adminApi = {
   // Products
   products: {
     list: (params) => api.get('/admin/products', { params }),
+    listVariants: (params) => api.get('/admin/variants', { params }),
     create: (data) => api.post('/admin/products', data),
     update: (id, data) => api.put(`/admin/products/${id}`, data),
     delete: (id) => api.delete(`/admin/products/${id}`),
     bulkImport: (products) => api.post('/admin/products/bulk-import', { products }),
+    getVariants: (id) => api.get(`/admin/products/${id}/variants`),
     addVariant: (id, data) => api.post(`/admin/products/${id}/variants`, data),
     updateVariant: (id, vid, data) => api.put(`/admin/products/${id}/variants/${vid}`, data),
   },
@@ -88,6 +92,7 @@ const adminApi = {
     list: (params) => api.get('/admin/customers', { params }),
     get: (id) => api.get(`/admin/customers/${id}`),
     adjustPoints: (id, data) => api.put(`/admin/customers/${id}/points`, data),
+    analytics: (params) => api.get('/admin/customer-analytics', { params }),
   },
 
   // Reviews
@@ -119,6 +124,21 @@ const adminApi = {
     updateRule: (id, data) => api.put(`/admin/chatbot/rules/${id}`, data),
     deleteRule: (id) => api.delete(`/admin/chatbot/rules/${id}`),
     getLogs: (params) => api.get('/admin/chatbot/logs', { params }),
+  },
+
+  // Settings, company details, admin users, GST, scheduled reports
+  settings: {
+    get: () => api.get('/admin/settings'),
+    update: (data) => api.put('/admin/settings', data),
+    company: () => api.get('/admin/company'),
+    sendDailyReport: () => api.post('/admin/reports/send-daily'),
+  },
+  admins: {
+    list: () => api.get('/admin/admins'),
+    setRole: (id, role) => api.put(`/admin/admins/${id}/role`, { role }),
+  },
+  gst: {
+    report: (params) => api.get('/admin/gst', { params }),
   },
 };
 

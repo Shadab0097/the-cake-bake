@@ -23,6 +23,14 @@ const variantSchema = new mongoose.Schema(
       default: 0,
       min: 0,
     },
+    // Make/buy cost of this variant in paise. Used for profit/margin reporting.
+    // Snapshotted onto each order item at checkout so historical P&L stays
+    // accurate when this value changes later.
+    costPrice: {
+      type: Number,
+      default: 0,
+      min: 0,
+    },
     sku: {
       type: String,
       unique: true,

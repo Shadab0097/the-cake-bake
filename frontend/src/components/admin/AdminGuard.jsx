@@ -4,6 +4,7 @@ import { useEffect, useState } from 'react';
 import { useRouter } from 'next/navigation';
 import adminApiClient from '@/lib/adminApiClient';
 import { clearAdminAccessToken } from '@/lib/authToken.mjs';
+import { isAdminRole } from '@/lib/adminAccess.mjs';
 
 export default function AdminGuard({ children }) {
   const [state, setState] = useState({ loading: true, user: null });
@@ -13,7 +14,7 @@ export default function AdminGuard({ children }) {
     adminApiClient.get('/users/me')
       .then((res) => {
         const user = res.data.data;
-        if (user.role !== 'admin' && user.role !== 'superadmin') {
+        if (!isAdminRole(user.role)) {
           router.replace('/admin-login');
           return;
         }

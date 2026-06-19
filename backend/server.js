@@ -9,6 +9,7 @@ const logger = require('./src/middleware/logger');
 const orderExpiryJob = require('./src/jobs/orderExpiry.job');
 const paymentReconciliationJob = require('./src/jobs/paymentReconciliation.job');
 const inventoryReservationExpiryJob = require('./src/jobs/inventoryReservationExpiry.job');
+const dailyReportJob = require('./src/jobs/dailyReport.job');
 const jobQueue = require('./src/jobs/jobQueue.service');
 const notificationWorker = require('./src/jobs/notificationWorker');
 
@@ -56,6 +57,7 @@ const startScheduler = () => {
   stopCallbacks.push(orderExpiryJob.start());
   stopCallbacks.push(paymentReconciliationJob.start());
   stopCallbacks.push(inventoryReservationExpiryJob.start());
+  stopCallbacks.push(dailyReportJob.start());
 };
 
 const startNotificationWorker = () => {

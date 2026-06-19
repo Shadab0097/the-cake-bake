@@ -17,11 +17,64 @@ import {
   HiOutlineTicket,
   HiOutlineUsers,
 } from 'react-icons/hi2';
-import adminApi, { formatDate, formatDateTime, formatPrice } from '@/lib/adminApi';
+import adminApi, { formatDateTime, formatPrice } from '@/lib/adminApi';
 import { LoadingSkeleton, RefreshButton, StatCard, StatusBadge } from '@/components/admin/AdminUI';
+import {
+  OrderStatusDonut,
+  RevenueTrendChart,
+  TopCitiesChart,
+  TopProductsChart,
+} from '@/components/admin/AdminCharts';
+
+const RANGE_OPTIONS = [
+  { value: 7, label: '7 days' },
+  { value: 30, label: '30 days' },
+  { value: 90, label: '90 days' },
+];
 
 function getErrorMessage(error, fallback = 'Failed to load dashboard data') {
   return error?.response?.data?.message || error?.message || fallback;
+}
+
+function RangeSwitcher({ value, onChange, disabled }) {
+  return (
+    <div className="admin-range-switch" role="group" aria-label="Select analytics time range">
+      {RANGE_OPTIONS.map((option) => (
+        <button
+          key={option.value}
+          type="button"
+          className={`admin-range-btn ${value === option.value ? 'active' : ''}`}
+          onClick={() => onChange(option.value)}
+          disabled={disabled}
+          aria-pressed={value === option.value}
+        >
+          {option.label}
+        </button>
+      ))}
+    </div>
+  );
+}
+
+function ChartCard({ title, subtitle, keys, children, loading }) {
+  return (
+    <div className="admin-card admin-chart-card">
+      <div className="admin-chart-head">
+        <div className="admin-chart-head-titles">
+          <h3>{title}</h3>
+          {subtitle && <div className="admin-section-subtitle">{subtitle}</div>}
+        </div>
+        {keys && <div className="admin-chart-keys">{keys}</div>}
+      </div>
+      <div className="admin-chart-body">
+        {loading && (
+          <div className="admin-chart-loading" aria-hidden="true">
+            <div className="admin-spinner" />
+          </div>
+        )}
+        {children}
+      </div>
+    </div>
+  );
 }
 
 function OperationCard({ label, value, icon, tone = 'info', href }) {
@@ -59,122 +112,21 @@ function EmptyPanel({ message }) {
   return <div className="admin-empty-compact">{message}</div>;
 }
 
-function RevenueChart({ data }) {
-  if (!data.length) {
-    return <div className="admin-empty-compact">No revenue data for this period</div>;
-  }
-
-  const width = 600;
-  const height = 210;
-  const padX = 24;
-  const top = 18;
-  const bottom = 184;
-  const maxRevenue = Math.max(...data.map((item) => item.revenue || 0), 1);
-  const denominator = Math.max(data.length - 1, 1);
-  const points = data.map((item, index) => ({
-    x: padX + (index / denominator) * (width - padX * 2),
-    y: bottom - ((item.revenue || 0) / maxRevenue) * (bottom - top),
-  }));
-  const linePath = points.map((point, index) => `${index === 0 ? 'M' : 'L'}${point.x},${point.y}`).join(' ');
-  const areaPath = `${linePath} L${points[points.length - 1].x},${bottom} L${points[0].x},${bottom} Z`;
-  const totalRevenue = data.reduce((sum, item) => sum + (item.revenue || 0), 0);
-  const totalOrders = data.reduce((sum, item) => sum + (item.orders || 0), 0);
-
-  return (
-    <>
-      <div className="admin-chart-frame">
-        <svg width="100%" height="100%" viewBox={`0 0 ${width} ${height}`} role="img" aria-label="Revenue trend for the last 30 days">
-          <defs>
-            <linearGradient id="adminRevenueFill" x1="0" y1="0" x2="0" y2="1">
-              <stop offset="0%" stopColor="#D81B60" stopOpacity="0.35" />
-              <stop offset="100%" stopColor="#D81B60" stopOpacity="0" />
-            </linearGradient>
-          </defs>
-          {[top, 72, 128, bottom].map((y) => (
-            <line key={y} x1={padX} x2={width - padX} y1={y} y2={y} stroke="rgba(255,255,255,0.08)" strokeWidth="1" />
-          ))}
-          <path d={areaPath} fill="url(#adminRevenueFill)" />
-          <path d={linePath} fill="none" stroke="#F06292" strokeLinecap="round" strokeLinejoin="round" strokeWidth="3" />
-          {points.map((point, index) => (
-            <circle key={`${point.x}-${index}`} cx={point.x} cy={point.y} r={index === points.length - 1 ? 4 : 2.5} fill="#F8BBD0" />
-          ))}
-        </svg>
-      </div>
-      <div className="admin-chart-legend">
-        <span>{formatDate(data[0]?._id)} to {formatDate(data[data.length - 1]?._id)}</span>
-        <span>{formatPrice(totalRevenue)} from {totalOrders.toLocaleString()} paid orders</span>
-      </div>
-    </>
-  );
-}
-
-function StatusDistribution({ items }) {
-  if (!items.length) {
-    return <div className="admin-empty-compact">No order status data</div>;
-  }
-
-  const total = items.reduce((sum, item) => sum + (item.count || 0), 0) || 1;
-  return (
-    <div className="admin-status-list">
-      {items.map((item) => {
-        const percent = Math.round(((item.count || 0) / total) * 100);
-        return (
-          <div key={item._id} className="admin-row">
-            <StatusBadge status={item._id} />
-            <div style={{ flex: 1 }}>
-              <div className="admin-progress">
-                <div className="admin-progress-bar" style={{ width: `${percent}%` }} />
-              </div>
-            </div>
-            <span className="admin-row-value">{item.count}</span>
-          </div>
-        );
-      })}
-    </div>
-  );
-}
-
-function TopProducts({ products }) {
-  if (!products.length) return null;
-
-  const maxOrders = Math.max(...products.map((product) => product.totalOrders || 0), 1);
-  return (
-    <div className="admin-card" style={{ marginBottom: '1.75rem' }}>
-      <div className="admin-section-heading">
-        <h3>Top Products</h3>
-      </div>
-      <div className="admin-rank-list">
-        {products.slice(0, 8).map((product, index) => {
-          const percent = Math.round(((product.totalOrders || 0) / maxOrders) * 100);
-          return (
-            <div key={`${product.name}-${index}`} className="admin-row">
-              <span style={{ color: 'var(--admin-text-muted)', width: 24, textAlign: 'right' }}>{index + 1}</span>
-              <span className="admin-row-title" style={{ flex: 1 }}>{product.name || 'Product'}</span>
-              <div className="admin-rank-bar">
-                <div className="admin-progress-bar" style={{ width: `${percent}%`, background: 'var(--admin-info)' }} />
-              </div>
-              <span className="admin-row-value">{product.totalOrders || 0}</span>
-            </div>
-          );
-        })}
-      </div>
-    </div>
-  );
-}
-
 export default function AdminDashboardPage() {
   const [dashData, setDashData] = useState(null);
   const [analytics, setAnalytics] = useState(null);
   const [loading, setLoading] = useState(true);
+  const [analyticsLoading, setAnalyticsLoading] = useState(false);
+  const [rangeDays, setRangeDays] = useState(30);
   const [error, setError] = useState('');
 
-  const fetchData = useCallback(async ({ silent = false } = {}) => {
+  const fetchData = useCallback(async ({ silent = false, days = 30 } = {}) => {
     if (!silent) setLoading(true);
     setError('');
     try {
       const [dashRes, analyticsRes] = await Promise.all([
         adminApi.dashboard.get(),
-        adminApi.dashboard.getAnalytics(30),
+        adminApi.dashboard.getAnalytics(days),
       ]);
       setDashData(dashRes.data.data);
       setAnalytics(analyticsRes.data.data);
@@ -185,8 +137,23 @@ export default function AdminDashboardPage() {
     }
   }, []);
 
+  const changeRange = useCallback(async (days) => {
+    if (days === rangeDays) return;
+    setRangeDays(days);
+    setAnalyticsLoading(true);
+    setError('');
+    try {
+      const res = await adminApi.dashboard.getAnalytics(days);
+      setAnalytics(res.data.data);
+    } catch (err) {
+      setError(getErrorMessage(err));
+    } finally {
+      setAnalyticsLoading(false);
+    }
+  }, [rangeDays]);
+
   useEffect(() => {
-    fetchData();
+    fetchData({ days: 30 });
   }, [fetchData]);
 
   const overview = dashData?.overview || {};
@@ -196,12 +163,18 @@ export default function AdminDashboardPage() {
   const statusDist = useMemo(() => (
     Object.entries(statusDistribution || {}).map(([_id, count]) => ({ _id, count }))
   ), [statusDistribution]);
-  const revenueByDay = analytics?.revenueByDay || [];
-  const topProducts = (analytics?.topProducts || []).map((product) => ({
-    ...product,
-    name: product._id,
-    totalOrders: product.totalQuantity,
-  }));
+
+  const revenueByDay = useMemo(() => analytics?.revenueByDay || [], [analytics]);
+  const topProducts = useMemo(() => analytics?.topProducts || [], [analytics]);
+  const topCities = useMemo(() => analytics?.topCities || [], [analytics]);
+
+  const periodTotals = useMemo(() => revenueByDay.reduce(
+    (acc, item) => ({
+      revenue: acc.revenue + (item.revenue || 0),
+      orders: acc.orders + (item.orders || 0),
+    }),
+    { revenue: 0, orders: 0 },
+  ), [revenueByDay]);
 
   const operationCards = [
     {
@@ -303,13 +276,13 @@ export default function AdminDashboardPage() {
             Monitor revenue, fulfillment, inventory, refunds, and customer-impacting alerts from one place.
           </div>
         </div>
-        <RefreshButton onRefresh={() => fetchData({ silent: true })} />
+        <RefreshButton onRefresh={() => fetchData({ silent: true, days: rangeDays })} />
       </div>
 
       {error && (
         <div className="admin-error-panel" role="alert">
           <span>{error}</span>
-          <button type="button" className="admin-btn admin-btn-danger admin-btn-sm" onClick={() => fetchData()}>
+          <button type="button" className="admin-btn admin-btn-danger admin-btn-sm" onClick={() => fetchData({ days: rangeDays })}>
             Retry
           </button>
         </div>
@@ -321,7 +294,7 @@ export default function AdminDashboardPage() {
         ))}
       </div>
 
-      <section style={{ marginBottom: '1.75rem' }}>
+      <section className="admin-dashboard-section">
         <div className="admin-section-heading">
           <div>
             <h2>Live Operations</h2>
@@ -335,6 +308,54 @@ export default function AdminDashboardPage() {
           {operationCards.map((card) => (
             <OperationCard key={card.label} {...card} />
           ))}
+        </div>
+      </section>
+
+      <section className="admin-dashboard-section">
+        <div className="admin-section-heading">
+          <div>
+            <h2>Performance Analytics</h2>
+            <div className="admin-section-subtitle">
+              Revenue, orders, products, and locations for the selected window.
+            </div>
+          </div>
+          <RangeSwitcher value={rangeDays} onChange={changeRange} disabled={analyticsLoading} />
+        </div>
+
+        <div className="admin-chart-grid-main">
+          <ChartCard
+            title="Revenue Trend"
+            subtitle={`${formatPrice(periodTotals.revenue)} from ${periodTotals.orders.toLocaleString('en-IN')} paid orders · last ${rangeDays} days`}
+            loading={analyticsLoading}
+            keys={(
+              <>
+                <span className="admin-chart-key">
+                  <span className="admin-chart-key-dot" style={{ background: 'var(--admin-accent-hover)' }} />
+                  Revenue
+                </span>
+                <span className="admin-chart-key">
+                  <span className="admin-chart-key-dot admin-chart-key-line" style={{ background: 'var(--admin-info)' }} />
+                  Orders
+                </span>
+              </>
+            )}
+          >
+            <RevenueTrendChart data={revenueByDay} />
+          </ChartCard>
+
+          <ChartCard title="Order Status" subtitle="All active orders by stage">
+            <OrderStatusDonut data={statusDist} />
+          </ChartCard>
+        </div>
+
+        <div className="admin-chart-grid-secondary">
+          <ChartCard title="Top Products" subtitle={`By units sold · last ${rangeDays} days`} loading={analyticsLoading}>
+            <TopProductsChart data={topProducts} />
+          </ChartCard>
+
+          <ChartCard title="Top Cities" subtitle={`By revenue · last ${rangeDays} days`} loading={analyticsLoading}>
+            <TopCitiesChart data={topCities} />
+          </ChartCard>
         </div>
       </section>
 
@@ -432,30 +453,6 @@ export default function AdminDashboardPage() {
           )}
         </SectionCard>
       </div>
-
-      <div className="admin-dashboard-chart-grid admin-animate-in">
-        <div className="admin-card admin-chart-card">
-          <div className="admin-section-heading">
-            <div>
-              <h3>Revenue Trend</h3>
-              <div className="admin-section-subtitle">Paid order revenue over the last 30 days.</div>
-            </div>
-          </div>
-          <RevenueChart data={revenueByDay} />
-        </div>
-
-        <div className="admin-card admin-chart-card">
-          <div className="admin-section-heading">
-            <div>
-              <h3>Order Status</h3>
-              <div className="admin-section-subtitle">Current fulfillment distribution.</div>
-            </div>
-          </div>
-          <StatusDistribution items={statusDist} />
-        </div>
-      </div>
-
-      <TopProducts products={topProducts} />
 
       <div className="admin-card admin-section-animate">
         <div className="admin-section-heading">

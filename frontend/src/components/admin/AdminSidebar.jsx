@@ -8,29 +8,37 @@ import {
   HiOutlineTicket, HiOutlineTruck, HiOutlinePuzzlePiece, HiOutlineUsers,
   HiOutlineStar, HiOutlineEnvelope, HiOutlinePhoto, HiOutlineBell,
   HiOutlineChevronLeft, HiOutlineChevronRight, HiOutlineChatBubbleLeftRight,
-  HiOutlineReceiptRefund, HiOutlineBugAnt
+  HiOutlineReceiptRefund, HiOutlineBugAnt, HiOutlineChartBar, HiOutlineBanknotes,
+  HiOutlineUserGroup, HiOutlineCog6Tooth, HiOutlineDocumentText
 } from 'react-icons/hi2';
+import { canAccess } from '@/lib/adminAccess.mjs';
 
 const NAV_ITEMS = [
-  { label: 'Dashboard', href: '/admin', icon: HiOutlineHome },
-  { label: 'Orders', href: '/admin/orders', icon: HiOutlineShoppingBag },
-  { label: 'Refunds', href: '/admin/refunds', icon: HiOutlineReceiptRefund },
-  { label: 'Products', href: '/admin/products', icon: HiOutlineCube },
-  { label: 'Categories', href: '/admin/categories', icon: HiOutlineTag },
-  { label: 'Coupons', href: '/admin/coupons', icon: HiOutlineTicket },
-  { label: 'Delivery', href: '/admin/delivery', icon: HiOutlineTruck },
-  { label: 'Add-Ons', href: '/admin/addons', icon: HiOutlinePuzzlePiece },
-  { label: 'Customers', href: '/admin/customers', icon: HiOutlineUsers },
-  { label: 'Reviews', href: '/admin/reviews', icon: HiOutlineStar },
-  { label: 'Inquiries', href: '/admin/inquiries', icon: HiOutlineEnvelope },
-  { label: 'Banners', href: '/admin/banners', icon: HiOutlinePhoto },
-  { label: 'Notifications', href: '/admin/notifications', icon: HiOutlineBell },
-  { label: 'System Logs', href: '/admin/logs', icon: HiOutlineBugAnt },
-  { label: 'Bot', href: '/admin/chatbot', icon: HiOutlineChatBubbleLeftRight },
+  { label: 'Dashboard', href: '/admin', icon: HiOutlineHome, section: 'dashboard' },
+  { label: 'Sales', href: '/admin/sales', icon: HiOutlineChartBar, section: 'sales' },
+  { label: 'Profit', href: '/admin/profit', icon: HiOutlineBanknotes, section: 'profit' },
+  { label: 'GST', href: '/admin/gst', icon: HiOutlineDocumentText, section: 'gst' },
+  { label: 'Orders', href: '/admin/orders', icon: HiOutlineShoppingBag, section: 'orders' },
+  { label: 'Refunds', href: '/admin/refunds', icon: HiOutlineReceiptRefund, section: 'refunds' },
+  { label: 'Products', href: '/admin/products', icon: HiOutlineCube, section: 'catalog' },
+  { label: 'Categories', href: '/admin/categories', icon: HiOutlineTag, section: 'catalog' },
+  { label: 'Coupons', href: '/admin/coupons', icon: HiOutlineTicket, section: 'coupons' },
+  { label: 'Delivery', href: '/admin/delivery', icon: HiOutlineTruck, section: 'delivery' },
+  { label: 'Add-Ons', href: '/admin/addons', icon: HiOutlinePuzzlePiece, section: 'catalog' },
+  { label: 'Customers', href: '/admin/customers', icon: HiOutlineUsers, section: 'customers' },
+  { label: 'Insights', href: '/admin/insights', icon: HiOutlineUserGroup, section: 'insights' },
+  { label: 'Reviews', href: '/admin/reviews', icon: HiOutlineStar, section: 'reviews' },
+  { label: 'Inquiries', href: '/admin/inquiries', icon: HiOutlineEnvelope, section: 'inquiries' },
+  { label: 'Banners', href: '/admin/banners', icon: HiOutlinePhoto, section: 'catalog' },
+  { label: 'Notifications', href: '/admin/notifications', icon: HiOutlineBell, section: 'notifications' },
+  { label: 'System Logs', href: '/admin/logs', icon: HiOutlineBugAnt, section: 'logs' },
+  { label: 'Bot', href: '/admin/chatbot', icon: HiOutlineChatBubbleLeftRight, section: 'chatbot' },
+  { label: 'Settings', href: '/admin/settings', icon: HiOutlineCog6Tooth, section: 'settings' },
 ];
 
-export default function AdminSidebar({ collapsed, onToggle, mobileOpen, onMobileClose }) {
+export default function AdminSidebar({ collapsed, onToggle, mobileOpen, onMobileClose, role }) {
   const pathname = usePathname();
+  const navItems = NAV_ITEMS.filter((item) => canAccess(role, item.section));
 
   const isActive = (href) => {
     if (href === '/admin') return pathname === '/admin';
@@ -61,7 +69,7 @@ export default function AdminSidebar({ collapsed, onToggle, mobileOpen, onMobile
         {/* Logo */}
         <div
           className="admin-sidebar-brand"
-          style={{ padding: collapsed ? '1.25rem 0.75rem' : '1.25rem 1.25rem' }}
+          style={{ padding: collapsed ? '0 0.75rem' : '0 1.25rem' }}
         >
           <div className="admin-brand-mark">
             CB
@@ -77,7 +85,7 @@ export default function AdminSidebar({ collapsed, onToggle, mobileOpen, onMobile
         {/* Nav */}
         <nav style={{ flex: 1, padding: '0.75rem', overflowY: 'auto' }}>
           <div className="admin-nav">
-            {NAV_ITEMS.map((item) => {
+            {navItems.map((item) => {
               const Icon = item.icon;
               const active = isActive(item.href);
               return (

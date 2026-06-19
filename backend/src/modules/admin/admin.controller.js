@@ -48,6 +48,63 @@ const getAnalytics = asyncHandler(async (req, res) => {
   ApiResponse.ok(data).send(res);
 });
 
+const getSales = asyncHandler(async (req, res) => {
+  const data = await adminService.getSalesAnalytics(req.query);
+  ApiResponse.ok(data).send(res);
+});
+
+const getProfit = asyncHandler(async (req, res) => {
+  const data = await adminService.getProfitAnalytics(req.query);
+  ApiResponse.ok(data).send(res);
+});
+
+const listVariants = asyncHandler(async (req, res) => {
+  const data = await adminService.listVariantsForCosting(req.query);
+  ApiResponse.ok(data).send(res);
+});
+
+const getCustomerAnalytics = asyncHandler(async (req, res) => {
+  const data = await adminService.getCustomerAnalytics(req.query);
+  ApiResponse.ok(data).send(res);
+});
+
+const getGstReport = asyncHandler(async (req, res) => {
+  const data = await adminService.getGstReport(req.query);
+  ApiResponse.ok(data).send(res);
+});
+
+// ---- Settings / Company / Admin users / Reports ----
+const getSettings = asyncHandler(async (req, res) => {
+  const data = await adminService.getSettings();
+  ApiResponse.ok(data).send(res);
+});
+
+const updateSettings = asyncHandler(async (req, res) => {
+  const data = await adminService.updateSettings(req.body);
+  ApiResponse.ok(data, 'Settings updated').send(res);
+});
+
+const getCompany = asyncHandler(async (req, res) => {
+  const data = await adminService.getCompany();
+  ApiResponse.ok(data).send(res);
+});
+
+const listAdminUsers = asyncHandler(async (req, res) => {
+  const data = await adminService.listAdminUsers();
+  ApiResponse.ok(data).send(res);
+});
+
+const setAdminRole = asyncHandler(async (req, res) => {
+  const data = await adminService.setAdminRole(req.params.id, req.body.role, req.user._id);
+  ApiResponse.ok(data, 'Role updated').send(res);
+});
+
+const sendDailyReportNow = asyncHandler(async (req, res) => {
+  const reportService = require('./report.service');
+  const result = await reportService.sendDailyReport();
+  ApiResponse.ok(result, result.success ? 'Report sent' : 'Report not sent — check email config and recipients').send(res);
+});
+
 const getAuditLogs = asyncHandler(async (req, res) => {
   const result = await adminAuditService.list(req.query);
   ApiResponse.ok(result).send(res);
@@ -117,6 +174,11 @@ const addVariant = asyncHandler(async (req, res) => {
 const updateVariant = asyncHandler(async (req, res) => {
   const variant = await productService.updateVariant(req.params.id, req.params.vid, req.body);
   ApiResponse.ok(variant, 'Variant updated').send(res);
+});
+
+const getProductVariants = asyncHandler(async (req, res) => {
+  const variants = await productService.adminGetVariants(req.params.id);
+  ApiResponse.ok(variants).send(res);
 });
 
 // ---- Categories ----
@@ -414,8 +476,10 @@ const getChatbotStats = asyncHandler(async (req, res) => {
 });
 
 module.exports = {
-  getDashboard, getAnalytics, getAuditLogs, getOperationalAlerts, getApplicationErrors, getPaymentDiagnostics, getRefunds, approveRefund, processRefund, failRefund,
-  listProducts, createProduct, updateProduct, deleteProduct, addVariant, updateVariant, bulkImportProducts,
+  getDashboard, getAnalytics, getSales, getProfit, listVariants, getCustomerAnalytics, getGstReport,
+  getSettings, updateSettings, getCompany, listAdminUsers, setAdminRole, sendDailyReportNow,
+  getAuditLogs, getOperationalAlerts, getApplicationErrors, getPaymentDiagnostics, getRefunds, approveRefund, processRefund, failRefund,
+  listProducts, createProduct, updateProduct, deleteProduct, addVariant, updateVariant, getProductVariants, bulkImportProducts,
   listCategories, createCategory, updateCategory, deleteCategory,
   getOrders, getOrderDetail, updateOrderStatus,
   listCoupons, createCoupon, updateCoupon, deleteCoupon,

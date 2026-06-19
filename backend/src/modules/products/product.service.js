@@ -383,6 +383,14 @@ class ProductService {
   }
 
   /**
+   * Admin: list every variant of a product, including inactive ones, for the
+   * variant editor. (Public/admin product lists only surface active ones.)
+   */
+  async adminGetVariants(productId) {
+    return Variant.find({ product: productId }).sort({ createdAt: 1 }).lean();
+  }
+
+  /**
    * Admin: List all products (including inactive)
    */
   async adminListProducts(query) {

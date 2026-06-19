@@ -19,6 +19,7 @@ const greatVibes = Great_Vibes({
 });
 
 export const metadata = {
+  metadataBase: new URL(process.env.NEXT_PUBLIC_SITE_URL || 'https://cakebake.in'),
   title: {
     default: 'The Cake Bake — Freshly Baked, Delivered with Love',
     template: '%s | The Cake Bake',

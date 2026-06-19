@@ -95,13 +95,49 @@ export const buildImageRemotePatterns = (env = process.env) => {
 };
 
 /** @type {import('next').NextConfig} */
+const extraDevOrigins = (process.env.ALLOWED_DEV_ORIGINS || '')
+  .split(',')
+  .map((value) => value.trim())
+  .filter(Boolean);
+
+// NEXT_PUBLIC_CLEAN_UI=true → hide the Next.js dev indicator (the bottom logo)
+// and the Agentation feedback overlay (see DevTools.js). Dev-only; no effect on
+// production (the dev indicator never renders in production anyway).
+const cleanUi = process.env.NEXT_PUBLIC_CLEAN_UI === 'true';
+
 const nextConfig = {
+  ...(cleanUi ? { devIndicators: false } : {}),
+  // Dev-only: let tunnel hosts (ngrok/zrok) reach Next's dev resources (HMR +
+  // proxied /api). Wildcards cover the changing subdomain. Ignored in production
+  // builds, so this has no effect on prod. Add more via ALLOWED_DEV_ORIGINS.
+  allowedDevOrigins: [
+    '*.zrok.io',
+    '*.share.zrok.io',
+    '*.shares.zrok.io',
+    '*.ngrok-free.app',
+    '*.ngrok.app',
+    '*.ngrok.io',
+    ...extraDevOrigins,
+  ],
   async headers() {
     return [
       {
         source: '/:path*',
         headers: buildSecurityHeaders(),
       },
+    ];
+  },
+  // Single-origin proxy for LOCAL DEV / TUNNELS only (ngrok/zrok). It forwards
+  // /api and /uploads to the backend so the whole app can be exposed through ONE
+  // URL. Opt-in: it stays OFF unless BACKEND_PROXY_ORIGIN is set, so production
+  // builds (which don't set it) get no rewrites and are unaffected.
+  async rewrites() {
+    const backendOrigin = process.env.BACKEND_PROXY_ORIGIN;
+    if (!backendOrigin) return [];
+    const origin = backendOrigin.replace(/\/+$/, '');
+    return [
+      { source: '/api/:path*', destination: `${origin}/api/:path*` },
+      { source: '/uploads/:path*', destination: `${origin}/uploads/:path*` },
     ];
   },
   images: {

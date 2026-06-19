@@ -37,9 +37,14 @@ function LoginForm() {
     }
   }, [error, dispatch]);
 
-  const handleSubmit = (e) => {
+  const handleSubmit = async (e) => {
     e.preventDefault();
-    dispatch(login({ email, password }));
+    try {
+      await dispatch(login({ email, password })).unwrap();
+      dispatch(addToast({ message: 'Welcome back! Logged in successfully.', type: 'success' }));
+    } catch {
+      // Failure is surfaced by the `error` effect above as an error toast.
+    }
   };
 
   return (

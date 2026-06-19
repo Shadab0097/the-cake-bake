@@ -5,7 +5,7 @@ const Cart = require('../../models/Cart');
 const Variant = require('../../models/Variant');
 const Address = require('../../models/Address');
 const ApiError = require('../../utils/ApiError');
-const { generateOrderNumber, escapeRegex } = require('../../utils/helpers');
+const { generateOrderNumber, escapeRegex, startOfDay, endOfDay } = require('../../utils/helpers');
 const serviceability = require('../delivery/serviceability');
 const { parsePagination, paginatedResponse } = require('../../utils/pagination');
 const { ORDER_STATUSES, PAYMENT_STATUSES } = require('../../utils/constants');
@@ -70,7 +70,7 @@ class OrderService {
     // Get cart
     const cart = await Cart.findOne({ user: userId })
       .populate('items.product', 'name images isActive basePrice egglessExtraPrice')
-      .populate('items.variant', 'weight price stock isActive')
+      .populate('items.variant', 'weight price costPrice stock isActive')
       .populate('items.addOns', 'name price')
       .populate('appliedCoupon');
 
@@ -186,6 +186,7 @@ class OrderService {
         flavor: '',
         quantity: item.quantity,
         price: unitPrice,
+        cost: item.variant.costPrice || 0,
         isEggless: item.isEggless,
         cakeMessage: item.cakeMessage,
         addOns: addOnSnapshots,
@@ -790,6 +791,18 @@ class OrderService {
           updatedBy: adminId,
         });
 
+        // COD cash is collected at the doorstep on delivery. Online orders are
+        // marked paid at capture time, but COD has no equivalent hook — without
+        // this, COD sales never count toward any revenue report, because every
+        // revenue aggregation filters on paymentStatus: 'paid'.
+        if (
+          status === ORDER_STATUSES.DELIVERED &&
+          order.paymentMethod === 'cod' &&
+          order.paymentStatus !== 'paid'
+        ) {
+          order.paymentStatus = 'paid';
+        }
+
         if (status === ORDER_STATUSES.DELIVERED && order.user) {
           await loyaltyService.earnForDeliveredOrder(order, { session });
         }
@@ -817,7 +830,9 @@ class OrderService {
     if (query.city) filter.deliveryCity = query.city;
     if (query.orderNumber) filter.orderNumber = { $regex: escapeRegex(query.orderNumber), $options: 'i' };
     if (query.from && query.to) {
-      filter.createdAt = { $gte: new Date(query.from), $lte: new Date(query.to) };
+      // Treat from/to as inclusive calendar days so a single-day filter
+      // (from === to) returns that whole day, not just its first instant.
+      filter.createdAt = { $gte: startOfDay(new Date(query.from)), $lte: endOfDay(new Date(query.to)) };
     }
 
     const [orders, total] = await Promise.all([

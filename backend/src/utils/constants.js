@@ -32,6 +32,8 @@ const USER_ROLES = {
   CUSTOMER: 'customer',
   ADMIN: 'admin',
   SUPERADMIN: 'superadmin',
+  MANAGER: 'manager',
+  STAFF: 'staff',
 };
 
 const COUPON_TYPES = {

@@ -10,14 +10,37 @@ const categoryValidation = require('../categories/category.validation');
 const addonValidation = require('../addons/addon.validation');
 const { auth } = require('../../middleware/auth');
 const { adminAuth } = require('../../middleware/adminAuth');
+const ApiError = require('../../utils/ApiError');
+const { sectionForPath, canAccess } = require('../../utils/adminAccess');
 const adminAuditService = require('./adminAudit.service');
 
-// All admin routes require auth + admin role
+// All admin routes require auth + admin-tier role.
 router.use(auth, adminAuth);
+
+// Role-based section guard: Super/legacy-admin pass everything; Manager is
+// blocked from financial sections; Staff is limited to operations. The section
+// is inferred from the request path so every route (incl. writes) is covered.
+router.use((req, res, next) => {
+  if (canAccess(req.user.role, sectionForPath(req.path))) return next();
+  return next(ApiError.forbidden('You do not have access to this section'));
+});
 
 // Dashboard
 router.get('/dashboard', adminController.getDashboard);
 router.get('/analytics', adminController.getAnalytics);
+router.get('/sales', adminController.getSales);
+router.get('/profit', adminController.getProfit);
+router.get('/variants', adminController.listVariants);
+router.get('/customer-analytics', adminController.getCustomerAnalytics);
+router.get('/gst', adminController.getGstReport);
+
+// Settings, company, admin-user management, scheduled reports
+router.get('/settings', adminController.getSettings);
+router.put('/settings', adminController.updateSettings);
+router.get('/company', adminController.getCompany);
+router.get('/admins', adminController.listAdminUsers);
+router.put('/admins/:id/role', validate(adminValidation.paramId), adminAuditService.audit('admin.role.update', { resourceType: 'user' }), adminController.setAdminRole);
+router.post('/reports/send-daily', adminController.sendDailyReportNow);
 router.get('/audit-logs', adminController.getAuditLogs);
 router.get('/operational-alerts', adminController.getOperationalAlerts);
 router.get('/application-errors', adminController.getApplicationErrors);
@@ -33,6 +56,7 @@ router.post('/products', validate(productValidation.createProduct), adminAuditSe
 router.post('/products/bulk-import', validate(adminValidation.bulkImportProducts), adminAuditService.audit('product.bulk_import', { resourceType: 'product' }), adminController.bulkImportProducts);
 router.put('/products/:id', validate(productValidation.updateProduct), adminAuditService.audit('product.update', { resourceType: 'product' }), adminController.updateProduct);
 router.delete('/products/:id', validate(adminValidation.paramId), adminAuditService.audit('product.delete', { resourceType: 'product' }), adminController.deleteProduct);
+router.get('/products/:id/variants', validate(adminValidation.paramId), adminController.getProductVariants);
 router.post('/products/:id/variants', validate(adminValidation.paramId), adminAuditService.audit('product.variant.create', { resourceType: 'variant', parentResourceIdParam: 'id' }), adminController.addVariant);
 router.put('/products/:id/variants/:vid', adminAuditService.audit('product.variant.update', { resourceType: 'variant', resourceIdParam: 'vid', parentResourceIdParam: 'id' }), adminController.updateVariant);
 

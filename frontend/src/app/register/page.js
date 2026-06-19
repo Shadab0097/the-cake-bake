@@ -38,13 +38,18 @@ function RegisterForm() {
 
   const handleChange = (e) => setForm({ ...form, [e.target.name]: e.target.value });
 
-  const handleSubmit = (e) => {
+  const handleSubmit = async (e) => {
     e.preventDefault();
     if (form.password !== form.confirmPassword) {
       dispatch(addToast({ message: 'Passwords do not match', type: 'error' }));
       return;
     }
-    dispatch(register({ name: form.name, email: form.email, phone: form.phone, password: form.password }));
+    try {
+      await dispatch(register({ name: form.name, email: form.email, phone: form.phone, password: form.password })).unwrap();
+      dispatch(addToast({ message: 'Account created successfully! Welcome 🎉', type: 'success' }));
+    } catch {
+      // Failure is surfaced by the `error` effect above as an error toast.
+    }
   };
 
   return (

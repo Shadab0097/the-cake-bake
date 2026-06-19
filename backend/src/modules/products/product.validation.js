@@ -35,6 +35,7 @@ const createProduct = {
       weight: Joi.string().required(),
       price: Joi.number().min(0).required(),
       compareAtPrice: Joi.number().min(0).default(0),
+      costPrice: Joi.number().min(0).default(0),
       sku: Joi.string().allow('').default(''),
       stock: Joi.number().min(0).default(999),
     })).default([]),

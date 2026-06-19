@@ -4,6 +4,8 @@ import { useState, useEffect } from 'react';
 import { useRouter } from 'next/navigation';
 import adminApiClient from '@/lib/adminApiClient';
 import { setAdminAccessToken } from '@/lib/authToken.mjs';
+import { setAdminFlash, consumeAdminFlash } from '@/lib/adminFlash.mjs';
+import { useAdminToast } from '@/components/admin/AdminUI';
 
 export default function AdminLoginPage() {
   const [email, setEmail] = useState('');
@@ -11,7 +13,15 @@ export default function AdminLoginPage() {
   const [error, setError] = useState('');
   const [loading, setLoading] = useState(false);
   const [checking, setChecking] = useState(true);
+  const { toast, showToast, hideToast } = useAdminToast();
   const router = useRouter();
+
+  // Show a one-time flash left by another page (e.g. "Logged out successfully"
+  // set just before the logout redirect landed us here).
+  useEffect(() => {
+    const flash = consumeAdminFlash();
+    if (flash) showToast(flash.message, flash.type);
+  }, [showToast]);
 
   // Check if already logged in as admin
   useEffect(() => {
@@ -43,6 +53,7 @@ export default function AdminLoginPage() {
       }
 
       setAdminAccessToken(accessToken);
+      setAdminFlash('Welcome back! Logged in successfully.', 'success');
       router.replace('/admin');
     } catch (err) {
       setError(err.response?.data?.message || 'Login failed. Please try again.');
@@ -62,6 +73,30 @@ export default function AdminLoginPage() {
 
   return (
     <div style={styles.page}>
+      {/* One-time flash (e.g. after logout) */}
+      {toast.message && (
+        <div
+          role="status"
+          style={{
+            ...styles.flashToast,
+            background: toast.type === 'error' ? 'rgba(45,10,10,0.92)' : 'rgba(5,46,22,0.92)',
+            color: toast.type === 'error' ? '#EF4444' : '#22C55E',
+            border: `1px solid ${toast.type === 'error' ? 'rgba(239,68,68,0.25)' : 'rgba(34,197,94,0.25)'}`,
+          }}
+        >
+          <span aria-hidden="true">{toast.type === 'error' ? '⚠' : '✓'}</span>
+          <span>{toast.message}</span>
+          <button
+            type="button"
+            onClick={hideToast}
+            aria-label="Dismiss notification"
+            style={styles.flashClose}
+          >
+            ✕
+          </button>
+        </div>
+      )}
+
       {/* Animated gradient bg */}
       <div style={styles.bgGradient} />
       <div style={styles.bgGrid} />
@@ -158,6 +193,32 @@ const styles = {
     position: 'relative',
     overflow: 'hidden',
     fontFamily: "'Inter', 'Montserrat', system-ui, sans-serif",
+  },
+  flashToast: {
+    position: 'fixed',
+    top: '1.5rem',
+    right: '1.5rem',
+    zIndex: 50,
+    display: 'flex',
+    alignItems: 'center',
+    gap: '0.5rem',
+    padding: '0.75rem 1.25rem',
+    borderRadius: '12px',
+    fontSize: '0.875rem',
+    fontWeight: 600,
+    backdropFilter: 'blur(12px)',
+    WebkitBackdropFilter: 'blur(12px)',
+    boxShadow: '0 8px 32px rgba(0,0,0,0.4)',
+  },
+  flashClose: {
+    background: 'transparent',
+    border: 'none',
+    color: 'inherit',
+    opacity: 0.7,
+    cursor: 'pointer',
+    fontSize: '0.875rem',
+    lineHeight: 1,
+    padding: '0 0 0 0.25rem',
   },
   bgGradient: {
     position: 'absolute',

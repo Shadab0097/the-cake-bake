@@ -17,6 +17,7 @@ const orderItemSchema = new mongoose.Schema(
     flavor: { type: String, default: '' },
     quantity: { type: Number, required: true, min: 1 },
     price: { type: Number, required: true }, // unit price at order time (paise)
+    cost: { type: Number, default: 0 }, // unit cost at order time (paise) — for profit reporting
     isEggless: { type: Boolean, default: false },
     cakeMessage: { type: String, default: '' },
     addOns: [
