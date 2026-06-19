@@ -8,6 +8,7 @@ import wishlistReducer from './slices/wishlistSlice';
 import categoriesReducer from './slices/categoriesSlice';
 import toastReducer from './slices/toastSlice';
 import uiReducer from './slices/uiSlice';
+import deliveryReducer, { hydrateDeliveryLocation } from './slices/deliverySlice';
 
 export const store = configureStore({
   reducer: {
@@ -17,6 +18,7 @@ export const store = configureStore({
     categories: categoriesReducer,
     toast: toastReducer,
     ui: uiReducer,
+    delivery: deliveryReducer,
   },
   middleware: (getDefaultMiddleware) =>
     getDefaultMiddleware({
@@ -26,4 +28,5 @@ export const store = configureStore({
 
 if (typeof window !== 'undefined') {
   store.dispatch(hydrateGuestCart());
+  store.dispatch(hydrateDeliveryLocation());
 }

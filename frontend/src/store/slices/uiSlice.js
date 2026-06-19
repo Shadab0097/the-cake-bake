@@ -5,9 +5,19 @@ const uiSlice = createSlice({
   initialState: {
     isSearchOpen: false,
     isMobileMenuOpen: false,
+    isDeliveryPopoverOpen: false,
     isLoading: false,
   },
   reducers: {
+    toggleDeliveryPopover: (state) => {
+      state.isDeliveryPopoverOpen = !state.isDeliveryPopoverOpen;
+    },
+    openDeliveryPopover: (state) => {
+      state.isDeliveryPopoverOpen = true;
+    },
+    closeDeliveryPopover: (state) => {
+      state.isDeliveryPopoverOpen = false;
+    },
     toggleSearch: (state) => {
       state.isSearchOpen = !state.isSearchOpen;
     },
@@ -35,6 +45,9 @@ export const {
   closeSearch,
   toggleMobileMenu,
   closeMobileMenu,
+  toggleDeliveryPopover,
+  openDeliveryPopover,
+  closeDeliveryPopover,
   setGlobalLoading,
 } = uiSlice.actions;
 export default uiSlice.reducer;

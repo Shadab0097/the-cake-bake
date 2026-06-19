@@ -9,6 +9,7 @@ import { fetchWishlist } from '@/store/slices/wishlistSlice';
 import { fetchCategories } from '@/store/slices/categoriesSlice';
 import { clearToasts } from '@/store/slices/toastSlice';
 import Navbar from '@/components/layout/Navbar';
+import DeliveryBanner from '@/components/layout/DeliveryBanner';
 import Footer from '@/components/layout/Footer';
 import MobileBottomNav from '@/components/layout/MobileBottomNav';
 import CartDrawer from '@/components/ui/CartDrawer';
@@ -65,6 +66,7 @@ export default function AppShell({ children }) {
   return (
     <>
       <Navbar />
+      <DeliveryBanner />
       <main className="flex-1 pb-14 lg:pb-0">{children}</main>
       <Footer />
       <MobileBottomNav />

@@ -2,7 +2,9 @@ const Joi = require('joi');
 
 const checkPincode = {
   body: Joi.object({
-    pincode: Joi.string().trim().required(),
+    pincode: Joi.string().trim().pattern(/^[1-9][0-9]{5}$/).required().messages({
+      'string.pattern.base': 'Pincode must be a valid 6-digit Indian pincode',
+    }),
   }),
 };
 
@@ -28,6 +30,8 @@ const createZone = {
     freeDeliveryAbove: Joi.number().min(0).default(0),
     sameDayAvailable: Joi.boolean().default(true),
     sameDayCutoffTime: Joi.string().default('14:00'),
+    status: Joi.string().valid('live', 'coming_soon').default('live'),
+    isActive: Joi.boolean().default(true),
   }),
 };
 

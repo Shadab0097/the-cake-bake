@@ -74,12 +74,23 @@ class DeliveryService {
       if (!zone) {
         return {
           serviceable: false,
-          message: 'Delivery not available for this pincode',
+          status: 'unavailable',
+          message: 'We don’t deliver to this pincode yet',
+        };
+      }
+
+      if (zone.status === 'coming_soon') {
+        return {
+          serviceable: false,
+          status: 'coming_soon',
+          city: zone.city,
+          message: `Delivery to ${zone.city} is launching soon`,
         };
       }
 
       return {
         serviceable: true,
+        status: 'live',
         city: zone.city,
         deliveryCharge: zone.deliveryCharge,
         freeDeliveryAbove: zone.freeDeliveryAbove,
@@ -90,8 +101,10 @@ class DeliveryService {
   }
 
   async getZones() {
+    // Public list (checkout): only live zones — never let a customer pick a
+    // coming-soon city as a deliverable destination.
     return cache.getOrSet('delivery:zones', () => {
-      return DeliveryZone.find({ isActive: true })
+      return DeliveryZone.find({ isActive: true, status: { $ne: 'coming_soon' } })
         .select('state city areas pincodes deliveryCharge freeDeliveryAbove sameDayAvailable')
         .sort({ city: 1 })
         .lean();

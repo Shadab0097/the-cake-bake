@@ -146,6 +146,9 @@ export default function CheckoutPage() {
   const [zones, setZones] = useState([]);
   const [selectedZone, setSelectedZone] = useState(null);
 
+  // Location chosen via the header "Deliver to" widget — used to prefill below.
+  const deliveryLocation = useSelector((s) => s.delivery);
+
   // Coupon (auth only)
   const [couponCode, setCouponCode] = useState('');
   const [couponLoading, setCouponLoading] = useState(false);
@@ -185,6 +188,26 @@ export default function CheckoutPage() {
       .then((res) => setZones(res.data?.data || []))
       .catch(() => {});
   }, []);
+
+  // Prefill pincode + zone from the header "Deliver to" choice (live zones only).
+  // Only fills blanks — never overrides what the user has already typed.
+  useEffect(() => {
+    if (!zones.length) return;
+    const { pincode, city, status } = deliveryLocation;
+    if (!pincode || status !== 'live') return;
+
+    setGuestAddress((p) => (p.pincode ? p : { ...p, pincode }));
+    setNewAddress((p) => (p.pincode ? p : { ...p, pincode }));
+
+    if (city) {
+      const zone = zones.find((z) => z.city === city);
+      if (zone) {
+        setSelectedZone((prev) => prev || zone);
+        setGuestAddress((p) => (p.city ? p : { ...p, city: zone.city, state: zone.state }));
+        setNewAddress((p) => (p.city ? p : { ...p, city: zone.city, state: zone.state }));
+      }
+    }
+  }, [zones, deliveryLocation]);
 
   // Fetch addresses when user enters address step (step 1)
   useEffect(() => {
@@ -707,22 +730,62 @@ export default function CheckoutPage() {
                   <h2 className="text-xl font-bold text-dark mb-6">Delivery Address</h2>
 
                   {addresses.length > 0 && (
-                    <div className="space-y-3 mb-5">
-                      {addresses.map((addr) => (
-                        <button
-                          key={addr._id}
-                          onClick={() => { setSelectedAddress(addr._id); setShowNewAddress(false); }}
-                          className={`w-full text-left p-4 rounded-xl border-2 transition-all ${
-                            selectedAddress === addr._id ? 'border-pink-deep bg-pink-light/10' : 'border-outline-variant/30 hover:border-pink-deep/50'
-                          }`}
-                        >
-                          <div className="flex items-center gap-2 mb-1">
-                            <FiMapPin className="w-4 h-4 text-pink-deep" />
-                            <span className="text-sm font-semibold text-dark">{addr.label || 'Address'}</span>
-                          </div>
-                          <p className="text-sm text-outline">{addr.line1}, {addr.city}, {addr.state} - {addr.pincode}</p>
-                        </button>
-                      ))}
+                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 mb-5">
+                      {addresses.map((addr) => {
+                        const selected = selectedAddress === addr._id;
+                        const fullLine = [addr.addressLine1, addr.area, addr.city, addr.state]
+                          .filter(Boolean)
+                          .join(', ');
+                        return (
+                          <button
+                            key={addr._id}
+                            onClick={() => { setSelectedAddress(addr._id); setShowNewAddress(false); }}
+                            aria-pressed={selected}
+                            className={`relative text-left p-4 rounded-2xl border-2 transition-all ${
+                              selected
+                                ? 'border-pink-deep bg-pink-light/10 shadow-sm'
+                                : 'border-outline-variant/30 hover:border-pink-deep/50 hover:shadow-sm'
+                            }`}
+                          >
+                            {/* Radio indicator */}
+                            <span
+                              className={`absolute top-4 right-4 flex items-center justify-center w-5 h-5 rounded-full border-2 transition-colors ${
+                                selected ? 'border-pink-deep bg-pink-deep' : 'border-outline-variant'
+                              }`}
+                            >
+                              {selected && <FiCheck className="w-3 h-3 text-white" strokeWidth={3} />}
+                            </span>
+
+                            {/* Label + default badges */}
+                            <div className="flex flex-wrap items-center gap-2 mb-2 pr-7">
+                              <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full bg-surface-container-high text-[11px] font-semibold text-on-surface-variant">
+                                <FiMapPin className="w-3 h-3 text-pink-deep" />
+                                {addr.label || 'Address'}
+                              </span>
+                              {addr.isDefault && (
+                                <span className="px-2 py-0.5 rounded-full bg-pink-light/40 text-[11px] font-semibold text-pink-deep">
+                                  Default
+                                </span>
+                              )}
+                            </div>
+
+                            {addr.fullName && (
+                              <p className="text-sm font-semibold text-dark line-clamp-1">{addr.fullName}</p>
+                            )}
+                            <p className="text-sm text-outline leading-relaxed mt-0.5">
+                              {fullLine}{addr.pincode ? ` - ${addr.pincode}` : ''}
+                            </p>
+                            {addr.landmark && (
+                              <p className="text-xs text-outline mt-0.5">Landmark: {addr.landmark}</p>
+                            )}
+                            {addr.phone && (
+                              <p className="text-xs text-outline mt-1.5 flex items-center gap-1">
+                                <FiPhone className="w-3 h-3" /> {addr.phone}
+                              </p>
+                            )}
+                          </button>
+                        );
+                      })}
                     </div>
                   )}
 

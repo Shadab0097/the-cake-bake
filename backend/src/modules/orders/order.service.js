@@ -3,10 +3,10 @@ const Order = require('../../models/Order');
 const Payment = require('../../models/Payment');
 const Cart = require('../../models/Cart');
 const Variant = require('../../models/Variant');
-const DeliveryZone = require('../../models/DeliveryZone');
 const Address = require('../../models/Address');
 const ApiError = require('../../utils/ApiError');
 const { generateOrderNumber, escapeRegex } = require('../../utils/helpers');
+const serviceability = require('../delivery/serviceability');
 const { parsePagination, paginatedResponse } = require('../../utils/pagination');
 const { ORDER_STATUSES, PAYMENT_STATUSES } = require('../../utils/constants');
 const { getRazorpayInstance } = require('../../config/razorpay');
@@ -94,19 +94,12 @@ class OrderService {
     // Validate address
     const address = await this.resolveAddress(userId, addressId, shippingAddress);
 
-    // Check delivery zone
-    const zone = await DeliveryZone.findOne({
-      city: { $regex: new RegExp(`^${escapeRegex(address.city)}$`, 'i') },
-      isActive: true,
+    // Serviceability gate (live zone, matched by pincode) + same-day cutoff.
+    const zone = await serviceability.resolveServiceableZone({
+      pincode: address.pincode,
+      city: address.city,
     });
-
-    if (!zone) {
-      throw ApiError.badRequest(`Delivery not available in ${address.city}`, [{ field: 'city', code: 'DELIVERY_NOT_AVAILABLE', message: `Delivery not available in ${address.city}` }], 'DELIVERY_NOT_AVAILABLE');
-    }
-
-    if (zone.pincodes.length > 0 && !zone.pincodes.includes(address.pincode)) {
-      throw ApiError.badRequest(`Delivery not available for pincode ${address.pincode}`, [{ field: 'pincode', code: 'DELIVERY_NOT_AVAILABLE_PINCODE', message: `Delivery not available for pincode ${address.pincode}` }], 'DELIVERY_NOT_AVAILABLE_PINCODE');
-    }
+    serviceability.assertDeliveryDateAllowed(zone, deliveryDate);
 
     return { cart, address, zone };
   }

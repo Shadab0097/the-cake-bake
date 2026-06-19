@@ -69,11 +69,29 @@ const startNotificationWorker = () => {
 const closeWebServer = async () => {
   if (!server) return;
 
+  const activeServer = server;
+
   await new Promise((resolve, reject) => {
-    server.close((err) => {
+    let drainTimer = null;
+
+    activeServer.close((err) => {
+      if (drainTimer) clearInterval(drainTimer);
       if (err) reject(err);
       else resolve();
     });
+
+    // server.close() stops accepting new connections but does NOT terminate
+    // idle HTTP keep-alive sockets. Behind a load balancer that pools keep-alive
+    // connections this leaves close() pending until the force-exit timer fires,
+    // making every deploy stall ~10s and risking force-killed in-flight requests.
+    // Repeatedly close idle sockets (Node >= 18.2) so connections drop as soon as
+    // their in-flight request finishes and goes idle, letting close() complete
+    // promptly while still draining active requests.
+    if (typeof activeServer.closeIdleConnections === 'function') {
+      activeServer.closeIdleConnections();
+      drainTimer = setInterval(() => activeServer.closeIdleConnections(), 500);
+      drainTimer.unref?.();
+    }
   });
 
   server = null;

@@ -43,6 +43,15 @@ const deliveryZoneSchema = new mongoose.Schema(
       type: String,
       default: '14:00',
     },
+    // 'live' = delivering now; 'coming_soon' = configured but not yet serviceable.
+    // Coming-soon zones are excluded from the public checkout zone list but are
+    // still matched by check-pincode so the storefront can show a teaser.
+    status: {
+      type: String,
+      enum: ['live', 'coming_soon'],
+      default: 'live',
+      index: true,
+    },
     isActive: {
       type: Boolean,
       default: true,

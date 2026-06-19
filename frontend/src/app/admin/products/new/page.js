@@ -1,18 +1,18 @@
 'use client';
 
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useRef } from 'react';
 import { useRouter } from 'next/navigation';
 import adminApi, { PRODUCT_TAGS, OCCASIONS } from '@/lib/adminApi';
 import { AdminToast, useAdminToast } from '@/components/admin/AdminUI';
-import AdminImageUpload from '@/components/admin/AdminImageUpload';
-import { createImagePreview, deleteAdminImage, uploadAdminImage, validateImageFiles } from '@/lib/uploadApi';
+import AdminImageGallery from '@/components/admin/AdminImageGallery';
+import { deleteAdminImage, prepareProductImages } from '@/lib/uploadApi';
 
 const emptyProduct = {
   name: '', description: '', shortDescription: '', category: '',
   basePrice: '', tags: [], occasions: [], flavors: '',
   isEggless: false, hasEgglessOption: false, egglessExtraPrice: '',
   isFeatured: false, isVeg: false, cities: '',
-  images: [{ url: '', alt: '' }],
+  images: [],
   seo: { title: '', description: '', keywords: '' },
   variants: [{ weight: '', price: '', compareAtPrice: '', sku: '', stock: 999 }],
 };
@@ -21,10 +21,12 @@ export default function AdminNewProductPage() {
   const [form, setForm] = useState(emptyProduct);
   const [categories, setCategories] = useState([]);
   const [saving, setSaving] = useState(false);
-  const [imageFile, setImageFile] = useState(null);
-  const [imagePreview, setImagePreview] = useState('');
   const { toast, showToast, hideToast } = useAdminToast();
   const router = useRouter();
+
+  // Track latest images so we can revoke object-URL previews on unmount.
+  const imagesRef = useRef(form.images);
+  imagesRef.current = form.images;
 
   useEffect(() => {
     adminApi.categories.list().then(res => {
@@ -34,47 +36,19 @@ export default function AdminNewProductPage() {
 
   useEffect(() => {
     return () => {
-      if (imagePreview) URL.revokeObjectURL(imagePreview);
+      imagesRef.current?.forEach((img) => img?.previewUrl && URL.revokeObjectURL(img.previewUrl));
     };
-  }, [imagePreview]);
+  }, []);
 
   const set = (key, val) => setForm(f => ({ ...f, [key]: val }));
-
-  const handleImageFile = (file) => {
-    if (!file) return;
-    try {
-      validateImageFiles([file]);
-      if (imagePreview) URL.revokeObjectURL(imagePreview);
-      setImageFile(file);
-      setImagePreview(createImagePreview(file));
-    } catch (err) {
-      showToast(err.message || 'Invalid image file', 'error');
-    }
-  };
-
-  const clearImageFile = () => {
-    if (imagePreview) URL.revokeObjectURL(imagePreview);
-    setImageFile(null);
-    setImagePreview('');
-  };
 
   const handleSubmit = async (e) => {
     e.preventDefault();
     setSaving(true);
-    let uploadedImage = null;
+    let uploadedPublicIds = [];
     try {
-      if (imageFile) {
-        uploadedImage = await uploadAdminImage(imageFile, 'products');
-      }
-
-      const productImages = uploadedImage
-        ? [{ url: uploadedImage.url, publicId: uploadedImage.publicId, alt: form.name, sortOrder: 0 }]
-        : form.images.filter(img => img.url).map((img, index) => ({
-            url: img.url,
-            publicId: img.publicId || '',
-            alt: img.alt || form.name,
-            sortOrder: img.sortOrder || index,
-          }));
+      const prepared = await prepareProductImages(form.images, { altFallback: form.name });
+      uploadedPublicIds = prepared.uploadedPublicIds;
 
       const data = {
         ...form,
@@ -82,7 +56,7 @@ export default function AdminNewProductPage() {
         egglessExtraPrice: form.egglessExtraPrice ? Number(form.egglessExtraPrice) : 0,
         flavors: form.flavors ? form.flavors.split(',').map(f => f.trim()).filter(Boolean) : [],
         cities: form.cities ? form.cities.split(',').map(c => c.trim()).filter(Boolean) : [],
-        images: productImages,
+        images: prepared.productImages,
         variants: form.variants.filter(v => v.weight && v.price).map(v => ({
           weight: v.weight,
           price: Number(v.price),
@@ -95,10 +69,10 @@ export default function AdminNewProductPage() {
       showToast('Product created successfully');
       setTimeout(() => router.push('/admin/products'), 1000);
     } catch (err) {
-      if (uploadedImage?.publicId && err.response) {
-        deleteAdminImage(uploadedImage.publicId).catch(() => {});
+      if (uploadedPublicIds.length && err.response) {
+        await Promise.all(uploadedPublicIds.map((id) => deleteAdminImage(id).catch(() => {})));
       }
-      showToast(err.response?.data?.message || 'Failed to create product', 'error');
+      showToast(err.response?.data?.message || err.message || 'Failed to create product', 'error');
     } finally {
       setSaving(false);
     }
@@ -205,18 +179,12 @@ export default function AdminNewProductPage() {
         </div>
 
         <div className="admin-card" style={{ marginBottom: '1.5rem' }}>
-          <h3 style={{ marginTop: 0 }}>Product Image</h3>
-          <AdminImageUpload
-            label="Product Image"
-            value={form.images[0]?.url || ''}
-            previewUrl={imagePreview}
-            file={imageFile}
-            onFileChange={handleImageFile}
-            onClearFile={clearImageFile}
-            onUrlChange={(value) => {
-              clearImageFile();
-              setForm(f => ({ ...f, images: [{ url: value, publicId: '', alt: f.name }] }));
-            }}
+          <h3 style={{ marginTop: 0 }}>Product Images</h3>
+          <AdminImageGallery
+            images={form.images}
+            altText={form.name}
+            onChange={(images) => set('images', images)}
+            onError={(message) => showToast(message, 'error')}
           />
         </div>
 

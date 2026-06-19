@@ -1,12 +1,12 @@
 'use client';
 
-import { useState, useEffect, useCallback, use } from 'react';
+import { useState, useEffect, useCallback, useRef, use } from 'react';
 import { useRouter } from 'next/navigation';
 import adminApi, { PRODUCT_TAGS } from '@/lib/adminApi';
 import { AdminToast, useAdminToast } from '@/components/admin/AdminUI';
 import { HiOutlineArrowLeft } from 'react-icons/hi2';
-import AdminImageUpload from '@/components/admin/AdminImageUpload';
-import { createImagePreview, deleteAdminImage, uploadAdminImage, validateImageFiles } from '@/lib/uploadApi';
+import AdminImageGallery from '@/components/admin/AdminImageGallery';
+import { deleteAdminImage, prepareProductImages } from '@/lib/uploadApi';
 
 export default function AdminEditProductPage({ params }) {
   const { id } = use(params);
@@ -14,10 +14,12 @@ export default function AdminEditProductPage({ params }) {
   const [categories, setCategories] = useState([]);
   const [saving, setSaving] = useState(false);
   const [loading, setLoading] = useState(true);
-  const [imageFile, setImageFile] = useState(null);
-  const [imagePreview, setImagePreview] = useState('');
   const { toast, showToast, hideToast } = useAdminToast();
   const router = useRouter();
+
+  // Track latest images so we can revoke object-URL previews on unmount.
+  const imagesRef = useRef([]);
+  imagesRef.current = form?.images || [];
 
   const fetchProduct = useCallback(async () => {
     try {
@@ -35,7 +37,9 @@ export default function AdminEditProductPage({ params }) {
           flavors: (product.flavors || []).join(', '),
           cities: (product.cities || []).join(', '),
           egglessExtraPrice: product.egglessExtraPrice || '',
-          images: product.images?.length ? product.images : [{ url: '', alt: '' }],
+          images: (product.images || [])
+            .filter((img) => img?.url)
+            .map((img) => ({ url: img.url, publicId: img.publicId || '', alt: img.alt || '' })),
           seo: product.seo || { title: '', description: '', keywords: '' },
         });
       }
@@ -49,47 +53,19 @@ export default function AdminEditProductPage({ params }) {
   useEffect(() => { fetchProduct(); }, [fetchProduct]);
   useEffect(() => {
     return () => {
-      if (imagePreview) URL.revokeObjectURL(imagePreview);
+      imagesRef.current?.forEach((img) => img?.previewUrl && URL.revokeObjectURL(img.previewUrl));
     };
-  }, [imagePreview]);
+  }, []);
 
   const set = (key, val) => setForm(f => ({ ...f, [key]: val }));
-
-  const handleImageFile = (file) => {
-    if (!file) return;
-    try {
-      validateImageFiles([file]);
-      if (imagePreview) URL.revokeObjectURL(imagePreview);
-      setImageFile(file);
-      setImagePreview(createImagePreview(file));
-    } catch (err) {
-      showToast(err.message || 'Invalid image file', 'error');
-    }
-  };
-
-  const clearImageFile = () => {
-    if (imagePreview) URL.revokeObjectURL(imagePreview);
-    setImageFile(null);
-    setImagePreview('');
-  };
 
   const handleSubmit = async (e) => {
     e.preventDefault();
     setSaving(true);
-    let uploadedImage = null;
+    let uploadedPublicIds = [];
     try {
-      if (imageFile) {
-        uploadedImage = await uploadAdminImage(imageFile, 'products');
-      }
-
-      const productImages = uploadedImage
-        ? [{ url: uploadedImage.url, publicId: uploadedImage.publicId, alt: form.name, sortOrder: 0 }]
-        : (form.images?.filter(img => img.url) || []).map((img, index) => ({
-            url: img.url,
-            publicId: img.publicId || '',
-            alt: img.alt || form.name,
-            sortOrder: img.sortOrder || index,
-          }));
+      const prepared = await prepareProductImages(form.images, { altFallback: form.name });
+      uploadedPublicIds = prepared.uploadedPublicIds;
 
       const data = {
         name: form.name, description: form.description, shortDescription: form.shortDescription,
@@ -100,18 +76,19 @@ export default function AdminEditProductPage({ params }) {
         cities: typeof form.cities === 'string' ? form.cities.split(',').map(c => c.trim()).filter(Boolean) : form.cities,
         isEggless: form.isEggless, hasEgglessOption: form.hasEgglessOption,
         isFeatured: form.isFeatured, isVeg: form.isVeg, isActive: form.isActive,
-        images: productImages,
+        images: prepared.productImages,
         seo: form.seo,
       };
       await adminApi.products.update(id, data);
       showToast('Product updated successfully');
-      clearImageFile();
-      setForm(f => ({ ...f, images: productImages }));
+      // Replace local entries (which may include File previews) with the saved
+      // image set so previews are released and state stays consistent.
+      setForm(f => ({ ...f, images: prepared.productImages.map((img) => ({ url: img.url, publicId: img.publicId, alt: img.alt })) }));
     } catch (err) {
-      if (uploadedImage?.publicId && err.response) {
-        deleteAdminImage(uploadedImage.publicId).catch(() => {});
+      if (uploadedPublicIds.length && err.response) {
+        await Promise.all(uploadedPublicIds.map((pid) => deleteAdminImage(pid).catch(() => {})));
       }
-      showToast(err.response?.data?.message || 'Update failed', 'error');
+      showToast(err.response?.data?.message || err.message || 'Update failed', 'error');
     } finally {
       setSaving(false);
     }
@@ -193,18 +170,12 @@ export default function AdminEditProductPage({ params }) {
         </div>
 
         <div className="admin-card" style={{ marginBottom: '1.5rem' }}>
-          <h3 style={{ marginTop: 0 }}>Product Image</h3>
-          <AdminImageUpload
-            label="Product Image"
-            value={form.images?.[0]?.url || ''}
-            previewUrl={imagePreview}
-            file={imageFile}
-            onFileChange={handleImageFile}
-            onClearFile={clearImageFile}
-            onUrlChange={(value) => {
-              clearImageFile();
-              setForm(f => ({ ...f, images: [{ url: value, publicId: '', alt: f.name }] }));
-            }}
+          <h3 style={{ marginTop: 0 }}>Product Images</h3>
+          <AdminImageGallery
+            images={form.images}
+            altText={form.name}
+            onChange={(images) => set('images', images)}
+            onError={(message) => showToast(message, 'error')}
           />
         </div>
 

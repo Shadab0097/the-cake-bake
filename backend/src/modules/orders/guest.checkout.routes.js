@@ -10,8 +10,8 @@ const Payment = require('../../models/Payment');
 const Product = require('../../models/Product');
 const Variant = require('../../models/Variant');
 const AddOn = require('../../models/AddOn');
-const DeliveryZone = require('../../models/DeliveryZone');
 const { generateOrderNumber } = require('../../utils/helpers');
+const serviceability = require('../delivery/serviceability');
 const { ORDER_STATUSES, PAYMENT_STATUSES } = require('../../utils/constants');
 const { sanitize } = require('../../utils/xssSanitizer');
 const cache = require('../../utils/cache');
@@ -38,8 +38,8 @@ const guestCheckoutSchema = Joi.object({
     addressLine2: Joi.string().trim().max(200).allow('').default(''),
     city: Joi.string().trim().min(2).max(100).required(),
     state: Joi.string().trim().min(2).max(100).required(),
-    pincode: Joi.string().trim().pattern(/^[0-9]{6}$/).required().messages({
-      'string.pattern.base': 'Pincode must be 6 digits',
+    pincode: Joi.string().trim().pattern(/^[1-9][0-9]{5}$/).required().messages({
+      'string.pattern.base': 'Pincode must be a valid 6-digit Indian pincode',
     }),
     landmark: Joi.string().trim().max(200).allow('').default(''),
   }).required(),
@@ -113,20 +113,12 @@ router.post(
       guestFingerprint: idempotencyService.guestFingerprint(guestInfo),
       payload: value,
       handler: async () => {
-    // ── Delivery zone check ──────────────────────────────────────────────────
-    const escapeRegex = require('../../utils/helpers').escapeRegex;
-    const zone = await DeliveryZone.findOne({
-      city: { $regex: new RegExp(`^${escapeRegex(shippingAddress.city)}$`, 'i') },
-      isActive: true,
+    // ── Serviceability gate (live zone by pincode) + same-day cutoff ─────────
+    const zone = await serviceability.resolveServiceableZone({
+      pincode: shippingAddress.pincode,
+      city: shippingAddress.city,
     });
-
-    if (!zone) {
-      throw ApiError.badRequest(`Delivery not available in ${shippingAddress.city}`, [{ field: 'shippingAddress.city', code: 'DELIVERY_NOT_AVAILABLE', message: `Delivery not available in ${shippingAddress.city}` }], 'DELIVERY_NOT_AVAILABLE');
-    }
-
-    if (zone.pincodes.length > 0 && !zone.pincodes.includes(shippingAddress.pincode)) {
-      throw ApiError.badRequest(`Delivery not available for pincode ${shippingAddress.pincode}`, [{ field: 'shippingAddress.pincode', code: 'DELIVERY_NOT_AVAILABLE_PINCODE', message: `Delivery not available for pincode ${shippingAddress.pincode}` }], 'DELIVERY_NOT_AVAILABLE_PINCODE');
-    }
+    serviceability.assertDeliveryDateAllowed(zone, deliveryDate);
 
     // ── FIX: Server-side price calculation ──────────────────────────────────
     // Load all products + variants + addons from DB. Never trust client prices.

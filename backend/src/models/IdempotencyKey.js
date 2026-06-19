@@ -46,7 +46,8 @@ const idempotencyKeySchema = new mongoose.Schema(
     expiresAt: {
       type: Date,
       required: true,
-      index: true,
+      // Indexed via TTL index below (schema.index with expireAfterSeconds);
+      // no inline index here to avoid a duplicate index definition.
     },
     completedAt: {
       type: Date,

@@ -5,7 +5,7 @@ import adminApi, { formatPrice } from '@/lib/adminApi';
 import { AdminModal, AdminToast, useAdminToast, EmptyState, LoadingSkeleton, RefreshButton } from '@/components/admin/AdminUI';
 
 const emptySlot = { label: '', startTime: '', endTime: '', maxOrders: 50, extraCharge: 0, isActive: true, cities: '', sortOrder: 0 };
-const emptyZone = { state: '', city: '', pincodes: '', areas: '', deliveryCharge: '', freeDeliveryAbove: '', sameDayAvailable: false, sameDayCutoffTime: '14:00', isActive: true };
+const emptyZone = { state: '', city: '', pincodes: '', areas: '', deliveryCharge: '', freeDeliveryAbove: '', sameDayAvailable: false, sameDayCutoffTime: '14:00', status: 'live', isActive: true };
 
 export default function AdminDeliveryPage() {
   const [tab, setTab] = useState('slots');
@@ -121,7 +121,7 @@ export default function AdminDeliveryPage() {
           {zones.length === 0 ? <EmptyState message="No delivery zones" icon="🗺️" /> : (
             <div className="admin-table-wrap">
               <table className="admin-table">
-                <thead><tr><th>State</th><th>City</th><th>Areas</th><th>Delivery Charge</th><th>Free Above</th><th>Same Day</th><th>Cutoff</th><th>Active</th><th>Actions</th></tr></thead>
+                <thead><tr><th>State</th><th>City</th><th>Areas</th><th>Delivery Charge</th><th>Free Above</th><th>Same Day</th><th>Cutoff</th><th>Status</th><th>Active</th><th>Actions</th></tr></thead>
                 <tbody>
                   {zones.map(z => (
                     <tr key={z._id}>
@@ -140,6 +140,7 @@ export default function AdminDeliveryPage() {
                       <td>{z.freeDeliveryAbove ? formatPrice(z.freeDeliveryAbove) : '—'}</td>
                       <td>{z.sameDayAvailable ? <span style={{ color: 'var(--admin-success)' }}>✓</span> : '—'}</td>
                       <td style={{ color: 'var(--admin-text-secondary)' }}>{z.sameDayCutoffTime || '—'}</td>
+                      <td><span className={`admin-badge ${z.status === 'coming_soon' ? 'badge-inactive' : 'badge-active'}`}>{z.status === 'coming_soon' ? 'Coming soon' : 'Live'}</span></td>
                       <td><span className={`admin-badge ${z.isActive !== false ? 'badge-active' : 'badge-inactive'}`}>{z.isActive !== false ? 'Active' : 'Inactive'}</span></td>
                       <td><button className="admin-btn admin-btn-ghost admin-btn-sm" onClick={() => openModal('zone', 'edit', z)}>Edit</button></td>
                     </tr>
@@ -181,6 +182,7 @@ export default function AdminDeliveryPage() {
             </div>
             <div className="admin-field"><label className="admin-label">Pincodes (comma-separated)</label><input className="admin-input" value={form.pincodes || ''} onChange={e => setForm(f => ({ ...f, pincodes: e.target.value }))} placeholder="400001, 400002" /></div>
             <div className="admin-field"><label className="admin-label">Areas / Sectors (comma-separated)</label><input className="admin-input" value={form.areas || ''} onChange={e => setForm(f => ({ ...f, areas: e.target.value }))} placeholder="Sector 4, Sector 9, DLF Phase 1" /><p style={{ fontSize: '0.75rem', color: 'var(--admin-text-muted)', marginTop: '0.25rem' }}>These appear as dropdown options for customers at checkout</p></div>
+            <div className="admin-field"><label className="admin-label">Status</label><select className="admin-input" value={form.status || 'live'} onChange={e => setForm(f => ({ ...f, status: e.target.value }))}><option value="live">Live — delivering now</option><option value="coming_soon">Coming soon — show teaser, no orders</option></select><p style={{ fontSize: '0.75rem', color: 'var(--admin-text-muted)', marginTop: '0.25rem' }}>Coming-soon zones are hidden from checkout but customers checking this pincode see a “launching soon” message.</p></div>
             <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '1rem' }}>
               <label style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', fontSize: '0.875rem', color: 'var(--admin-text-secondary)', cursor: 'pointer' }}>
                 <input type="checkbox" checked={!!form.sameDayAvailable} onChange={e => setForm(f => ({ ...f, sameDayAvailable: e.target.checked }))} /> Same Day Available

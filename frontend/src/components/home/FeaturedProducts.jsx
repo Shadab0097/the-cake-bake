@@ -6,6 +6,7 @@ import { FiArrowRight } from 'react-icons/fi';
 import api from '@/lib/api';
 import ProductCard from '@/components/ui/ProductCard';
 import { ProductGridSkeleton } from '@/components/ui/Skeleton';
+import SprinklePattern from '@/components/ui/SprinklePattern';
 
 const fetchFeaturedProducts = () =>
   api.get('/products/featured?limit=8').then((res) => res.data?.data || []);
@@ -44,8 +45,9 @@ export default function FeaturedProducts() {
   }, []);
 
   return (
-    <section className="py-12 lg:py-16 bg-surface-container-low">
-      <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
+    <section className="relative overflow-hidden py-12 lg:py-16 bg-surface-container-low">
+      <SprinklePattern opacity={0.45} />
+      <div className="relative z-10 max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
         <div className="flex items-end justify-between mb-8">
           <div>
             <h2 className="text-2xl lg:text-3xl font-bold text-dark mb-1">

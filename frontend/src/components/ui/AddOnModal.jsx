@@ -11,12 +11,12 @@ import { formatPrice, getOptimizedImageUrl } from '@/lib/utils';
 import api from '@/lib/api';
 
 const CATEGORY_META = {
-  candles:     { icon: '🕯️', label: 'Candles',     color: '#FFB74D' },
-  flowers:     { icon: '🌸', label: 'Flowers',     color: '#F06292' },
-  cards:       { icon: '💌', label: 'Cards',       color: '#BA68C8' },
-  balloons:    { icon: '🎈', label: 'Balloons',    color: '#4FC3F7' },
-  gifts:       { icon: '🎁', label: 'Gifts',       color: '#81C784' },
-  decorations: { icon: '✨', label: 'Decorations', color: '#FFD54F' },
+  candles:     { icon: '🕯️', label: 'Candles' },
+  flowers:     { icon: '🌸', label: 'Flowers' },
+  cards:       { icon: '💌', label: 'Cards' },
+  balloons:    { icon: '🎈', label: 'Balloons' },
+  gifts:       { icon: '🎁', label: 'Gifts' },
+  decorations: { icon: '✨', label: 'Decorations' },
 };
 
 export default function AddOnModal({ isOpen, onClose }) {
@@ -125,41 +125,47 @@ export default function AddOnModal({ isOpen, onClose }) {
             animate={{ opacity: 1 }}
             exit={{ opacity: 0 }}
             onClick={handleSkip}
-            className="fixed inset-0 bg-black/60 z-[60] backdrop-blur-sm"
+            className="fixed inset-0 bg-on-surface/50 z-[60] backdrop-blur-sm"
           />
 
           {/* Modal */}
           <motion.div
-            initial={{ opacity: 0, scale: 0.92, y: 30 }}
+            initial={{ opacity: 0, scale: 0.98, y: 40 }}
             animate={{ opacity: 1, scale: 1, y: 0 }}
-            exit={{ opacity: 0, scale: 0.92, y: 30 }}
-            transition={{ type: 'spring', damping: 26, stiffness: 280 }}
-            className="fixed inset-0 z-[61] flex items-center justify-center p-4 pointer-events-none"
+            exit={{ opacity: 0, scale: 0.98, y: 40 }}
+            transition={{ type: 'spring', damping: 28, stiffness: 300 }}
+            className="fixed inset-0 z-[61] flex items-end sm:items-center justify-center p-0 sm:p-4 pointer-events-none"
           >
             <div
-              className="pointer-events-auto w-full max-w-2xl bg-white rounded-3xl shadow-2xl flex flex-col overflow-hidden"
-              style={{ maxHeight: 'min(88vh, 700px)' }}
+              className="pointer-events-auto w-full sm:max-w-2xl bg-surface-container-lowest rounded-t-3xl sm:rounded-3xl shadow-[0_24px_64px_rgba(26,28,26,0.28)] flex flex-col overflow-hidden"
+              style={{ maxHeight: 'min(92vh, 720px)' }}
             >
-              {/* ─── Header ─── */}
-              <div className="relative px-6 pt-6 pb-4">
-                {/* Gradient accent bar */}
-                <div className="absolute top-0 left-0 right-0 h-1 bg-gradient-to-r from-pink-400 via-purple-400 to-indigo-400 rounded-t-3xl" />
+              {/* Gradient accent bar */}
+              <div className="h-1 w-full gradient-primary shrink-0" />
 
-                <div className="flex items-start justify-between">
-                  <div className="flex items-center gap-3">
-                    <div className="w-11 h-11 rounded-2xl bg-gradient-to-br from-pink-500 to-purple-600 flex items-center justify-center shadow-lg shadow-pink-500/25">
+              {/* Mobile drag handle */}
+              <div className="sm:hidden flex justify-center pt-3 shrink-0">
+                <span className="h-1.5 w-11 rounded-full bg-outline-variant/60" />
+              </div>
+
+              {/* ─── Header ─── */}
+              <div className="px-5 sm:px-6 pt-4 sm:pt-6 pb-4 shrink-0">
+                <div className="flex items-start justify-between gap-3">
+                  <div className="flex items-center gap-3 min-w-0">
+                    <div className="w-11 h-11 rounded-2xl gradient-primary flex items-center justify-center shadow-lg shadow-primary/25 shrink-0">
                       <FiGift className="w-5 h-5 text-white" />
                     </div>
-                    <div>
-                      <h2 className="text-lg font-bold text-gray-900">Make it Extra Special</h2>
-                      <p className="text-xs text-gray-500 mt-0.5">Add extras to your cake order</p>
+                    <div className="min-w-0">
+                      <h2 className="text-lg font-bold text-dark truncate">Make it Extra Special</h2>
+                      <p className="text-xs text-outline mt-0.5">Add a finishing touch to your celebration</p>
                     </div>
                   </div>
                   <button
                     onClick={handleSkip}
-                    className="p-2 -mr-1 -mt-1 rounded-xl hover:bg-gray-100 transition-colors"
+                    aria-label="Close"
+                    className="p-2 -mr-1 -mt-1 rounded-xl hover:bg-surface-container transition-colors shrink-0"
                   >
-                    <FiX className="w-5 h-5 text-gray-400" />
+                    <FiX className="w-5 h-5 text-outline" />
                   </button>
                 </div>
 
@@ -174,13 +180,13 @@ export default function AddOnModal({ isOpen, onClose }) {
                           onClick={() => setActiveItem(idx)}
                           className={`relative shrink-0 px-4 py-2 rounded-xl text-xs font-semibold transition-all border-2 ${
                             activeItem === idx
-                              ? 'border-pink-500 bg-pink-50 text-pink-700'
-                              : 'border-gray-200 text-gray-600 hover:border-gray-300'
+                              ? 'border-pink-deep bg-pink-light/30 text-pink-deep'
+                              : 'border-outline-variant/40 text-on-surface-variant hover:border-outline-variant'
                           }`}
                         >
                           {getItemName(item) || `Item ${idx + 1}`}
                           {count > 0 && (
-                            <span className="absolute -top-1.5 -right-1.5 w-5 h-5 rounded-full bg-pink-500 text-white text-[10px] font-bold flex items-center justify-center shadow">
+                            <span className="absolute -top-1.5 -right-1.5 w-5 h-5 rounded-full bg-pink-deep text-white text-[10px] font-bold flex items-center justify-center shadow">
                               {count}
                             </span>
                           )}
@@ -193,19 +199,19 @@ export default function AddOnModal({ isOpen, onClose }) {
 
               {/* ─── Currently Configuring ─── */}
               {currentItem && (
-                <div className="mx-6 mb-3 flex items-center gap-2.5 px-4 py-2.5 bg-gray-50 rounded-xl border border-gray-100">
-                  <FiShoppingBag className="w-4 h-4 text-pink-500 shrink-0" />
-                  <span className="text-xs font-medium text-gray-700 line-clamp-1">
-                    Adding extras for: <span className="font-bold text-gray-900">{getItemName(currentItem)}</span>
+                <div className="mx-5 sm:mx-6 mb-3 flex items-center gap-2.5 px-4 py-2.5 bg-surface-container-low rounded-xl border border-outline-variant/20 shrink-0">
+                  <FiShoppingBag className="w-4 h-4 text-pink-deep shrink-0" />
+                  <span className="text-xs font-medium text-on-surface-variant line-clamp-1">
+                    Adding extras for: <span className="font-bold text-dark">{getItemName(currentItem)}</span>
                   </span>
                 </div>
               )}
 
               {/* ─── Category Pills ─── */}
               {categories.length > 0 && (
-                <div className="flex gap-2 px-6 pb-3 overflow-x-auto no-scrollbar">
+                <div className="flex gap-2 px-5 sm:px-6 pb-3 overflow-x-auto no-scrollbar shrink-0">
                   {categories.map((cat) => {
-                    const meta = CATEGORY_META[cat] || { icon: '📦', label: cat, color: '#9E9E9E' };
+                    const meta = CATEGORY_META[cat] || { icon: '📦', label: cat };
                     const active = activeCategory === cat;
                     return (
                       <button
@@ -213,10 +219,9 @@ export default function AddOnModal({ isOpen, onClose }) {
                         onClick={() => setActiveCategory(cat)}
                         className={`shrink-0 flex items-center gap-1.5 px-4 py-2 rounded-full text-xs font-semibold transition-all ${
                           active
-                            ? 'text-white shadow-md'
-                            : 'bg-gray-100 text-gray-600 hover:bg-gray-200'
+                            ? 'bg-pink-deep text-white shadow-md shadow-pink-deep/30'
+                            : 'bg-surface-container text-on-surface-variant hover:bg-surface-container-high'
                         }`}
-                        style={active ? { backgroundColor: meta.color, boxShadow: `0 4px 12px ${meta.color}40` } : {}}
                       >
                         <span className="text-sm">{meta.icon}</span>
                         {meta.label}
@@ -227,15 +232,15 @@ export default function AddOnModal({ isOpen, onClose }) {
               )}
 
               {/* ─── Add-ons Grid ─── */}
-              <div className="flex-1 overflow-y-auto px-6 py-4 border-t border-gray-100">
+              <div className="flex-1 overflow-y-auto px-5 sm:px-6 py-4 border-t border-outline-variant/15">
                 {loadingAddons ? (
                   <div className="grid grid-cols-2 sm:grid-cols-3 gap-3">
                     {Array.from({ length: 6 }).map((_, i) => (
-                      <div key={i} className="h-32 rounded-2xl bg-gray-100 animate-pulse" />
+                      <div key={i} className="h-32 rounded-2xl bg-surface-container-low animate-pulse" />
                     ))}
                   </div>
                 ) : filteredAddons.length === 0 ? (
-                  <div className="flex flex-col items-center justify-center py-12 text-gray-400">
+                  <div className="flex flex-col items-center justify-center py-12 text-outline">
                     <span className="text-4xl mb-3">{CATEGORY_META[activeCategory]?.icon || '📦'}</span>
                     <p className="text-sm font-medium">No {activeCategory} add-ons available</p>
                   </div>
@@ -243,7 +248,6 @@ export default function AddOnModal({ isOpen, onClose }) {
                   <div className="grid grid-cols-2 sm:grid-cols-3 gap-3">
                     {filteredAddons.map((addon) => {
                       const selected = currentItem && isSelected(currentItem, addon);
-                      const meta = CATEGORY_META[addon.category] || { color: '#9E9E9E' };
                       const addonImage = getOptimizedImageUrl(addon.image, 'addon');
                       return (
                         <motion.button
@@ -253,15 +257,12 @@ export default function AddOnModal({ isOpen, onClose }) {
                           onClick={() => currentItem && toggleAddon(currentItem, addon)}
                           className={`relative text-left rounded-2xl border-2 transition-all overflow-hidden group ${
                             selected
-                              ? 'border-pink-500 bg-pink-50 shadow-md shadow-pink-500/10'
-                              : 'border-gray-200 bg-white hover:border-gray-300 hover:shadow-sm'
+                              ? 'border-pink-deep bg-pink-light/20 shadow-md shadow-pink-deep/10'
+                              : 'border-outline-variant/30 bg-surface-container-lowest hover:border-outline-variant hover:shadow-sm'
                           }`}
                         >
                           {/* Top accent */}
-                          <div
-                            className="h-1 w-full transition-opacity"
-                            style={{ backgroundColor: meta.color, opacity: selected ? 1 : 0.3 }}
-                          />
+                          <div className={`h-1 w-full transition-colors ${selected ? 'bg-pink-deep' : 'bg-transparent'}`} />
 
                           <div className="p-3">
                             {/* Selected checkmark */}
@@ -271,7 +272,7 @@ export default function AddOnModal({ isOpen, onClose }) {
                                   initial={{ scale: 0, rotate: -90 }}
                                   animate={{ scale: 1, rotate: 0 }}
                                   exit={{ scale: 0, rotate: 90 }}
-                                  className="absolute top-3 right-3 w-6 h-6 rounded-full bg-pink-500 flex items-center justify-center shadow-lg shadow-pink-500/30"
+                                  className="absolute top-3 right-3 w-6 h-6 rounded-full bg-pink-deep flex items-center justify-center shadow-lg shadow-pink-deep/30"
                                 >
                                   <FiCheck className="w-3.5 h-3.5 text-white" strokeWidth={3} />
                                 </motion.div>
@@ -279,7 +280,7 @@ export default function AddOnModal({ isOpen, onClose }) {
                             </AnimatePresence>
 
                             {/* Icon / Image */}
-                            <div className="w-12 h-12 rounded-xl bg-gray-100 flex items-center justify-center mb-2.5 text-2xl group-hover:scale-105 transition-transform">
+                            <div className="w-12 h-12 rounded-xl bg-surface-container-low flex items-center justify-center mb-2.5 text-2xl group-hover:scale-105 transition-transform overflow-hidden">
                               {addonImage ? (
                                 <Image
                                   src={addonImage}
@@ -293,16 +294,16 @@ export default function AddOnModal({ isOpen, onClose }) {
                               )}
                             </div>
 
-                            <p className="text-sm font-semibold text-gray-900 line-clamp-2 leading-tight mb-1.5">
+                            <p className="text-sm font-semibold text-dark line-clamp-2 leading-tight mb-1.5">
                               {addon.name}
                             </p>
 
                             <div className="flex items-center justify-between">
-                              <span className="text-sm font-bold text-pink-600">
+                              <span className="text-sm font-bold text-pink-deep">
                                 +{formatPrice(addon.price)}
                               </span>
                               {!selected && (
-                                <span className="text-[10px] font-semibold text-gray-400 uppercase tracking-wide">
+                                <span className="text-[10px] font-semibold text-outline uppercase tracking-wide">
                                   Add
                                 </span>
                               )}
@@ -316,24 +317,26 @@ export default function AddOnModal({ isOpen, onClose }) {
               </div>
 
               {/* ─── Footer ─── */}
-              <div className="px-6 py-5 border-t border-gray-100 bg-gray-50/50">
+              <div
+                className="px-5 sm:px-6 py-4 sm:py-5 border-t border-outline-variant/15 bg-surface-container-low/60 shrink-0"
+                style={{ paddingBottom: 'max(1rem, env(safe-area-inset-bottom))' }}
+              >
                 {totalAddonCost > 0 && (
-                  <div className="flex items-center justify-between mb-4 px-4 py-2.5 bg-green-50 rounded-xl border border-green-100">
-                    <span className="text-xs font-semibold text-green-700">Add-ons total</span>
-                    <span className="text-sm font-bold text-green-700">+{formatPrice(totalAddonCost)}</span>
+                  <div className="flex items-center justify-between mb-4 px-4 py-2.5 bg-success/10 rounded-xl border border-success/20">
+                    <span className="text-xs font-semibold text-success">Add-ons total</span>
+                    <span className="text-sm font-bold text-success">+{formatPrice(totalAddonCost)}</span>
                   </div>
                 )}
                 <div className="flex gap-3">
                   <button
                     onClick={handleSkip}
-                    className="flex-1 py-3.5 rounded-xl border-2 border-gray-200 text-gray-600 text-sm font-semibold hover:border-gray-300 hover:bg-white transition-all"
+                    className="flex-1 py-3.5 rounded-xl border-2 border-outline-variant/40 text-on-surface-variant text-sm font-semibold hover:border-outline-variant hover:bg-surface-container-lowest transition-all"
                   >
                     Skip
                   </button>
                   <button
                     onClick={handleConfirm}
-                    className="flex-[2] flex items-center justify-center gap-2 py-3.5 rounded-xl text-white text-sm font-bold hover:opacity-90 transition-all shadow-lg shadow-pink-500/25"
-                    style={{ background: 'linear-gradient(135deg, #ec4899 0%, #a855f7 100%)' }}
+                    className="flex-[2] flex items-center justify-center gap-2 py-3.5 rounded-xl gradient-primary text-white text-sm font-bold hover:opacity-90 transition-all shadow-lg shadow-primary/25"
                   >
                     {totalAddonCost > 0 ? `Add to Order · ${formatPrice(totalAddonCost)}` : 'Continue to Checkout'}
                     <FiChevronRight className="w-4 h-4" />

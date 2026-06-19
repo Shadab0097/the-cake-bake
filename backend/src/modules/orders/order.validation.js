@@ -30,7 +30,9 @@ const createOrder = {
       addressLine2: Joi.string().trim().allow('').default('').custom(joiSanitize),
       city: Joi.string().trim().required().custom(joiSanitize),
       state: Joi.string().trim().required().custom(joiSanitize),
-      pincode: Joi.string().trim().required(),
+      pincode: Joi.string().trim().pattern(/^[1-9][0-9]{5}$/).required().messages({
+        'string.pattern.base': 'Pincode must be a valid 6-digit Indian pincode',
+      }),
       landmark: Joi.string().trim().allow('').default('').custom(joiSanitize),
     }),
   }).messages(joiXssMessages),
@@ -50,7 +52,9 @@ const validateCheckout = {
       addressLine2: Joi.string().trim().allow(''),
       city: Joi.string().trim().required(),
       state: Joi.string().trim().required(),
-      pincode: Joi.string().trim().required(),
+      pincode: Joi.string().trim().pattern(/^[1-9][0-9]{5}$/).required().messages({
+        'string.pattern.base': 'Pincode must be a valid 6-digit Indian pincode',
+      }),
       landmark: Joi.string().trim().allow(''),
     }),
   }),
