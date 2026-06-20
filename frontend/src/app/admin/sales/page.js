@@ -22,6 +22,7 @@ import { LoadingSkeleton, RefreshButton } from '@/components/admin/AdminUI';
 import {
   RevenueTrendChart,
   HorizontalBarChart,
+  Sparkline,
   compactRupees,
   fullRupees,
 } from '@/components/admin/AdminCharts';
@@ -96,8 +97,9 @@ function SalesChartCard({ title, subtitle, action, keys, children }) {
   );
 }
 
-// Premium KPI card — icon chip, big value, trend pill vs the previous period.
-function SalesKpiCard({ label, value, previous, icon, trend, tone }) {
+// Premium KPI card — icon chip, big value, trend pill, daily sparkline, and
+// a "vs previous period" footer. The sparkline is tone-matched to the metric.
+function SalesKpiCard({ label, value, previous, icon, trend, tone, spark, sparkColor }) {
   const hasTrend = trend !== null && trend !== undefined;
   const direction = !hasTrend || trend === 0 ? 'flat' : trend > 0 ? 'up' : 'down';
   return (
@@ -112,6 +114,7 @@ function SalesKpiCard({ label, value, previous, icon, trend, tone }) {
       </div>
       <div className="admin-kpi-value">{value}</div>
       <div className="admin-kpi-label">{label}</div>
+      <Sparkline data={spark} color={sparkColor || tone} />
       <div className="admin-kpi-foot">
         <span className="admin-kpi-foot-label">vs prev</span>
         <span className="admin-kpi-foot-value">{previous}</span>
@@ -189,6 +192,16 @@ export default function AdminSalesPage() {
   const deltas = data?.deltas || {};
   const range = data?.range || {};
 
+  const revenueByDay = useMemo(() => data?.revenueByDay || [], [data]);
+
+  // Daily series powering each KPI's sparkline (revenue arrives in paise).
+  const sparks = useMemo(() => ({
+    revenue: revenueByDay.map((day) => (day.revenue || 0) / 100),
+    orders: revenueByDay.map((day) => day.orders || 0),
+    aov: revenueByDay.map((day) => (day.orders > 0 ? day.revenue / day.orders : 0) / 100),
+    units: revenueByDay.map((day) => day.units || 0),
+  }), [revenueByDay]);
+
   const kpis = [
     {
       key: 'revenue',
@@ -198,6 +211,7 @@ export default function AdminSalesPage() {
       icon: <HiOutlineCurrencyRupee />,
       trend: deltas.revenue,
       tone: 'accent',
+      spark: sparks.revenue,
     },
     {
       key: 'orders',
@@ -207,6 +221,7 @@ export default function AdminSalesPage() {
       icon: <HiOutlineShoppingBag />,
       trend: deltas.orders,
       tone: 'info',
+      spark: sparks.orders,
     },
     {
       key: 'aov',
@@ -216,6 +231,7 @@ export default function AdminSalesPage() {
       icon: <HiOutlineReceiptPercent />,
       trend: deltas.aov,
       tone: 'success',
+      spark: sparks.aov,
     },
     {
       key: 'units',
@@ -225,10 +241,9 @@ export default function AdminSalesPage() {
       icon: <HiOutlineCube />,
       trend: deltas.units,
       tone: 'violet',
+      spark: sparks.units,
     },
   ];
-
-  const revenueByDay = data?.revenueByDay || [];
 
   const productSeries = useMemo(
     () => (data?.topProducts || []).slice(0, 8).map((row) => ({
@@ -313,6 +328,26 @@ export default function AdminSalesPage() {
     }
   }, [tableDim, data]);
 
+  // One-click export of the four headline KPIs (current vs previous period).
+  const exportSummary = useCallback(() => {
+    if (!data) return;
+    const s = data.summary || {};
+    const p = data.previous || {};
+    const d = data.deltas || {};
+    const rows = [
+      { metric: 'Revenue', value: paiseToRupees(s.revenue || 0), previous: paiseToRupees(p.revenue || 0), change: d.revenue },
+      { metric: 'Orders', value: s.orders || 0, previous: p.orders || 0, change: d.orders },
+      { metric: 'Avg Order Value', value: paiseToRupees(s.aov || 0), previous: paiseToRupees(p.aov || 0), change: d.aov },
+      { metric: 'Units Sold', value: s.units || 0, previous: p.units || 0, change: d.units },
+    ];
+    exportToCsv(`sales-summary-${fmtLocal(new Date())}`, rows, [
+      { label: 'Metric', key: 'metric' },
+      { label: 'Value', key: 'value' },
+      { label: 'Previous', key: 'previous' },
+      { label: 'Change (%)', map: (row) => (row.change === null || row.change === undefined ? 'New' : row.change) },
+    ]);
+  }, [data]);
+
   const productName = useMemo(
     () => products.find((p) => p._id === filters.product)?.name || '',
     [products, filters.product],
@@ -322,18 +357,31 @@ export default function AdminSalesPage() {
 
   return (
     <div>
-      <div className="admin-page-header">
-        <div>
-          <div className="admin-page-kicker">Business</div>
-          <h1 className="admin-page-title">Sales</h1>
+      <div className="admin-page-header admin-sales-header">
+        <div className="admin-page-heading">
+          <div className="admin-page-kicker">Business · Analytics</div>
+          <h1 className="admin-page-title admin-title-gradient">Sales</h1>
           <div className="admin-page-subtitle">
             Revenue, products, add-ons, and locations — filter by date range, city, and product.
-            {range.from && range.to && (
-              <> &nbsp;·&nbsp; <strong>{formatDate(range.from)} – {formatDate(range.to)}</strong></>
-            )}
           </div>
         </div>
-        <RefreshButton onRefresh={() => fetchSales({ silent: true })} />
+        <div className="admin-page-actions">
+          {range.from && range.to && (
+            <span className="admin-range-pill" title="Active reporting window">
+              <HiOutlineCalendarDays aria-hidden />
+              {formatDate(range.from)} – {formatDate(range.to)}
+            </span>
+          )}
+          <button
+            type="button"
+            className="admin-btn admin-btn-secondary admin-btn-sm"
+            onClick={exportSummary}
+            disabled={!data}
+          >
+            <HiOutlineArrowDownTray aria-hidden /> Export
+          </button>
+          <RefreshButton onRefresh={() => fetchSales({ silent: true })} />
+        </div>
       </div>
 
       {/* Filter panel */}

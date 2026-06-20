@@ -422,13 +422,13 @@ class AdminService {
           { $match: matchFor(startDate, endDate) },
           { $unwind: '$items' },
           { $match: { 'items.product': productId } },
-          { $group: { _id: { $dateToString: { format: '%Y-%m-%d', date: '$createdAt' } }, revenue: { $sum: lineRevenue }, orders: { $addToSet: '$_id' } } },
-          { $project: { revenue: 1, orders: { $size: '$orders' } } },
+          { $group: { _id: { $dateToString: { format: '%Y-%m-%d', date: '$createdAt' } }, revenue: { $sum: lineRevenue }, units: { $sum: '$items.quantity' }, orders: { $addToSet: '$_id' } } },
+          { $project: { revenue: 1, units: 1, orders: { $size: '$orders' } } },
           { $sort: { _id: 1 } },
         ]
         : [
           { $match: matchFor(startDate, endDate) },
-          { $group: { _id: { $dateToString: { format: '%Y-%m-%d', date: '$createdAt' } }, revenue: { $sum: '$total' }, orders: { $sum: 1 } } },
+          { $group: { _id: { $dateToString: { format: '%Y-%m-%d', date: '$createdAt' } }, revenue: { $sum: '$total' }, orders: { $sum: 1 }, units: { $sum: { $reduce: { input: '$items', initialValue: 0, in: { $add: ['$$value', '$$this.quantity'] } } } } } },
           { $sort: { _id: 1 } },
         ];
 

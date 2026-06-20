@@ -2347,7 +2347,7 @@
   overflow: hidden;
   display: flex;
   flex-direction: column;
-  min-height: 138px;
+  min-height: 170px;
   padding: 1.15rem 1.25rem;
   transition: transform var(--admin-transition), border-color var(--admin-transition), box-shadow var(--admin-transition);
 }
@@ -2445,6 +2445,64 @@
 .admin-kpi-foot-value {
   font-weight: 800;
   color: var(--admin-text-secondary);
+}
+
+/* KPI sparkline — fills the gap between the label and the footer so every
+   tile shows its own daily trend without changing card height. */
+.admin-kpi-spark,
+.admin-spark-empty {
+  width: 100%;
+  margin-top: 0.7rem;
+  flex: 1 1 auto;
+  min-height: 30px;
+  pointer-events: none;
+}
+.admin-kpi-card .admin-kpi-foot {
+  margin-top: 0.7rem;
+}
+
+/* ============================================================
+   Sales page — premium header toolbar
+   ============================================================ */
+.admin-sales-header {
+  align-items: center;
+}
+.admin-sales-header .admin-page-heading {
+  min-width: 0;
+}
+.admin-title-gradient {
+  background: linear-gradient(100deg, var(--admin-text) 0%, var(--admin-text) 35%, var(--admin-accent-hover) 100%);
+  -webkit-background-clip: text;
+  background-clip: text;
+  -webkit-text-fill-color: transparent;
+  color: transparent;
+}
+.admin-page-actions {
+  display: flex;
+  align-items: center;
+  gap: 0.6rem;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+}
+.admin-range-pill {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.4rem;
+  font-size: 0.8rem;
+  font-weight: 700;
+  white-space: nowrap;
+  padding: 0.42rem 0.75rem;
+  border-radius: 999px;
+  color: var(--admin-text-secondary);
+  background: var(--admin-glass-bg);
+  border: 1px solid var(--admin-glass-border);
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.04);
+  backdrop-filter: blur(8px);
+}
+.admin-range-pill svg {
+  color: var(--admin-accent-hover);
+  font-size: 1rem;
+  flex-shrink: 0;
 }
 
 /* ── Triple chart grid (Products / Add-ons / Cities) ── */
@@ -2697,14 +2755,31 @@
     grid-template-columns: 1fr;
   }
 }
+@media (max-width: 720px) {
+  .admin-sales-header {
+    flex-direction: column;
+    align-items: stretch;
+  }
+  .admin-sales-header .admin-page-actions {
+    justify-content: flex-start;
+  }
+}
 @media (max-width: 560px) {
   .admin-kpi-grid {
     grid-template-columns: 1fr;
+  }
+  .admin-kpi-card {
+    min-height: 150px;
   }
   .admin-records-head {
     flex-direction: column;
   }
   .admin-records-actions {
     width: 100%;
+  }
+  .admin-range-pill {
+    order: 3;
+    width: 100%;
+    justify-content: center;
   }
 }

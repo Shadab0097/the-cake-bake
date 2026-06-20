@@ -7,9 +7,10 @@
  * server-render with data and there is no hydration mismatch).
  */
 
-import { useMemo } from 'react';
+import { useId, useMemo } from 'react';
 import {
   Area,
+  AreaChart,
   Bar,
   BarChart,
   CartesianGrid,
@@ -422,6 +423,48 @@ export function TopCitiesChart({ data = [], limit = 8, height }) {
 
 
 /* =====================================================================
+   Sparkline — tiny filled trend line for KPI tiles. No axes/tooltips,
+   pure shape. Expects a flat array of numbers; renders nothing meaningful
+   below 2 points so a single data day doesn't draw a misleading flat line.
+   ===================================================================== */
+export function Sparkline({ data = [], color = 'accent', height = 38 }) {
+  const gradient = CHART_GRADIENTS[color] || CHART_GRADIENTS.accent;
+  const rawId = useId();
+  const gradientId = `spark-${rawId.replace(/[:]/g, '')}`;
+
+  const series = useMemo(
+    () => (data || []).map((value, i) => ({ i, value: Number.isFinite(value) ? value : 0 })),
+    [data],
+  );
+
+  if (series.length < 2) return <div className="admin-spark-empty" style={{ height }} aria-hidden />;
+
+  return (
+    <div className="admin-kpi-spark" style={{ height }} aria-hidden>
+      <ResponsiveContainer width="100%" height="100%">
+        <AreaChart data={series} margin={{ top: 3, right: 0, left: 0, bottom: 0 }}>
+          <defs>
+            <linearGradient id={gradientId} x1="0" y1="0" x2="0" y2="1">
+              <stop offset="0%" stopColor={gradient[1]} stopOpacity={0.4} />
+              <stop offset="100%" stopColor={gradient[1]} stopOpacity={0} />
+            </linearGradient>
+          </defs>
+          <Area
+            type="monotone"
+            dataKey="value"
+            stroke={gradient[1]}
+            strokeWidth={2}
+            fill={`url(#${gradientId})`}
+            dot={false}
+            isAnimationActive={false}
+          />
+        </AreaChart>
+      </ResponsiveContainer>
+    </div>
+  );
+}
+
+/* =====================================================================
    Generic horizontal ranked bar — reusable across analytics pages.
    Expects pre-shaped data: [{ name, value, ...extra }].
    `tooltipRows(datum)` returns rows for the themed tooltip.
@@ -430,6 +473,7 @@ export const CHART_GRADIENTS = {
   accent: [ACCENT, ACCENT_HOVER],
   info: [INFO, INFO_LIGHT],
   violet: [VIOLET, VIOLET_LIGHT],
+  success: ['#16A34A', '#22C55E'],
 };
 
 function BarTooltip({ active, payload, rowsBuilder }) {
