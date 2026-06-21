@@ -1,10 +1,16 @@
 const rateLimit = require('express-rate-limit');
 const authSecurityService = require('../modules/auth/authSecurity.service');
 const { createRateLimitStore } = require('./rateLimitStore');
+const { env } = require('../config/env');
 
 const FIFTEEN_MINUTES = 15 * 60 * 1000;
 const ONE_HOUR = 60 * 60 * 1000;
 const ONE_MINUTE = 60 * 1000;
+
+// Login lockout window: full 15 minutes in production, but a short 30 seconds in
+// development so local testing isn't blocked for 15 minutes after a few misses.
+const LOGIN_WINDOW = env.isProd() ? FIFTEEN_MINUTES : 30 * 1000;
+const LOGIN_WINDOW_LABEL = env.isProd() ? '15 minutes' : '30 seconds';
 
 const createLimiter = (name, options) => {
   const store = createRateLimitStore(name);
@@ -61,14 +67,14 @@ const authLimiter = createLimiter('auth-general', {
 });
 
 const loginLimiter = createLimiter('auth-login', {
-  windowMs: FIFTEEN_MINUTES,
+  windowMs: LOGIN_WINDOW,
   max: 10,
   standardHeaders: true,
   legacyHeaders: false,
   skipSuccessfulRequests: true,
   message: {
     success: false,
-    message: 'Too many login attempts, please try again after 15 minutes',
+    message: `Too many login attempts, please try again after ${LOGIN_WINDOW_LABEL}`,
   },
 });
 
@@ -106,7 +112,7 @@ const phoneVerificationLimiter = createLimiter('auth-phone-verification', {
 });
 
 const adminLoginLimiter = createLimiter('auth-admin-login', {
-  windowMs: FIFTEEN_MINUTES,
+  windowMs: LOGIN_WINDOW,
   max: 5,
   standardHeaders: true,
   legacyHeaders: false,
@@ -116,7 +122,7 @@ const adminLoginLimiter = createLimiter('auth-admin-login', {
     await authSecurityService.recordAdminLoginRateLimited(req);
     return res.status(429).json({
       success: false,
-      message: 'Too many admin login attempts, please try again after 15 minutes',
+      message: `Too many admin login attempts, please try again after ${LOGIN_WINDOW_LABEL}`,
     });
   },
 });
@@ -168,6 +174,20 @@ const searchLimiter = createLimiter('search', {
   },
 });
 
+// Reverse-geocoding hits a metered third-party (LocationIQ) free-tier quota.
+// Cap per-IP bursts so a misbehaving client can't drain the daily allowance;
+// server-side caching absorbs legitimate repeat lookups.
+const geocodeLimiter = createLimiter('geocode', {
+  windowMs: ONE_MINUTE,
+  max: 15,
+  standardHeaders: true,
+  legacyHeaders: false,
+  message: {
+    success: false,
+    message: 'Too many location requests, please try again shortly',
+  },
+});
+
 const inquiryLimiter = createLimiter('inquiries', {
   windowMs: FIFTEEN_MINUTES,
   max: 5,
@@ -201,6 +221,22 @@ const couponLimiter = createLimiter('coupons', {
   },
 });
 
+// Public guest "Track Order" lookup (order number + email). Only failed
+// attempts are counted (skipSuccessfulRequests), so legitimate guests are
+// never blocked while brute-force enumeration of order numbers/emails is
+// throttled hard per IP.
+const trackOrderLimiter = createLimiter('track-order', {
+  windowMs: FIFTEEN_MINUTES,
+  max: 15,
+  standardHeaders: true,
+  legacyHeaders: false,
+  skipSuccessfulRequests: true,
+  message: {
+    success: false,
+    message: 'Too many tracking attempts, please try again after 15 minutes',
+  },
+});
+
 module.exports = {
   apiLimiter,
   authLimiter,
@@ -213,7 +249,9 @@ module.exports = {
   whatsappWebhookLimiter,
   razorpayWebhookLimiter,
   searchLimiter,
+  geocodeLimiter,
   inquiryLimiter,
   orderLimiter,
   couponLimiter,
+  trackOrderLimiter,
 };

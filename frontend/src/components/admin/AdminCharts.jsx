@@ -19,6 +19,7 @@ import {
   Line,
   Pie,
   PieChart,
+  ReferenceLine,
   ResponsiveContainer,
   Tooltip,
   XAxis,
@@ -421,6 +422,75 @@ export function TopCitiesChart({ data = [], limit = 8, height }) {
   );
 }
 
+
+/* =====================================================================
+   Profit trend — area that crosses zero, with a dashed zero baseline and
+   sign-aware color (green when the period nets a profit, red when a loss).
+   ===================================================================== */
+function ProfitTooltip({ active, payload }) {
+  if (!active || !payload?.length) return null;
+  const point = payload[0]?.payload;
+  if (!point) return null;
+  return (
+    <TooltipShell
+      title={point.fullLabel}
+      rows={[{ label: 'Net profit', value: fullRupees(point.profit), color: point.profit >= 0 ? '#22C55E' : '#F87171' }]}
+    />
+  );
+}
+
+export function ProfitTrendChart({ data = [], height = 300 }) {
+  const series = useMemo(
+    () => data.map((item) => ({
+      label: shortDate(item._id),
+      fullLabel: fullDate(item._id),
+      profit: paiseToRupees(item.profit),
+    })),
+    [data],
+  );
+
+  if (!series.length) return <ChartEmpty message="No profit recorded for this period" />;
+
+  const total = series.reduce((sum, point) => sum + point.profit, 0);
+  const stroke = total >= 0 ? '#22C55E' : '#EF4444';
+
+  return (
+    <div className="admin-chart-area" style={{ height }}>
+      <ResponsiveContainer width="100%" height="100%">
+        <ComposedChart data={series} margin={{ top: 8, right: 8, left: 4, bottom: 0 }}>
+          <defs>
+            <linearGradient id="adminProfitArea" x1="0" y1="0" x2="0" y2="1">
+              <stop offset="0%" stopColor={stroke} stopOpacity={0.34} />
+              <stop offset="100%" stopColor={stroke} stopOpacity={0} />
+            </linearGradient>
+          </defs>
+          <CartesianGrid vertical={false} stroke={GRID} />
+          <XAxis
+            dataKey="label"
+            tick={{ fill: TICK, fontSize: 11 }}
+            tickLine={false}
+            axisLine={{ stroke: AXIS }}
+            minTickGap={28}
+            interval="preserveStartEnd"
+            tickMargin={8}
+          />
+          <YAxis tick={{ fill: TICK, fontSize: 11 }} tickLine={false} axisLine={false} width={56} tickFormatter={compactRupees} />
+          <Tooltip content={<ProfitTooltip />} cursor={{ stroke: 'rgba(255,255,255,0.22)', strokeWidth: 1, strokeDasharray: '4 4' }} />
+          <ReferenceLine y={0} stroke="rgba(255,255,255,0.28)" strokeDasharray="4 4" />
+          <Area
+            type="monotone"
+            dataKey="profit"
+            stroke={stroke}
+            strokeWidth={2.5}
+            fill="url(#adminProfitArea)"
+            dot={false}
+            activeDot={{ r: 4, fill: stroke, stroke: '#0F141D', strokeWidth: 2 }}
+          />
+        </ComposedChart>
+      </ResponsiveContainer>
+    </div>
+  );
+}
 
 /* =====================================================================
    Sparkline — tiny filled trend line for KPI tiles. No axes/tooltips,

@@ -33,6 +33,15 @@ const refundSchema = new mongoose.Schema(
       required: true,
       index: true,
     },
+    // Fulfilling branch, snapshotted from the order when the refund is created.
+    // Null for legacy refunds (pre-branch) — those stay visible to the owner
+    // only until a refund backfill.
+    branchId: {
+      type: mongoose.Schema.Types.ObjectId,
+      ref: 'Branch',
+      default: null,
+      index: true,
+    },
     payment: {
       type: mongoose.Schema.Types.ObjectId,
       ref: 'Payment',

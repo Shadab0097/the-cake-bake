@@ -34,6 +34,10 @@ const USER_ROLES = {
   SUPERADMIN: 'superadmin',
   MANAGER: 'manager',
   STAFF: 'staff',
+  // Branch-scoped full admin: runs their own branch(es) end-to-end, but is
+  // walled (via User.branchIds) to their data and cannot see other branches,
+  // GST, or company legal identity. Data-scope lives in branchIds, not here.
+  BRANCHADMIN: 'branchadmin',
 };
 
 const COUPON_TYPES = {

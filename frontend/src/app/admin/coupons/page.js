@@ -4,7 +4,7 @@ import { useEffect, useState, useCallback } from 'react';
 import adminApi, { formatPrice, formatDate, COUPON_TYPES } from '@/lib/adminApi';
 import { Pagination, AdminModal, ConfirmDialog, AdminToast, useAdminToast, EmptyState, LoadingSkeleton, StatusBadge, RefreshButton } from '@/components/admin/AdminUI';
 
-const emptyCoupon = { code: '', type: 'percentage', value: '', maxDiscount: '', minOrderAmount: '', description: '', usageLimit: 0, perUserLimit: 1, validFrom: '', validUntil: '', isActive: true };
+const emptyCoupon = { code: '', type: 'percentage', value: '', maxDiscount: '', minOrderAmount: '', description: '', usageLimit: 0, perUserLimit: 1, validFrom: '', validUntil: '', isActive: true, branchId: '' };
 
 export default function AdminCouponsPage() {
   const [coupons, setCoupons] = useState([]);
@@ -17,7 +17,14 @@ export default function AdminCouponsPage() {
   const [saving, setSaving] = useState(false);
   const [deleteId, setDeleteId] = useState(null);
   const [deleting, setDeleting] = useState(false);
+  const [me, setMe] = useState({ isBranchScoped: false, branches: [] });
   const { toast, showToast, hideToast } = useAdminToast();
+
+  // Identity + branch scope drives the coupon's branch selector (owner can pick
+  // any branch or chain-wide; a walled admin is limited to their branches).
+  useEffect(() => {
+    adminApi.me().then((r) => setMe(r.data.data || { isBranchScoped: false, branches: [] })).catch(() => {});
+  }, []);
 
   const fetch = useCallback(async () => {
     setLoading(true);
@@ -33,7 +40,11 @@ export default function AdminCouponsPage() {
 
   useEffect(() => { fetch(); }, [fetch]);
 
-  const openCreate = () => { setForm(emptyCoupon); setModal({ open: true, mode: 'create', data: null }); };
+  const openCreate = () => {
+    const defaultBranch = me.isBranchScoped && me.branches?.length === 1 ? me.branches[0]._id : '';
+    setForm({ ...emptyCoupon, branchId: defaultBranch });
+    setModal({ open: true, mode: 'create', data: null });
+  };
   const openEdit = (c) => {
     setForm({
       code: c.code, type: c.type, value: c.value, maxDiscount: c.maxDiscount || '', minOrderAmount: c.minOrderAmount || '',
@@ -41,6 +52,7 @@ export default function AdminCouponsPage() {
       validFrom: c.validFrom ? new Date(c.validFrom).toISOString().slice(0, 10) : '',
       validUntil: c.validUntil ? new Date(c.validUntil).toISOString().slice(0, 10) : '',
       isActive: c.isActive !== false,
+      branchId: c.branchId?._id || c.branchId || '',
     });
     setModal({ open: true, mode: 'edit', data: c });
   };
@@ -88,7 +100,7 @@ export default function AdminCouponsPage() {
           <>
             <div className="admin-table-wrap">
               <table className="admin-table">
-                <thead><tr><th>Code</th><th>Type</th><th>Value</th><th>Min Order</th><th>Usage</th><th>Valid Until</th><th>Status</th><th>Actions</th></tr></thead>
+                <thead><tr><th>Code</th><th>Type</th><th>Value</th><th>Min Order</th><th>Usage</th><th>Branch</th><th>Valid Until</th><th>Status</th><th>Actions</th></tr></thead>
                 <tbody>
                   {coupons.map((c) => (
                     <tr key={c._id}>
@@ -97,6 +109,7 @@ export default function AdminCouponsPage() {
                       <td style={{ fontWeight: 600 }}>{c.type === 'percentage' ? `${c.value}%` : formatPrice(c.value)}</td>
                       <td style={{ color: 'var(--admin-text-secondary)' }}>{c.minOrderAmount ? formatPrice(c.minOrderAmount) : '—'}</td>
                       <td style={{ color: 'var(--admin-text-secondary)' }}>{c.usageCount || 0}{c.usageLimit > 0 ? `/${c.usageLimit}` : ''}</td>
+                      <td style={{ color: 'var(--admin-text-secondary)', fontSize: '0.8125rem' }}>{c.branchId?.name || 'Chain-wide'}</td>
                       <td style={{ color: isExpired(c) ? 'var(--admin-danger)' : 'var(--admin-text-secondary)', fontSize: '0.8125rem' }}>
                         {c.validUntil ? formatDate(c.validUntil) : '—'} {isExpired(c) && '(Expired)'}
                       </td>
@@ -127,6 +140,18 @@ export default function AdminCouponsPage() {
           <div className="admin-field"><label className="admin-label">Usage Limit</label><input className="admin-input" type="number" value={form.usageLimit} onChange={(e) => setForm(f => ({ ...f, usageLimit: e.target.value }))} /></div>
           <div className="admin-field"><label className="admin-label">Valid From</label><input className="admin-input" type="date" value={form.validFrom} onChange={(e) => setForm(f => ({ ...f, validFrom: e.target.value }))} /></div>
           <div className="admin-field"><label className="admin-label">Valid Until</label><input className="admin-input" type="date" value={form.validUntil} onChange={(e) => setForm(f => ({ ...f, validUntil: e.target.value }))} /></div>
+        </div>
+        <div className="admin-field">
+          <label className="admin-label">Branch</label>
+          <select className="admin-input admin-select" value={form.branchId} onChange={(e) => setForm(f => ({ ...f, branchId: e.target.value }))}>
+            {!me.isBranchScoped && <option value="">Chain-wide (all branches)</option>}
+            {(me.branches || []).map((b) => <option key={b._id} value={b._id}>{b.name}</option>)}
+          </select>
+          <span className="admin-hint">
+            {me.isBranchScoped
+              ? 'This coupon applies only to your branch’s orders.'
+              : 'Chain-wide works everywhere; pick a branch to limit it to that branch’s orders.'}
+          </span>
         </div>
         <div className="admin-field"><label className="admin-label">Description</label><input className="admin-input" value={form.description} onChange={(e) => setForm(f => ({ ...f, description: e.target.value }))} /></div>
         <label style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', fontSize: '0.875rem', color: 'var(--admin-text-secondary)', cursor: 'pointer', marginTop: '0.5rem' }}>

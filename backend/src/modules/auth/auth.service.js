@@ -5,6 +5,7 @@ const { env } = require('../../config/env');
 const ApiError = require('../../utils/ApiError');
 const logger = require('../../middleware/logger');
 const { USER_ROLES } = require('../../utils/constants');
+const { ADMIN_ROLES } = require('../../utils/adminAccess');
 
 const REFRESH_SCOPES = {
   CUSTOMER: 'customer',
@@ -33,8 +34,12 @@ class AuthService {
     return scope === REFRESH_SCOPES.ADMIN ? REFRESH_SCOPES.ADMIN : REFRESH_SCOPES.CUSTOMER;
   }
 
+  // Any admin-tier role may hold an admin session (superadmin, admin, manager,
+  // staff, branchadmin). Per-section/branch limits are applied later by the
+  // admin RBAC + branch-scope guards — the login gate only sorts admin vs.
+  // customer. Mirrors middleware/adminAuth so the two never drift.
   isAdminUser(user) {
-    return user?.role === USER_ROLES.ADMIN || user?.role === USER_ROLES.SUPERADMIN;
+    return !!user && ADMIN_ROLES.has(user.role);
   }
 
   getRefreshTokenField(scope) {
@@ -183,15 +188,20 @@ class AuthService {
 
     // Check if account is currently locked
     if (user.isLocked()) {
-      const unlockMinutes = Math.ceil((user.lockUntil - Date.now()) / 60000);
-      throw ApiError.unauthorized(`Account temporarily locked due to too many failed attempts. Try again in ${unlockMinutes} minute(s).`, [], 'ACCOUNT_LOCKED');
+      const remainingMs = user.lockUntil - Date.now();
+      const unlockLabel = remainingMs >= 60000
+        ? `${Math.ceil(remainingMs / 60000)} minute(s)`
+        : `${Math.ceil(remainingMs / 1000)} second(s)`;
+      throw ApiError.unauthorized(`Account temporarily locked due to too many failed attempts. Try again in ${unlockLabel}.`, [], 'ACCOUNT_LOCKED');
     }
 
     const isMatch = await user.comparePassword(password);
     if (!isMatch) {
-      // Increment failed attempts
+      // Increment failed attempts. Lock window is the full 15 minutes in
+      // production, but a short 30 seconds in development so local testing isn't
+      // blocked for long after a few mistyped passwords.
       const MAX_ATTEMPTS = 5;
-      const LOCK_DURATION_MS = 15 * 60 * 1000; // 15 minutes
+      const LOCK_DURATION_MS = env.isProd() ? 15 * 60 * 1000 : 30 * 1000;
 
       user.failedLoginAttempts = (user.failedLoginAttempts || 0) + 1;
 
@@ -199,7 +209,8 @@ class AuthService {
         user.lockUntil = new Date(Date.now() + LOCK_DURATION_MS);
         user.failedLoginAttempts = 0; // reset counter; lockUntil is the guard now
         await user.save();
-        throw ApiError.unauthorized('Account temporarily locked after too many failed attempts. Try again in 15 minutes.', [], 'ACCOUNT_LOCKED');
+        const lockLabel = LOCK_DURATION_MS >= 60000 ? `${Math.round(LOCK_DURATION_MS / 60000)} minutes` : `${Math.round(LOCK_DURATION_MS / 1000)} seconds`;
+        throw ApiError.unauthorized(`Account temporarily locked after too many failed attempts. Try again in ${lockLabel}.`, [], 'ACCOUNT_LOCKED');
       }
 
       await user.save();

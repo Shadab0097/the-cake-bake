@@ -122,4 +122,27 @@ function assertDeliveryDateAllowed(zone, deliveryDate) {
   }
 }
 
-module.exports = { resolveServiceableZone, assertDeliveryDateAllowed };
+/**
+ * Best-effort: find the branch that owns a city, by matching an active zone on
+ * that city name. Used where no pincode/zone was resolved (inquiry-converted
+ * orders, backfill). Returns the branchId or null.
+ *
+ * @param {string} city
+ * @param {{ session?: import('mongoose').ClientSession }} [options]
+ * @returns {Promise<import('mongoose').Types.ObjectId|null>}
+ */
+async function resolveBranchIdForCity(city, options = {}) {
+  if (!city) return null;
+  const { session = null } = options;
+  const run = (query) => (session ? query.session(session) : query);
+  const zone = await run(
+    DeliveryZone.findOne({
+      city: { $regex: new RegExp(`^${escapeRegex(city)}$`, 'i') },
+      isActive: true,
+      branchId: { $ne: null },
+    }).select('branchId')
+  );
+  return zone?.branchId || null;
+}
+
+module.exports = { resolveServiceableZone, assertDeliveryDateAllowed, resolveBranchIdForCity };

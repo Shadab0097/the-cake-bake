@@ -242,12 +242,27 @@ class NotificationService {
    * WhatsApp: order_confirmed + order_details (2s later)
    * Email:    order_confirmed + order_details (3s later)
    */
-  async sendOrderConfirmation(order, payment = null) {
+  async sendOrderConfirmation(order, payment = null, options = {}) {
     const userId      = this._resolveOrderUserId(order);
     const email       = await this._resolveOrderEmail(order);
     const phone       = this._resolveOrderPhone(order);
     const customerName = order.shippingAddress?.fullName || order.guestInfo?.name || 'Customer';
     const orderKey = `order:${order._id || order.orderNumber}:confirmation`;
+
+    // Build a tracking link the recipient can actually use.
+    // Guests have no account, so a signed tokenized link (when available) or
+    // the public /track-order page is the only thing that works for them.
+    const isGuest = !userId;
+    const appUrl = (process.env.APP_URL || 'http://localhost:3000').replace(/\/+$/, '');
+    const trackOrderPageUrl = `${appUrl}/track-order`;
+    let trackingUrl;
+    if (isGuest) {
+      trackingUrl = options.trackingToken
+        ? `${appUrl}/order-tracking/${encodeURIComponent(order.orderNumber)}?token=${encodeURIComponent(options.trackingToken)}`
+        : trackOrderPageUrl;
+    } else {
+      trackingUrl = `${appUrl}/account/orders`;
+    }
 
     // ── WhatsApp ──
     if (env.notifications.whatsappEnabled && phone) {
@@ -277,6 +292,9 @@ class NotificationService {
         itemCount:     order.items.length.toString(),
         paymentMethod: order.paymentMethod || 'cod',
         total:         `₹${(order.total / 100).toFixed(2)}`,
+        trackingUrl,
+        trackOrderPageUrl,
+        isGuest,
       };
       await this._queueEmail({
         userId, type: NOTIFICATION_TYPES.ORDER_CONFIRMED,

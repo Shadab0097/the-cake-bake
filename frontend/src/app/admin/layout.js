@@ -15,6 +15,7 @@ const PAGE_TITLES = [
   { path: '/admin/costs', title: 'Cost Prices', subtitle: 'Set make/buy cost per variant to power profit reporting' },
   { path: '/admin/gst', title: 'GST Summary', subtitle: 'Taxable value and tax collected by period' },
   { path: '/admin/settings', title: 'Settings', subtitle: 'Company details, scheduled reports, and admin roles' },
+  { path: '/admin/my-branch', title: 'My Branch', subtitle: 'Your branch settings, delivery zones, and team' },
   { path: '/admin/orders', title: 'Orders', subtitle: 'Track fulfillment, payments, and delivery status' },
   { path: '/admin/refunds', title: 'Refunds', subtitle: 'Review approvals, provider processing, and failures' },
   { path: '/admin/products', title: 'Products', subtitle: 'Manage catalog, variants, stock, and pricing' },
@@ -70,6 +71,7 @@ export default function AdminLayout({ children }) {
             mobileOpen={mobileOpen}
             onMobileClose={() => setMobileOpen(false)}
             role={user.role}
+            branchScoped={Array.isArray(user.branchIds) && user.branchIds.length > 0}
           />
 
           <div style={{

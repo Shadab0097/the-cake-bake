@@ -9,7 +9,7 @@ import {
   HiOutlineStar, HiOutlineEnvelope, HiOutlinePhoto, HiOutlineBell,
   HiOutlineChevronLeft, HiOutlineChevronRight, HiOutlineChatBubbleLeftRight,
   HiOutlineReceiptRefund, HiOutlineBugAnt, HiOutlineChartBar, HiOutlineBanknotes,
-  HiOutlineUserGroup, HiOutlineCog6Tooth, HiOutlineDocumentText
+  HiOutlineUserGroup, HiOutlineCog6Tooth, HiOutlineDocumentText, HiOutlineBuildingStorefront
 } from 'react-icons/hi2';
 import { canAccess } from '@/lib/adminAccess.mjs';
 
@@ -36,9 +36,14 @@ const NAV_ITEMS = [
   { label: 'Settings', href: '/admin/settings', icon: HiOutlineCog6Tooth, section: 'settings' },
 ];
 
-export default function AdminSidebar({ collapsed, onToggle, mobileOpen, onMobileClose, role }) {
+export default function AdminSidebar({ collapsed, onToggle, mobileOpen, onMobileClose, role, branchScoped = false }) {
   const pathname = usePathname();
-  const navItems = NAV_ITEMS.filter((item) => canAccess(role, item.section));
+  const navItems = NAV_ITEMS.filter((item) => canAccess(role, item.section, branchScoped));
+  // Walled admins get a dedicated "My Branch" surface (settings + own staff).
+  // Owners manage branches/admins through the richer global Settings page instead.
+  if (branchScoped) {
+    navItems.push({ label: 'My Branch', href: '/admin/my-branch', icon: HiOutlineBuildingStorefront, section: 'my-branch' });
+  }
 
   const isActive = (href) => {
     if (href === '/admin') return pathname === '/admin';

@@ -95,6 +95,18 @@ const orderSchema = new mongoose.Schema(
       type: String,
       index: true,
     },
+    // Snapshot of the fulfilling store at checkout (zone.branchId at the time
+    // the order was placed). Authoritative for location-wise reporting and the
+    // invoice ship-from — survives later zone→branch reassignment or city
+    // renames. Null for guest/inquiry orders whose city matched no branch, and
+    // for legacy orders placed before this field existed (those fall back to
+    // resolving by deliveryCity).
+    branchId: {
+      type: mongoose.Schema.Types.ObjectId,
+      ref: 'Branch',
+      default: null,
+      index: true,
+    },
     subtotal: {
       type: Number,
       required: true,

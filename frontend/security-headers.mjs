@@ -122,7 +122,7 @@ export const buildSecurityHeaders = ({
       value: [
         'accelerometer=()',
         'camera=()',
-        'geolocation=()',
+        'geolocation=(self)',
         'gyroscope=()',
         'magnetometer=()',
         'microphone=()',

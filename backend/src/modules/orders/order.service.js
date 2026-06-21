@@ -108,12 +108,13 @@ class OrderService {
     return couponUsageService.calculateDiscount(coupon, subtotal);
   }
 
-  async validateCouponForCheckoutSession(couponCode, userId, subtotal, session) {
+  async validateCouponForCheckoutSession(couponCode, userId, subtotal, session, branchId) {
     return couponUsageService.validateForCheckout({
       couponCode,
       userId,
       subtotal,
       session,
+      branchId,
     });
   }
 
@@ -238,9 +239,14 @@ class OrderService {
     session.startTransaction();
 
     try {
+      // Resolve the fulfilling branch up front — it both stamps the order and
+      // scopes coupon validity (branch-owned coupons only apply to their branch).
+      const { defaultBranchId } = await require('../../utils/commerceSettings').getCommerceConfig();
+      const orderBranchId = zone?.branchId || defaultBranchId || null;
+
       let appliedCoupon = null;
       if (couponCode) {
-        const couponResult = await this.validateCouponForCheckoutSession(couponCode, userId, subtotal, session);
+        const couponResult = await this.validateCouponForCheckoutSession(couponCode, userId, subtotal, session, orderBranchId);
         appliedCoupon = couponResult.coupon;
         discount = couponResult.discount;
       }
@@ -262,6 +268,8 @@ class OrderService {
       }
       let codRiskAssessment = null;
       if (paymentMethod === 'cod') {
+        const { getCommerceConfig } = require('../../utils/commerceSettings');
+        const commerceConfig = await getCommerceConfig();
         codRiskAssessment = await codAbuseService.assertCanUseCOD({
           userId,
           shippingAddress: orderAddress,
@@ -269,6 +277,8 @@ class OrderService {
           isGuest: false,
           requestContext,
           session,
+          globalCodEnabled: commerceConfig.codEnabled,
+          zoneCodEnabled: zone?.codEnabled !== false,
         });
       }
 
@@ -289,6 +299,7 @@ class OrderService {
         deliveryDate: new Date(deliveryDate),
         deliverySlot: deliverySlot || {},
         deliveryCity: orderAddress.city,
+        branchId: orderBranchId,
         subtotal,
         deliveryCharge,
         discount,
@@ -828,6 +839,19 @@ class OrderService {
     if (query.status) filter.status = query.status;
     if (query.paymentStatus) filter.paymentStatus = query.paymentStatus;
     if (query.city) filter.deliveryCity = query.city;
+    // Branch data-scope (authoritative). The controller resolves the caller's
+    // wall + dropdown into a branchIds[] set; a raw query.branchId is never
+    // trusted here. Hybrid: snapshotted branchId OR legacy orders (no snapshot)
+    // whose deliveryCity belongs to one of the branches' zones.
+    const branchIds = require('../../utils/branchScope').toObjectIds(query);
+    if (branchIds.length) {
+      const DeliveryZone = require('../../models/DeliveryZone');
+      const branchZones = await DeliveryZone.find({ branchId: { $in: branchIds } }).select('city').lean();
+      const branchCities = [...new Set(branchZones.map((z) => z.city).filter(Boolean))];
+      filter.$or = branchCities.length
+        ? [{ branchId: { $in: branchIds } }, { branchId: null, deliveryCity: { $in: branchCities } }]
+        : [{ branchId: { $in: branchIds } }];
+    }
     if (query.orderNumber) filter.orderNumber = { $regex: escapeRegex(query.orderNumber), $options: 'i' };
     if (query.from && query.to) {
       // Treat from/to as inclusive calendar days so a single-day filter

@@ -163,7 +163,7 @@ class InquiryQuoteService {
     return quote;
   }
 
-  async sendQuote(inquiryId, data, adminId) {
+  async sendQuote(inquiryId, data, adminId, scope = null) {
     const amount = toPaise(data.amount);
     if (!Number.isFinite(amount) || amount <= 0) {
       throw ApiError.badRequest(
@@ -174,6 +174,11 @@ class InquiryQuoteService {
     }
 
     const { inquiry, inquiryType, Model } = await this.findInquiryById(inquiryId);
+    // Walled admins may only quote inquiries routed to their branches (legacy
+    // inquiries without a branch stay owner-only). 404 to avoid leaking existence.
+    if (scope && !(inquiry.branchId && scope.includes(String(inquiry.branchId)))) {
+      throw ApiError.notFound('Inquiry not found', [], 'INQUIRY_NOT_FOUND');
+    }
     if (inquiry.convertedOrder) {
       throw ApiError.conflict('This inquiry is already converted to an order', [], 'INQUIRY_ALREADY_CONVERTED');
     }
@@ -485,6 +490,12 @@ class InquiryQuoteService {
           landmark: data.shippingAddress.landmark || '',
         };
 
+        // Inquiry orders skip the pincode serviceability gate, so resolve the
+        // owning branch by city name (best-effort) for location-wise reporting.
+        const { defaultBranchId } = await require('../../utils/commerceSettings').getCommerceConfig();
+        const branchId = (await require('../delivery/serviceability')
+          .resolveBranchIdForCity(shippingAddress.city, { session })) || defaultBranchId || null;
+
         const orderDocs = await Order.create([{
           orderNumber,
           user,
@@ -498,6 +509,7 @@ class InquiryQuoteService {
           deliveryDate: new Date(data.deliveryDate),
           deliverySlot,
           deliveryCity: shippingAddress.city,
+          branchId,
           subtotal: lockedQuote.amount,
           deliveryCharge: 0,
           discount: 0,

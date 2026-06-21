@@ -1,12 +1,29 @@
 import api from './adminApiClient';
 
 const adminApi = {
+  // Identity + branch scope for the signed-in admin (powers nav + branch picker)
+  me: () => api.get('/admin/me'),
+
+  // Branch self-management (owner + branch admins): own branch settings + staff.
+  myBranch: {
+    get: () => api.get('/admin/my-branch'),
+    update: (id, data) => api.put(`/admin/my-branch/${id}`, data),
+    staff: {
+      list: () => api.get('/admin/my-branch/staff'),
+      create: (data) => api.post('/admin/my-branch/staff', data),
+      setActive: (id, isActive) => api.put(`/admin/my-branch/staff/${id}/active`, { isActive }),
+      setBranches: (id, branchIds) => api.put(`/admin/my-branch/staff/${id}/branches`, { branchIds }),
+      resetPassword: (id) => api.post(`/admin/my-branch/staff/${id}/reset-password`),
+    },
+  },
+
   // Dashboard & Analytics
   dashboard: {
     get: () => api.get('/admin/dashboard'),
     getAnalytics: (days = 30) => api.get(`/admin/analytics?days=${days}`),
     getSales: (params) => api.get('/admin/sales', { params }),
     getProfit: (params) => api.get('/admin/profit', { params }),
+    branchBreakdown: (params) => api.get('/admin/branch-breakdown', { params }),
   },
 
   // Diagnostics
@@ -69,6 +86,9 @@ const adminApi = {
     getZones: () => api.get('/admin/delivery/zones'),
     createZone: (data) => api.post('/admin/delivery/zones', data),
     updateZone: (id, data) => api.put(`/admin/delivery/zones/${id}`, data),
+    getBranches: () => api.get('/admin/delivery/branches'),
+    createBranch: (data) => api.post('/admin/delivery/branches', data),
+    updateBranch: (id, data) => api.put(`/admin/delivery/branches/${id}`, data),
   },
 
   // Add-Ons
@@ -135,7 +155,11 @@ const adminApi = {
   },
   admins: {
     list: () => api.get('/admin/admins'),
+    create: (data) => api.post('/admin/admins', data),
     setRole: (id, role) => api.put(`/admin/admins/${id}/role`, { role }),
+    setActive: (id, isActive) => api.put(`/admin/admins/${id}/active`, { isActive }),
+    setBranches: (id, branchIds) => api.put(`/admin/admins/${id}/branches`, { branchIds }),
+    resetPassword: (id) => api.post(`/admin/admins/${id}/reset-password`),
   },
   gst: {
     report: (params) => api.get('/admin/gst', { params }),

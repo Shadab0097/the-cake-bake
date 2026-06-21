@@ -11,7 +11,10 @@ export default function AdminGuard({ children }) {
   const router = useRouter();
 
   useEffect(() => {
-    adminApiClient.get('/users/me')
+    // /admin/me returns identity + branch scope (role, branchIds, isBranchScoped,
+    // and the branches this admin may act on) — powers nav gating and the branch
+    // picker. Owner sees all branches; a walled admin sees only theirs.
+    adminApiClient.get('/admin/me')
       .then((res) => {
         const user = res.data.data;
         if (!isAdminRole(user.role)) {

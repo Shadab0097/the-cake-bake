@@ -151,6 +151,23 @@ class CodAbuseService {
       requestContext,
     });
 
+    // ── Merchant COD policy (global kill-switch + per-zone) ──────────────────
+    // Enforced BEFORE the abuse engine and regardless of whether it's enabled.
+    // Flags are left empty so this normal merchant choice doesn't raise
+    // operational alerts; the rejection still carries a clear reason.
+    if (input.globalCodEnabled === false || input.zoneCodEnabled === false) {
+      const code = input.globalCodEnabled === false ? 'cod_globally_disabled' : 'cod_zone_disabled';
+      const detail = this.buildBlockDetail([code]);
+      assessment.flags = [];
+      assessment.score = 100;
+      assessment.decision = 'online_required';
+      assessment.allowed = false;
+      assessment.message = detail.message;
+      assessment.reasonCode = detail.code;
+      assessment.reasonField = detail.field;
+      return assessment;
+    }
+
     if (!this.config.enabled) return assessment;
 
     const flags = [];
@@ -251,6 +268,22 @@ class CodAbuseService {
   // fraud-pattern reasons stay actionable without leaking exact thresholds.
   buildBlockDetail(blocks = []) {
     const cfg = this.config || {};
+
+    if (blocks.includes('cod_globally_disabled')) {
+      return {
+        code: 'cod_globally_disabled',
+        field: 'paymentMethod',
+        message: 'Cash on Delivery is currently unavailable. Please choose online payment to place your order.',
+      };
+    }
+
+    if (blocks.includes('cod_zone_disabled')) {
+      return {
+        code: 'cod_zone_disabled',
+        field: 'paymentMethod',
+        message: 'Cash on Delivery isn’t available for your delivery area. Please choose online payment.',
+      };
+    }
 
     if (blocks.includes('cod_disabled_user')) {
       return {

@@ -21,6 +21,9 @@ const createCoupon = {
     perUserLimit: Joi.number().min(1).default(1),
     applicableCategories: Joi.array().items(Joi.string()).default([]),
     applicableProducts: Joi.array().items(Joi.string()).default([]),
+    // Owning branch (null/empty = chain-wide). A walled creator is forced to
+    // their own branch server-side regardless of what is sent.
+    branchId: Joi.string().pattern(/^[0-9a-fA-F]{24}$/).allow(null, '').default(null),
   }),
 };
 

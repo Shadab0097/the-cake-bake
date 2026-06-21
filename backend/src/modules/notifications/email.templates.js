@@ -167,7 +167,13 @@ const EMAIL_TEMPLATES = {
         ${infoRow('Payment Method', d.paymentMethod === 'cod' ? 'Cash on Delivery' : 'Online Payment')}
         ${infoRow('Order Total', d.total)}
       `)}
-      ${ctaButton('Track Your Order', `${BRAND.siteUrl}/account/orders`)}
+      ${ctaButton('Track Your Order', d.trackingUrl || `${BRAND.siteUrl}/account/orders`)}
+      ${d.isGuest ? `
+      <p style="color:${BRAND.muted};font-size:13px;text-align:center;margin:0 0 12px;line-height:1.6;">
+        You can also track your order anytime at
+        <a href="${d.trackOrderPageUrl || `${BRAND.siteUrl}/track-order`}" style="color:${BRAND.primary};text-decoration:none;font-weight:600;">${(d.trackOrderPageUrl || `${BRAND.siteUrl}/track-order`).replace(/^https?:\/\//, '')}</a>
+        using your order number <strong>#${d.orderNumber}</strong> and this email address.
+      </p>` : ''}
       <p style="color:${BRAND.muted};font-size:13px;text-align:center;margin:0;">
         Need to make changes? Contact us as early as possible.
       </p>

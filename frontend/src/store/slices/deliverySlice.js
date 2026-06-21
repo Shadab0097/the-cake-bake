@@ -1,6 +1,8 @@
 import { createSlice, createAsyncThunk } from '@reduxjs/toolkit';
 import api from '@/lib/api';
 import { getApiErrorMessage } from '@/lib/apiError.mjs';
+import { addToast } from './toastSlice';
+import { getCurrentPosition } from '@/lib/geolocation.mjs';
 import {
   loadDeliveryLocation,
   saveDeliveryLocation,
@@ -18,6 +20,7 @@ const initialState = {
   sameDayAvailable: null,
   sameDayCutoffTime: null,
   isChecking: false,
+  isDetecting: false,
   error: null,
   _hydrated: false,
 };
@@ -31,6 +34,77 @@ export const checkPincode = createAsyncThunk(
     } catch (err) {
       return rejectWithValue(getApiErrorMessage(err, 'Could not check this pincode'));
     }
+  }
+);
+
+/**
+ * Auto-detect the customer's delivery location:
+ *   browser GPS → backend reverse-geocode → pincode → existing checkPincode.
+ *
+ * checkPincode remains the single source of truth for serviceability and also
+ * handles persistence, so this thunk only orchestrates and (for auto-detect)
+ * surfaces a friendly toast when the detected area isn't serviceable.
+ *
+ * @param {{ auto?: boolean }} [opts] auto=true suppresses nothing but enables
+ *   the "not serviceable" toast (manual detect shows inline results instead).
+ */
+export const detectLocation = createAsyncThunk(
+  'delivery/detectLocation',
+  async ({ auto = false } = {}, { dispatch, rejectWithValue }) => {
+    let coords;
+    try {
+      coords = await getCurrentPosition({ timeout: 10000 });
+    } catch (err) {
+      // Permission denied / timeout / unsupported — fall back silently.
+      return rejectWithValue(err.code || 'GEO_FAILED');
+    }
+
+    let geo;
+    try {
+      const res = await api.post('/delivery/reverse-geocode', {
+        lat: coords.lat,
+        lng: coords.lng,
+      });
+      geo = res.data.data || {};
+    } catch (err) {
+      // LocationIQ disabled / quota exhausted / upstream error — silent fallback.
+      return rejectWithValue(getApiErrorMessage(err, 'Could not detect your location'));
+    }
+
+    if (!geo.pincode) {
+      // Got a fix but no usable Indian pincode — let the user type it.
+      return rejectWithValue('NO_PINCODE');
+    }
+
+    // Reuse the canonical serviceability check (also persists the result).
+    let result;
+    try {
+      result = await dispatch(checkPincode(geo.pincode)).unwrap();
+    } catch (err) {
+      return rejectWithValue(typeof err === 'string' ? err : 'CHECK_FAILED');
+    }
+
+    if (auto) {
+      if (result.status === 'unavailable') {
+        dispatch(
+          addToast({
+            type: 'error',
+            message: `We don’t deliver to your area (${geo.pincode}) yet — but feel free to browse our cakes!`,
+            duration: 6000,
+          })
+        );
+      } else if (result.status === 'coming_soon') {
+        dispatch(
+          addToast({
+            type: 'info',
+            message: `Delivery to ${result.city || geo.city || 'your area'} is launching soon — browse now, order shortly!`,
+            duration: 6000,
+          })
+        );
+      }
+    }
+
+    return { pincode: geo.pincode, detectedCity: geo.city, ...result };
   }
 );
 
@@ -86,6 +160,18 @@ const deliverySlice = createSlice({
       .addCase(checkPincode.rejected, (state, action) => {
         state.isChecking = false;
         state.error = action.payload;
+      })
+      // detectLocation only tracks the spinner; checkPincode (dispatched inside
+      // it) mutates the actual location state and persistence.
+      .addCase(detectLocation.pending, (state) => {
+        state.isDetecting = true;
+        state.error = null;
+      })
+      .addCase(detectLocation.fulfilled, (state) => {
+        state.isDetecting = false;
+      })
+      .addCase(detectLocation.rejected, (state) => {
+        state.isDetecting = false;
       });
   },
 });

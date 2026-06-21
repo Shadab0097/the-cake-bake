@@ -198,3 +198,74 @@ test('COD block surfaces the specific cause and a structured error payload', asy
     }
   );
 });
+
+test('merchant COD policy blocks when COD is globally disabled, without raising alerts', async () => {
+  const alerts = [];
+  const service = serviceWithCounts({ counts: [0, 0], alerts });
+
+  await assert.rejects(
+    () => service.assertCanUseCOD({
+      shippingAddress: baseAddress,
+      total: 100000,
+      requestContext: { ip: '203.0.113.10' },
+      globalCodEnabled: false,
+      zoneCodEnabled: true,
+    }),
+    (err) => {
+      assert.equal(err.statusCode, 400);
+      assert.equal(err.errors[0].code, 'cod_globally_disabled');
+      assert.equal(err.errors[0].field, 'paymentMethod');
+      return true;
+    }
+  );
+  // Merchant policy is a normal business choice, not abuse — no alert noise.
+  assert.equal(alerts.length, 0);
+});
+
+test('merchant COD policy blocks when COD is disabled for the delivery zone', async () => {
+  const service = serviceWithCounts({ counts: [0, 0] });
+
+  await assert.rejects(
+    () => service.assertCanUseCOD({
+      shippingAddress: baseAddress,
+      total: 100000,
+      requestContext: { ip: '203.0.113.10' },
+      globalCodEnabled: true,
+      zoneCodEnabled: false,
+    }),
+    (err) => {
+      assert.equal(err.statusCode, 400);
+      assert.equal(err.errors[0].code, 'cod_zone_disabled');
+      return true;
+    }
+  );
+});
+
+test('merchant COD policy is enforced even when the abuse engine is disabled', async () => {
+  const service = new CodAbuseService({
+    config: { ...baseConfig, enabled: false },
+    UserModel: fakeUserModel(null),
+    OrderModel: { countDocuments: async () => 0 },
+    operationalAlertService: { recordAlert: async () => {} },
+  });
+
+  // Engine off + COD allowed by policy → allowed.
+  const ok = await service.assertCanUseCOD({
+    shippingAddress: baseAddress,
+    total: 100000,
+    globalCodEnabled: true,
+    zoneCodEnabled: true,
+  });
+  assert.equal(ok.allowed, true);
+
+  // Engine off but COD globally disabled → still blocked.
+  await assert.rejects(
+    () => service.assertCanUseCOD({
+      shippingAddress: baseAddress,
+      total: 100000,
+      globalCodEnabled: false,
+      zoneCodEnabled: true,
+    }),
+    { statusCode: 400 }
+  );
+});

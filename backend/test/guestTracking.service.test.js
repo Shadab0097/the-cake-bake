@@ -63,3 +63,38 @@ test('guest tracking public order omits sensitive account and token fields', () 
   assert.equal(publicOrder.orderNumber, 'TCB-1003');
   assert.equal(publicOrder.items.length, 1);
 });
+
+test('normalizeEmail lowercases and trims', () => {
+  assert.equal(guestTrackingService.normalizeEmail('  Guest@Example.COM '), 'guest@example.com');
+  assert.equal(guestTrackingService.normalizeEmail(null), '');
+  assert.equal(guestTrackingService.normalizeEmail(undefined), '');
+});
+
+test('escapeRegExp neutralizes regex metacharacters for safe email matching', () => {
+  const escaped = guestTrackingService.escapeRegExp('a.b+c*(d)@x.com');
+  // Every special char must be backslash-escaped so the value matches literally.
+  assert.equal(escaped, 'a\\.b\\+c\\*\\(d\\)@x\\.com');
+  const re = new RegExp(`^${escaped}$`, 'i');
+  assert.ok(re.test('A.B+C*(d)@X.com'));
+  assert.equal(re.test('aXbXcXXdX@xXcom'), false); // dots/plus/star must not act as wildcards
+});
+
+test('lookupGuestOrderByEmail returns one generic 404 for blank inputs (enumeration-safe)', async () => {
+  await assert.rejects(
+    () => guestTrackingService.lookupGuestOrderByEmail('', ''),
+    (err) => {
+      assert.equal(err.statusCode, 404);
+      assert.equal(err.code, 'GUEST_ORDER_NOT_FOUND');
+      return true;
+    }
+  );
+
+  await assert.rejects(
+    () => guestTrackingService.lookupGuestOrderByEmail('TCB-1004', '   '),
+    (err) => {
+      assert.equal(err.statusCode, 404);
+      assert.equal(err.code, 'GUEST_ORDER_NOT_FOUND');
+      return true;
+    }
+  );
+});

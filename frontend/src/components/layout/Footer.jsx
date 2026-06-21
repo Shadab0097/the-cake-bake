@@ -11,6 +11,7 @@ const QUICK_LINKS = [
 ];
 
 const HELP_LINKS = [
+  { label: 'Track Order', href: '/track-order' },
   { label: 'FAQ', href: '/faq' },
   { label: 'Contact Us', href: '/contact' },
   { label: 'Shipping Policy', href: '/shipping' },

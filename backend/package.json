@@ -12,6 +12,9 @@
     "dev": "nodemon server.js",
     "seed": "node src/seeds/index.js",
     "backfill:cod": "node scripts/backfill-cod-revenue.js",
+    "backfill:order-branch": "node scripts/backfill-order-branch.js",
+    "backfill:refund-branch": "node scripts/backfill-refund-branch.js",
+    "backfill:inquiry-branch": "node scripts/backfill-inquiry-branch.js",
     "test": "node --test"
   },
   "keywords": [

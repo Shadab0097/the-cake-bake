@@ -13,7 +13,7 @@
   --admin-border-subtle: #222A3A;
   --admin-text: #E8ECF4;
   --admin-text-secondary: #A9B2C3;
-  --admin-text-muted: #778092;
+  --admin-text-muted: #8A93A6;
   --admin-accent: #D81B60;
   --admin-accent-hover: #F06292;
   --admin-accent-soft: rgba(216, 27, 96, 0.14);
@@ -336,36 +336,84 @@
 .admin-badge {
   display: inline-flex;
   align-items: center;
-  gap: 0.25rem;
-  padding: 0.2rem 0.625rem;
+  gap: 0.4rem;
+  padding: 0.22rem 0.6rem 0.22rem 0.55rem;
   border-radius: 9999px;
-  font-size: 0.75rem;
-  font-weight: 800;
-  border: 1px solid currentColor;
-  border-color: rgba(255, 255, 255, 0.08);
+  font-size: 0.72rem;
+  font-weight: 700;
+  letter-spacing: 0.01em;
+  border: 1px solid rgba(255, 255, 255, 0.08);
   text-transform: capitalize;
   white-space: nowrap;
-  transition: box-shadow var(--admin-transition);
+  transition: background var(--admin-transition), border-color var(--admin-transition);
 }
-.admin-badge:hover {
-  box-shadow: 0 0 12px currentColor;
+/* Leading status dot — clean, professional state indicator */
+.admin-badge::before {
+  content: '';
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: currentColor;
+  flex-shrink: 0;
 }
-.badge-pending { background: var(--admin-warning-soft); color: var(--admin-warning); }
-.badge-confirmed, .badge-paid { background: var(--admin-info-soft); color: var(--admin-info); }
-.badge-preparing, .badge-contacted { background: #2D1F5E; color: #A78BFA; }
-.badge-packed, .badge-quoted { background: #1E3A5F; color: #7DD3FC; }
-.badge-dispatched { background: #1A3A2A; color: #6EE7B7; }
-.badge-out_for_delivery { background: var(--admin-success-soft); color: var(--admin-success); }
-.badge-delivered, .badge-completed { background: var(--admin-success-soft); color: var(--admin-success); }
-.badge-cancelled, .badge-failed, .badge-expired { background: var(--admin-danger-soft); color: var(--admin-danger); }
-.badge-refunded { background: #3B1F3D; color: #F0ABFC; }
-.badge-requested, .badge-approved, .badge-processing { background: var(--admin-warning-soft); color: var(--admin-warning); }
-.badge-critical { background: var(--admin-danger-soft); color: var(--admin-danger); }
-.badge-warning { background: var(--admin-warning-soft); color: var(--admin-warning); }
-.badge-info { background: var(--admin-info-soft); color: var(--admin-info); }
-.badge-new { background: var(--admin-accent-soft); color: var(--admin-accent-hover); }
-.badge-active { background: var(--admin-success-soft); color: var(--admin-success); }
-.badge-inactive { background: var(--admin-danger-soft); color: var(--admin-danger); }
+.admin-badge:hover { border-color: rgba(255, 255, 255, 0.18); }
+
+/* Awaiting / workflow — amber */
+.badge-pending,
+.badge-requested, .badge-approved, .badge-processing,
+.badge-warning {
+  background: rgba(245, 158, 11, 0.13);
+  border-color: rgba(245, 158, 11, 0.28);
+  color: #FBBF24;
+}
+/* In progress — blue */
+.badge-confirmed, .badge-info {
+  background: rgba(59, 130, 246, 0.14);
+  border-color: rgba(59, 130, 246, 0.30);
+  color: #60A5FA;
+}
+/* Preparing / contacted — indigo */
+.badge-preparing, .badge-contacted {
+  background: rgba(99, 102, 241, 0.15);
+  border-color: rgba(99, 102, 241, 0.32);
+  color: #A5B4FC;
+}
+/* Packed / quoted — sky */
+.badge-packed, .badge-quoted {
+  background: rgba(14, 165, 233, 0.14);
+  border-color: rgba(14, 165, 233, 0.30);
+  color: #7DD3FC;
+}
+/* Dispatched / out for delivery — teal */
+.badge-dispatched, .badge-out_for_delivery {
+  background: rgba(20, 184, 166, 0.14);
+  border-color: rgba(20, 184, 166, 0.30);
+  color: #5EEAD4;
+}
+/* Done / paid / active — green */
+.badge-delivered, .badge-completed, .badge-paid, .badge-active {
+  background: rgba(34, 197, 94, 0.14);
+  border-color: rgba(34, 197, 94, 0.30);
+  color: #4ADE80;
+}
+/* Failure / inactive — red */
+.badge-cancelled, .badge-failed, .badge-expired, .badge-critical, .badge-inactive {
+  background: rgba(239, 68, 68, 0.13);
+  border-color: rgba(239, 68, 68, 0.30);
+  color: #F87171;
+}
+/* Refunded — fuchsia */
+.badge-refunded {
+  background: rgba(217, 70, 239, 0.13);
+  border-color: rgba(217, 70, 239, 0.30);
+  color: #E879F9;
+}
+/* New — brand accent */
+.badge-new {
+  background: var(--admin-accent-soft);
+  border-color: rgba(240, 98, 146, 0.30);
+  color: var(--admin-accent-hover);
+}
 
 /* ====== Modal ====== */
 .admin-modal-overlay {
@@ -1055,23 +1103,35 @@
 .admin-payment-chip {
   border-radius: 999px;
   display: inline-flex;
-  font-size: 0.7rem;
+  align-items: center;
+  gap: 0.3rem;
+  font-size: 0.68rem;
   font-weight: 800;
-  padding: 0.15rem 0.55rem;
+  letter-spacing: 0.04em;
+  padding: 0.18rem 0.5rem;
   text-transform: uppercase;
   white-space: nowrap;
+  border: 1px solid transparent;
+}
+.admin-payment-chip::before {
+  content: '';
+  width: 5px;
+  height: 5px;
+  border-radius: 50%;
+  background: currentColor;
+  flex-shrink: 0;
 }
 
 .admin-payment-chip-cod {
   background: rgba(245, 158, 11, 0.12);
-  border: 1px solid rgba(245, 158, 11, 0.35);
-  color: var(--admin-warning);
+  border-color: rgba(245, 158, 11, 0.30);
+  color: #FBBF24;
 }
 
 .admin-payment-chip-online {
-  background: rgba(59, 130, 246, 0.12);
-  border: 1px solid rgba(59, 130, 246, 0.35);
-  color: var(--admin-info);
+  background: rgba(99, 102, 241, 0.14);
+  border-color: rgba(99, 102, 241, 0.32);
+  color: #A5B4FC;
 }
 
 .admin-refund-toolbar {
@@ -1700,7 +1760,9 @@
   .admin-section-animate,
   .admin-progress-bar,
   .admin-empty-icon,
-  .admin-pill-success {
+  .admin-pill-success,
+  .admin-combobox-pop,
+  .admin-daterange-pop {
     animation: none !important;
   }
 
@@ -1710,7 +1772,8 @@
   .admin-table tbody tr,
   .admin-operation-icon,
   .admin-stat-icon,
-  .admin-avatar {
+  .admin-avatar,
+  .admin-order-card {
     transition-duration: 0.01ms !important;
   }
 }
@@ -2739,6 +2802,247 @@
 .admin-share.tone-info   { --share-c1: #2563EB; --share-c2: #60A5FA; }
 .admin-share.tone-violet { --share-c1: #7C3AED; --share-c2: #A78BFA; }
 
+/* ── Sortable column headers ── */
+.admin-th-sort {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.3rem;
+  font: inherit;
+  font-weight: inherit;
+  color: inherit;
+  background: transparent;
+  border: none;
+  padding: 0;
+  cursor: pointer;
+  transition: color var(--admin-transition);
+}
+.admin-th-sort:hover { color: var(--admin-text); }
+.admin-th-sort.active { color: var(--admin-accent-hover); }
+.admin-th-sort svg { font-size: 0.9rem; opacity: 0.6; flex-shrink: 0; }
+.admin-th-sort.active svg { opacity: 1; }
+.admin-records-table .admin-num .admin-th-sort { justify-content: flex-end; width: 100%; }
+
+/* ============================================================
+   Searchable combobox + date-range picker
+   (re-themed from 21st.dev shadcn components → admin dark system)
+   ============================================================ */
+.admin-combobox,
+.admin-daterange {
+  position: relative;
+  width: 200px;
+  max-width: 100%;
+}
+.admin-daterange { width: 260px; }
+
+.admin-combobox-trigger {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  width: 100%;
+  min-height: 40px;
+  font: inherit;
+  font-size: 0.875rem;
+  font-weight: 600;
+  text-align: left;
+  color: var(--admin-text);
+  padding: 0.5rem 0.7rem;
+  border-radius: var(--admin-radius);
+  background: var(--admin-bg-subtle);
+  border: 1px solid var(--admin-border-subtle);
+  cursor: pointer;
+  transition: border-color var(--admin-transition), box-shadow var(--admin-transition), background var(--admin-transition);
+}
+.admin-combobox-trigger:hover {
+  border-color: var(--admin-border);
+  background: var(--admin-surface-hover);
+}
+.admin-combobox-trigger:focus-visible,
+.admin-combobox-trigger.is-open {
+  outline: none;
+  border-color: var(--admin-accent);
+  box-shadow: 0 0 0 3px var(--admin-accent-soft);
+}
+.admin-combobox-trigger:disabled { opacity: 0.5; cursor: not-allowed; }
+.admin-combobox-lead {
+  display: inline-flex;
+  flex-shrink: 0;
+  color: var(--admin-accent-hover);
+  font-size: 1rem;
+}
+.admin-combobox-value {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.admin-combobox-value.is-placeholder { color: var(--admin-text-muted); font-weight: 500; }
+.admin-combobox-caret { flex-shrink: 0; color: var(--admin-text-muted); font-size: 1.05rem; }
+.admin-combobox-clear {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+  width: 20px;
+  height: 20px;
+  border-radius: 999px;
+  color: var(--admin-text-muted);
+  cursor: pointer;
+  transition: color var(--admin-transition), background var(--admin-transition);
+}
+.admin-combobox-clear:hover { color: #fff; background: var(--admin-accent); }
+
+.admin-combobox-pop {
+  position: absolute;
+  z-index: 60;
+  top: calc(100% + 6px);
+  left: 0;
+  width: 100%;
+  min-width: 200px;
+  background: var(--admin-surface-raised);
+  border: 1px solid var(--admin-border);
+  border-radius: var(--admin-radius-lg);
+  box-shadow: var(--admin-shadow-elevated);
+  overflow: hidden;
+  animation: adminPopIn 140ms cubic-bezier(0.4, 0, 0.2, 1);
+}
+@keyframes adminPopIn {
+  from { opacity: 0; transform: translateY(-4px); }
+  to { opacity: 1; transform: translateY(0); }
+}
+.admin-combobox-search {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  padding: 0.55rem 0.7rem;
+  border-bottom: 1px solid var(--admin-border-subtle);
+}
+.admin-combobox-search svg { flex-shrink: 0; color: var(--admin-text-muted); font-size: 1rem; }
+.admin-combobox-search input {
+  flex: 1;
+  min-width: 0;
+  font: inherit;
+  font-size: 0.85rem;
+  color: var(--admin-text);
+  background: transparent;
+  border: none;
+  outline: none;
+}
+.admin-combobox-search input::placeholder { color: var(--admin-text-muted); }
+.admin-combobox-list {
+  list-style: none;
+  margin: 0;
+  padding: 0.3rem;
+  max-height: 244px;
+  overflow-y: auto;
+}
+.admin-combobox-option {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  padding: 0.5rem 0.6rem;
+  border-radius: var(--admin-radius-sm);
+  font-size: 0.85rem;
+  font-weight: 600;
+  color: var(--admin-text-secondary);
+  cursor: pointer;
+}
+.admin-combobox-option-label {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.admin-combobox-option.is-active { background: var(--admin-surface-hover); color: var(--admin-text); }
+.admin-combobox-option.is-selected { color: var(--admin-accent-hover); }
+.admin-combobox-option.is-empty-row { color: var(--admin-text-muted); font-weight: 500; }
+.admin-combobox-option-check { flex-shrink: 0; color: var(--admin-accent-hover); }
+.admin-combobox-empty {
+  padding: 0.8rem 0.6rem;
+  text-align: center;
+  font-size: 0.83rem;
+  color: var(--admin-text-muted);
+}
+
+/* ── Date range picker calendar ── */
+.admin-daterange-pop {
+  position: absolute;
+  z-index: 60;
+  top: calc(100% + 6px);
+  left: 0;
+  width: 280px;
+  padding: 0.75rem;
+  background: var(--admin-surface-raised);
+  border: 1px solid var(--admin-border);
+  border-radius: var(--admin-radius-lg);
+  box-shadow: var(--admin-shadow-elevated);
+  animation: adminPopIn 140ms cubic-bezier(0.4, 0, 0.2, 1);
+}
+.admin-daterange-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 0.6rem;
+}
+.admin-daterange-month { font-size: 0.875rem; font-weight: 700; color: var(--admin-text); }
+.admin-daterange-nav {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 30px;
+  height: 30px;
+  border-radius: var(--admin-radius-sm);
+  color: var(--admin-text-secondary);
+  background: var(--admin-bg-subtle);
+  border: 1px solid var(--admin-border-subtle);
+  cursor: pointer;
+  transition: background var(--admin-transition), color var(--admin-transition);
+}
+.admin-daterange-nav:hover { background: var(--admin-surface-hover); color: var(--admin-text); }
+.admin-daterange-weekdays,
+.admin-daterange-grid {
+  display: grid;
+  grid-template-columns: repeat(7, 1fr);
+  gap: 2px;
+}
+.admin-daterange-weekdays { margin-bottom: 4px; }
+.admin-daterange-weekdays span {
+  text-align: center;
+  font-size: 0.68rem;
+  font-weight: 700;
+  color: var(--admin-text-muted);
+  padding: 0.2rem 0;
+}
+.admin-daterange-day {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  aspect-ratio: 1 / 1;
+  font: inherit;
+  font-size: 0.8rem;
+  font-weight: 600;
+  color: var(--admin-text-secondary);
+  background: transparent;
+  border: none;
+  border-radius: var(--admin-radius-sm);
+  cursor: pointer;
+  transition: background var(--admin-transition), color var(--admin-transition);
+}
+.admin-daterange-day:hover:not(:disabled) { background: var(--admin-surface-hover); color: var(--admin-text); }
+.admin-daterange-day.is-outside { color: var(--admin-text-muted); opacity: 0.45; }
+.admin-daterange-day.is-disabled { opacity: 0.3; cursor: not-allowed; }
+.admin-daterange-day.is-inrange {
+  background: var(--admin-accent-soft);
+  color: var(--admin-accent-hover);
+  border-radius: 0;
+}
+.admin-daterange-day.is-endpoint {
+  background: linear-gradient(135deg, var(--admin-accent), #E73B78);
+  color: #fff;
+  box-shadow: 0 2px 8px rgba(216, 27, 96, 0.4);
+}
+
 /* ── Sales page responsive ── */
 @media (max-width: 1200px) {
   .admin-chart-grid-triple {
@@ -2782,4 +3086,447 @@
     width: 100%;
     justify-content: center;
   }
+  .admin-filter-panel .admin-filter-field {
+    width: 100%;
+  }
+  .admin-filter-panel .admin-combobox,
+  .admin-filter-panel .admin-daterange {
+    width: 100%;
+  }
 }
+
+/* ============================================================
+   Dashboard — premium metric tiles, count badge, customer cell
+   ============================================================ */
+.admin-metric-card {
+  position: relative;
+  overflow: hidden;
+  display: flex;
+  align-items: center;
+  gap: 0.9rem;
+  padding: 1.05rem 1.15rem;
+}
+.admin-metric-card.tone-accent  { --m-c1: #D81B60; --m-c2: #F06292; --m-soft: rgba(216, 27, 96, 0.16); }
+.admin-metric-card.tone-info    { --m-c1: #2563EB; --m-c2: #60A5FA; --m-soft: rgba(59, 130, 246, 0.16); }
+.admin-metric-card.tone-success { --m-c1: #16A34A; --m-c2: #22C55E; --m-soft: rgba(34, 197, 94, 0.16); }
+.admin-metric-card.tone-violet  { --m-c1: #7C3AED; --m-c2: #A78BFA; --m-soft: rgba(124, 58, 237, 0.18); }
+.admin-metric-card.tone-warning { --m-c1: #D97706; --m-c2: #F59E0B; --m-soft: rgba(245, 158, 11, 0.16); }
+.admin-metric-card::before {
+  content: '';
+  position: absolute;
+  inset: 0 auto 0 0;
+  width: 3px;
+  background: linear-gradient(180deg, var(--m-c1), var(--m-c2));
+}
+.admin-metric-card:hover {
+  transform: translateY(-2px);
+  border-color: var(--admin-border);
+  box-shadow: 0 10px 30px rgba(0, 0, 0, 0.35);
+}
+.admin-metric-icon {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+  width: 46px;
+  height: 46px;
+  border-radius: var(--admin-radius-lg);
+  font-size: 1.3rem;
+  color: var(--m-c2);
+  background: var(--m-soft);
+  border: 1px solid rgba(255, 255, 255, 0.06);
+  transition: transform var(--admin-transition), box-shadow var(--admin-transition);
+}
+.admin-metric-card:hover .admin-metric-icon {
+  transform: scale(1.06);
+  box-shadow: 0 0 18px var(--m-soft);
+}
+.admin-metric-body { min-width: 0; }
+.admin-metric-value {
+  font-size: 1.45rem;
+  font-weight: 850;
+  line-height: 1.1;
+  color: var(--admin-text);
+  font-variant-numeric: tabular-nums;
+}
+.admin-metric-label {
+  margin-top: 0.2rem;
+  font-size: 0.8rem;
+  font-weight: 700;
+  color: var(--admin-text-secondary);
+}
+
+.admin-count-badge {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 22px;
+  height: 22px;
+  padding: 0 0.4rem;
+  margin-left: 0.5rem;
+  font-size: 0.72rem;
+  font-weight: 800;
+  vertical-align: middle;
+  color: var(--admin-accent-hover);
+  background: var(--admin-accent-soft);
+  border: 1px solid rgba(240, 98, 146, 0.3);
+  border-radius: 999px;
+  font-variant-numeric: tabular-nums;
+}
+
+/* Recent-orders customer cell with initial avatar */
+.admin-cust { display: flex; align-items: center; gap: 0.6rem; }
+.admin-cust-avatar {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+  width: 34px;
+  height: 34px;
+  border-radius: 50%;
+  font-size: 0.85rem;
+  font-weight: 800;
+  color: #fff;
+  background: linear-gradient(135deg, var(--admin-accent), #E73B78);
+  box-shadow: 0 2px 8px rgba(216, 27, 96, 0.3);
+}
+.admin-cust-info { min-width: 0; }
+.admin-cust-name {
+  display: flex;
+  align-items: center;
+  gap: 0.4rem;
+  flex-wrap: wrap;
+  font-weight: 600;
+  font-size: 0.875rem;
+  color: var(--admin-text);
+}
+.admin-orders-table td { vertical-align: middle; }
+
+/* Recent orders → responsive: table on desktop, stacked cards on mobile */
+.admin-orders-cards { display: none; }
+@media (max-width: 640px) {
+  .admin-orders-scroll { display: none; }
+  .admin-orders-cards { display: flex; flex-direction: column; gap: 0.7rem; }
+
+  /* Comfortable touch targets on small screens (≥44px) */
+  .admin-combobox-option { min-height: 44px; }
+  .admin-records-tab,
+  .admin-range-btn { min-height: 40px; }
+  .admin-combobox-clear { width: 28px; height: 28px; }
+}
+.admin-order-card {
+  display: block;
+  padding: 0.85rem 0.9rem;
+  border-radius: var(--admin-radius);
+  background: var(--admin-bg-subtle);
+  border: 1px solid var(--admin-border-subtle);
+  transition: border-color var(--admin-transition), background var(--admin-transition), transform var(--admin-transition);
+}
+.admin-order-card:hover {
+  border-color: var(--admin-border);
+  background: var(--admin-surface-hover);
+}
+.admin-order-card:active { transform: scale(0.99); }
+.admin-order-card-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.5rem;
+  margin-bottom: 0.6rem;
+}
+.admin-order-card-num { font-weight: 800; font-size: 0.9rem; color: var(--admin-accent-hover); }
+.admin-order-card-total { font-weight: 800; color: var(--admin-text); font-variant-numeric: tabular-nums; }
+.admin-order-card .admin-cust { margin-bottom: 0.55rem; }
+.admin-order-card-product {
+  display: flex;
+  flex-direction: column;
+  gap: 0.1rem;
+  margin-bottom: 0.55rem;
+  min-width: 0;
+}
+.admin-order-card-product .admin-row-title { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.admin-order-card-foot {
+  display: flex;
+  align-items: center;
+  gap: 0.4rem;
+  flex-wrap: wrap;
+}
+.admin-order-card-delivery {
+  margin-left: auto;
+  white-space: nowrap;
+  font-size: 0.72rem;
+  font-weight: 600;
+  color: var(--admin-text-muted);
+}
+
+/* ============================================================
+   Orders — status chips, search field, quick-status select,
+   responsive order cards, address modal
+   ============================================================ */
+/* Count badge must opt out of the gradient title's transparent text fill */
+.admin-title-gradient .admin-count-badge { -webkit-text-fill-color: var(--admin-accent-hover); }
+
+.admin-chip-row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.4rem;
+  margin-bottom: 1rem;
+}
+.admin-chip {
+  font: inherit;
+  font-size: 0.75rem;
+  font-weight: 700;
+  cursor: pointer;
+  white-space: nowrap;
+  padding: 0.34rem 0.78rem;
+  border-radius: 999px;
+  color: var(--admin-text-secondary);
+  background: var(--admin-surface);
+  border: 1px solid var(--admin-border-subtle);
+  transition: background var(--admin-transition), color var(--admin-transition), border-color var(--admin-transition);
+}
+.admin-chip:hover { color: var(--admin-text); border-color: var(--admin-border); }
+
+.admin-search-field {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  width: 200px;
+  max-width: 100%;
+  min-height: 40px;
+  padding: 0.4rem 0.7rem;
+  border-radius: var(--admin-radius);
+  background: var(--admin-bg-subtle);
+  border: 1px solid var(--admin-border-subtle);
+  transition: border-color var(--admin-transition), box-shadow var(--admin-transition);
+}
+.admin-search-field:focus-within {
+  border-color: var(--admin-accent);
+  box-shadow: 0 0 0 3px var(--admin-accent-soft);
+}
+.admin-search-field svg { flex-shrink: 0; color: var(--admin-text-muted); font-size: 1rem; }
+.admin-search-input {
+  flex: 1;
+  min-width: 0;
+  font: inherit;
+  font-size: 0.875rem;
+  color: var(--admin-text);
+  background: transparent;
+  border: none;
+  outline: none;
+}
+.admin-search-input::placeholder { color: var(--admin-text-muted); }
+
+.admin-status-select {
+  font: inherit;
+  font-size: 0.72rem;
+  font-weight: 700;
+  min-width: 124px;
+  min-height: 34px;
+  padding: 0.3rem 1.6rem 0.3rem 0.6rem;
+  border-radius: var(--admin-radius-sm);
+  background-color: var(--admin-surface);
+  border: 2px solid var(--admin-border);
+  cursor: pointer;
+  outline: none;
+  -webkit-appearance: none;
+  -moz-appearance: none;
+  appearance: none;
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='12' viewBox='0 0 12 12'%3E%3Cpath fill='%239BA4B5' d='M6 8L1 3h10z'/%3E%3C/svg%3E");
+  background-repeat: no-repeat;
+  background-position: right 0.5rem center;
+}
+.admin-status-select option { background: var(--admin-surface); color: var(--admin-text); }
+.admin-quick-saving { font-size: 0.75rem; color: var(--admin-text-muted); }
+
+.admin-order-num-cell { display: flex; align-items: center; gap: 0.4rem; flex-wrap: wrap; }
+.admin-ellipsis { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; max-width: 160px; }
+
+.admin-order-card-static { cursor: default; }
+.admin-order-card-actions {
+  display: flex;
+  gap: 0.5rem;
+  margin-top: 0.65rem;
+}
+.admin-order-card-actions .admin-btn { flex: 1; justify-content: center; }
+
+/* Address modal */
+.admin-addr { font-size: 0.875rem; line-height: 1.7; }
+.admin-addr-block {
+  margin-bottom: 0.75rem;
+  padding: 0.75rem;
+  background: var(--admin-bg);
+  border: 1px solid var(--admin-border);
+  border-radius: var(--admin-radius-sm);
+}
+.admin-addr-name { font-weight: 700; color: var(--admin-text); }
+.admin-addr-line {
+  display: flex;
+  align-items: center;
+  gap: 0.4rem;
+  font-size: 0.8rem;
+  color: var(--admin-text-secondary);
+}
+.admin-addr-line svg { flex-shrink: 0; color: var(--admin-text-muted); }
+.admin-addr-muted { margin-top: 0.125rem; font-size: 0.8rem; color: var(--admin-text-muted); }
+.admin-addr-schedule {
+  display: flex;
+  align-items: center;
+  gap: 0.4rem;
+  flex-wrap: wrap;
+  margin-top: 0.75rem;
+  padding: 0.625rem 0.75rem;
+  background: var(--admin-accent-soft);
+  border: 1px solid rgba(216, 27, 96, 0.2);
+  border-radius: var(--admin-radius-sm);
+  font-size: 0.8rem;
+  color: var(--admin-text-secondary);
+}
+.admin-addr-schedule svg { flex-shrink: 0; color: var(--admin-accent-hover); }
+.admin-addr-schedule strong { color: var(--admin-text); }
+
+@media (max-width: 640px) {
+  .admin-status-select { min-height: 40px; }
+}
+
+/* Info banner (e.g. GST not-yet-charged notice) */
+.admin-info-banner {
+  display: flex;
+  align-items: center;
+  gap: 0.6rem;
+  margin-bottom: 1.25rem;
+  border-left: 3px solid var(--admin-info);
+  font-size: 0.85rem;
+  line-height: 1.5;
+  color: var(--admin-text-secondary);
+}
+.admin-info-banner svg {
+  color: var(--admin-info);
+  font-size: 1.3rem;
+  flex-shrink: 0;
+}
+
+/* ============================================================
+   Profit & Loss — money-flow rows, coverage meter, margin bars
+   ============================================================ */
+.admin-flow-list {
+  display: flex;
+  flex-direction: column;
+  gap: 0.7rem;
+}
+.admin-flow-row.is-strong {
+  margin-top: 0.35rem;
+  padding-top: 0.7rem;
+  border-top: 1px solid var(--admin-border);
+}
+.admin-flow-row-head {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 0.75rem;
+  margin-bottom: 0.35rem;
+}
+.admin-flow-row-label {
+  font-size: 0.85rem;
+  font-weight: 500;
+  color: var(--admin-text-secondary);
+}
+.admin-flow-row.is-strong .admin-flow-row-label {
+  font-weight: 700;
+  color: var(--admin-text);
+}
+.admin-flow-row-value {
+  font-weight: 700;
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}
+.admin-flow-row.is-strong .admin-flow-row-value { font-weight: 800; }
+.admin-flow-bar {
+  display: block;
+  position: relative;
+  height: 5px;
+  border-radius: 999px;
+  background: var(--admin-bg);
+  overflow: hidden;
+}
+.admin-flow-fill {
+  position: absolute;
+  inset: 0 auto 0 0;
+  border-radius: 999px;
+  opacity: 0.85;
+}
+
+/* Cost-coverage meter */
+.admin-coverage {
+  margin-top: 1rem;
+  padding-top: 0.9rem;
+  border-top: 1px solid var(--admin-border-subtle);
+}
+.admin-coverage-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  font-size: 0.8rem;
+  font-weight: 700;
+  color: var(--admin-text-secondary);
+  margin-bottom: 0.4rem;
+}
+.admin-coverage-pct {
+  font-variant-numeric: tabular-nums;
+  color: var(--admin-success);
+}
+.admin-coverage.is-low .admin-coverage-pct { color: var(--admin-warning); }
+.admin-coverage-bar {
+  display: block;
+  position: relative;
+  height: 7px;
+  border-radius: 999px;
+  background: var(--admin-bg);
+  overflow: hidden;
+}
+.admin-coverage-fill {
+  position: absolute;
+  inset: 0 auto 0 0;
+  border-radius: 999px;
+  background: linear-gradient(90deg, #16A34A, #22C55E);
+}
+.admin-coverage.is-low .admin-coverage-fill {
+  background: linear-gradient(90deg, #D97706, #F59E0B);
+}
+.admin-coverage-note {
+  margin-top: 0.45rem;
+  font-size: 0.8rem;
+  color: var(--admin-text-secondary);
+}
+
+/* Margin cell — bar + colored percentage */
+.admin-margin-cell {
+  display: flex;
+  align-items: center;
+  gap: 0.55rem;
+}
+.admin-margin-track {
+  position: relative;
+  flex: 1;
+  min-width: 56px;
+  height: 6px;
+  border-radius: 999px;
+  background: var(--admin-bg);
+  overflow: hidden;
+}
+.admin-margin-fill {
+  position: absolute;
+  inset: 0 auto 0 0;
+  border-radius: 999px;
+}
+.admin-margin-cell.is-pos .admin-margin-fill { background: linear-gradient(90deg, #16A34A, #22C55E); }
+.admin-margin-cell.is-neg .admin-margin-fill { background: linear-gradient(90deg, #DC2626, #F87171); }
+.admin-margin-pct {
+  min-width: 42px;
+  text-align: right;
+  font-size: 0.78rem;
+  font-weight: 800;
+  font-variant-numeric: tabular-nums;
+}
+.admin-margin-cell.is-pos .admin-margin-pct { color: #4ADE80; }
+.admin-margin-cell.is-neg .admin-margin-pct { color: #F87171; }

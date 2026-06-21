@@ -9,27 +9,75 @@ const deliveryValidation = require('../delivery/delivery.validation');
 const categoryValidation = require('../categories/category.validation');
 const addonValidation = require('../addons/addon.validation');
 const { auth } = require('../../middleware/auth');
-const { adminAuth } = require('../../middleware/adminAuth');
+const { adminAuth, superAdminAuth } = require('../../middleware/adminAuth');
 const ApiError = require('../../utils/ApiError');
-const { sectionForPath, canAccess } = require('../../utils/adminAccess');
+const { sectionForPath, canAccess, BRANCHADMIN_SECTIONS } = require('../../utils/adminAccess');
 const adminAuditService = require('./adminAudit.service');
+const branchSelfController = require('./branchSelf.controller');
+const branchSelfValidation = require('./branchSelf.validation');
 
 // All admin routes require auth + admin-tier role.
 router.use(auth, adminAuth);
+
+// Identity endpoint — returns the caller's role, branch scope, and the branches
+// they may act on (owner => all active; walled => only theirs). Registered
+// BEFORE the section guard because it's identity, not a feature section, and the
+// frontend needs it to render the (locked) branch picker for walled admins.
+router.get('/me', adminController.getMe);
+
+// ── Branch self-management (owner + branch admins only) ───────────────────
+// Mounted BEFORE the coarse section guard and governed by its own role + scope
+// checks: branch admins manage ONLY their own branch's settings and staff, and
+// can never escalate a role or reach another branch. All data is scoped
+// server-side via req.branchScope; the explicit role guard excludes
+// managers/staff entirely (they have no business managing a branch or its team).
+const branchSelfRouter = express.Router();
+branchSelfRouter.use(require('../../middleware/branchScope'));
+branchSelfRouter.use((req, res, next) => {
+  const role = req.user.role;
+  if (role === 'superadmin' || role === 'admin' || role === 'branchadmin') return next();
+  return next(ApiError.forbidden('Branch self-management is limited to branch admins'));
+});
+branchSelfRouter.get('/', branchSelfController.getMyBranches);
+branchSelfRouter.get('/staff', branchSelfController.listMyStaff);
+branchSelfRouter.post('/staff', validate(branchSelfValidation.createMyStaff), adminAuditService.audit('branch.staff.create', { resourceType: 'user' }), branchSelfController.createMyStaff);
+branchSelfRouter.put('/staff/:id/active', validate(branchSelfValidation.setMyStaffActive), adminAuditService.audit('branch.staff.active', { resourceType: 'user' }), branchSelfController.setMyStaffActive);
+branchSelfRouter.put('/staff/:id/branches', validate(branchSelfValidation.setMyStaffBranches), adminAuditService.audit('branch.staff.branches', { resourceType: 'user' }), branchSelfController.setMyStaffBranches);
+branchSelfRouter.post('/staff/:id/reset-password', validate(branchSelfValidation.staffIdParam), adminAuditService.audit('branch.staff.reset_password', { resourceType: 'user' }), branchSelfController.resetMyStaffPassword);
+branchSelfRouter.put('/:id', validate(branchSelfValidation.updateMyBranch), adminAuditService.audit('branch.self.update', { resourceType: 'branch' }), branchSelfController.updateMyBranch);
+router.use('/my-branch', branchSelfRouter);
 
 // Role-based section guard: Super/legacy-admin pass everything; Manager is
 // blocked from financial sections; Staff is limited to operations. The section
 // is inferred from the request path so every route (incl. writes) is covered.
 router.use((req, res, next) => {
-  if (canAccess(req.user.role, sectionForPath(req.path))) return next();
-  return next(ApiError.forbidden('You do not have access to this section'));
+  const section = sectionForPath(req.path);
+  if (!canAccess(req.user.role, section)) {
+    return next(ApiError.forbidden('You do not have access to this section'));
+  }
+  // Walled admins (User.branchIds set, any role) are further confined to
+  // surfaces whose DATA is branch-scoped server-side. This stops a
+  // branch-scoped manager/staff from reading a not-yet-scoped section
+  // (delivery/inquiries/customers/coupons/etc) that would expose other
+  // branches. The allow-set widens as more entities get scoped.
+  const walled = Array.isArray(req.user.branchIds) && req.user.branchIds.length > 0;
+  if (walled && !BRANCHADMIN_SECTIONS.has(section)) {
+    return next(ApiError.forbidden('You do not have access to this section'));
+  }
+  return next();
 });
+
+// Attach branch data-scope (owner vs walled) to every admin request. Read by
+// handlers via resolveBranchIds(req.branchScope, req.query.branchId).
+router.use(require('../../middleware/branchScope'));
 
 // Dashboard
 router.get('/dashboard', adminController.getDashboard);
 router.get('/analytics', adminController.getAnalytics);
 router.get('/sales', adminController.getSales);
 router.get('/profit', adminController.getProfit);
+// Owner-only by-branch comparison (segment maps to an owner-only section).
+router.get('/branch-breakdown', adminController.getBranchBreakdown);
 router.get('/variants', adminController.listVariants);
 router.get('/customer-analytics', adminController.getCustomerAnalytics);
 router.get('/gst', adminController.getGstReport);
@@ -39,7 +87,11 @@ router.get('/settings', adminController.getSettings);
 router.put('/settings', adminController.updateSettings);
 router.get('/company', adminController.getCompany);
 router.get('/admins', adminController.listAdminUsers);
-router.put('/admins/:id/role', validate(adminValidation.paramId), adminAuditService.audit('admin.role.update', { resourceType: 'user' }), adminController.setAdminRole);
+router.post('/admins', superAdminAuth, validate(adminValidation.createAdminUser), adminAuditService.audit('admin.user.create', { resourceType: 'user' }), adminController.createAdminUser);
+router.put('/admins/:id/role', superAdminAuth, validate(adminValidation.setAdminRole), adminAuditService.audit('admin.role.update', { resourceType: 'user' }), adminController.setAdminRole);
+router.put('/admins/:id/active', superAdminAuth, validate(adminValidation.setAdminActive), adminAuditService.audit('admin.user.active', { resourceType: 'user' }), adminController.setAdminActive);
+router.put('/admins/:id/branches', superAdminAuth, validate(adminValidation.setAdminBranches), adminAuditService.audit('admin.user.branches', { resourceType: 'user' }), adminController.setAdminBranches);
+router.post('/admins/:id/reset-password', superAdminAuth, validate(adminValidation.paramId), adminAuditService.audit('admin.user.reset_password', { resourceType: 'user' }), adminController.resetAdminPassword);
 router.post('/reports/send-daily', adminController.sendDailyReportNow);
 router.get('/audit-logs', adminController.getAuditLogs);
 router.get('/operational-alerts', adminController.getOperationalAlerts);
@@ -84,6 +136,11 @@ router.put('/delivery/slots/:id', validate(adminValidation.paramId), adminAuditS
 router.get('/delivery/zones', adminController.getZones);
 router.post('/delivery/zones', validate(deliveryValidation.createZone), adminAuditService.audit('delivery_zone.create', { resourceType: 'delivery_zone' }), adminController.createZone);
 router.put('/delivery/zones/:id', validate(adminValidation.paramId), adminAuditService.audit('delivery_zone.update', { resourceType: 'delivery_zone' }), adminController.updateZone);
+// Branches (store locations) — under /delivery so they inherit the 'delivery'
+// access section (operations roles can read for invoices + zone assignment).
+router.get('/delivery/branches', adminController.getBranches);
+router.post('/delivery/branches', validate(deliveryValidation.createBranch), adminAuditService.audit('branch.create', { resourceType: 'branch' }), adminController.createBranch);
+router.put('/delivery/branches/:id', validate(adminValidation.paramId), validate(deliveryValidation.updateBranch), adminAuditService.audit('branch.update', { resourceType: 'branch' }), adminController.updateBranch);
 
 // Add-Ons
 router.get('/addons', adminController.listAddOns);

@@ -48,6 +48,7 @@ class RefundService {
         $setOnInsert: {
           order: order._id,
           payment: payment._id,
+          branchId: order.branchId || null,
           user: order.user || null,
           amount: refundAmount,
           currency: payment.currency || 'INR',
@@ -234,6 +235,10 @@ class RefundService {
     const filter = {};
     if (query.status) filter.status = query.status;
     if (query.user) filter.user = query.user;
+    // Branch data-scope: controller passes a resolved branchIds[] set. Legacy
+    // refunds (no branchId) remain owner-only until a refund backfill.
+    const branchIds = require('../../utils/branchScope').toObjectIds(query);
+    if (branchIds.length) filter.branchId = { $in: branchIds };
 
     const [refunds, total] = await Promise.all([
       this.RefundModel.find(filter)

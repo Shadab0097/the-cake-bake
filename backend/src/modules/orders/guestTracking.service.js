@@ -177,6 +177,50 @@ class GuestTrackingService {
 
     return this.buildPublicOrder(order);
   }
+
+  normalizeEmail(email) {
+    return String(email || '').trim().toLowerCase();
+  }
+
+  escapeRegExp(value) {
+    return String(value).replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+  }
+
+  /**
+   * Public guest lookup by order number + email.
+   *
+   * Used by the standalone "Track Order" page so a guest can retrieve their
+   * order anytime without the signed link. Only matches guest orders
+   * (user: null). All failure modes return the SAME generic 404 so the
+   * endpoint cannot be used to enumerate order numbers or email addresses.
+   */
+  async lookupGuestOrderByEmail(orderNumber, email) {
+    const normalizedOrderNumber = String(orderNumber || '').trim();
+    const normalizedEmail = this.normalizeEmail(email);
+
+    // Single generic error for every miss — never reveal which field was wrong.
+    const genericError = ApiError.notFound(
+      'We couldn\'t find an order matching that order number and email. Please double-check and try again.',
+      [],
+      'GUEST_ORDER_NOT_FOUND'
+    );
+
+    if (!normalizedOrderNumber || !normalizedEmail) throw genericError;
+
+    // Guest emails are stored lowercased at checkout, but match
+    // case-insensitively (anchored, escaped) to tolerate any legacy casing.
+    const emailMatcher = new RegExp(`^${this.escapeRegExp(normalizedEmail)}$`, 'i');
+
+    const order = await Order.findOne({
+      orderNumber: normalizedOrderNumber,
+      user: null,
+      'guestInfo.email': emailMatcher,
+    }).lean();
+
+    if (!order) throw genericError;
+
+    return this.buildPublicOrder(order);
+  }
 }
 
 module.exports = new GuestTrackingService();

@@ -27,6 +27,8 @@ export default function InvoicePage({ params }) {
   const { id } = use(params);
   const [order, setOrder] = useState(null);
   const [company, setCompany] = useState({});
+  const [zones, setZones] = useState([]);
+  const [branches, setBranches] = useState([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
 
@@ -34,13 +36,17 @@ export default function InvoicePage({ params }) {
     let active = true;
     (async () => {
       try {
-        const [orderRes, companyRes] = await Promise.all([
+        const [orderRes, companyRes, zonesRes, branchesRes] = await Promise.all([
           adminApi.orders.get(id),
           adminApi.settings.company().catch(() => ({ data: { data: {} } })),
+          adminApi.delivery.getZones().catch(() => ({ data: { data: [] } })),
+          adminApi.delivery.getBranches().catch(() => ({ data: { data: [] } })),
         ]);
         if (!active) return;
         setOrder(orderRes.data.data);
         setCompany(companyRes.data.data || {});
+        setZones(zonesRes.data.data || []);
+        setBranches(branchesRes.data.data || []);
       } catch (err) {
         if (active) setError(err?.response?.data?.message || 'Failed to load invoice');
       } finally {
@@ -56,7 +62,22 @@ export default function InvoicePage({ params }) {
   const addr = order.shippingAddress || {};
   const customer = order.user?.name || order.guestInfo?.name || addr.fullName || 'Customer';
   const phone = order.user?.phone || order.guestInfo?.phone || addr.phone || '';
-  const invoiceNo = `${company.invoicePrefix || 'INV'}-${order.orderNumber}`;
+
+  // Per-location seller identity: resolve the branch that fulfils this order
+  // (delivery city → zone → branch) and let its ship-from address + invoice
+  // prefix override the globals. Legal identity (name / GSTIN / etc.) always
+  // comes from global company settings.
+  // Prefer the branch snapshotted on the order; fall back to resolving by
+  // delivery city (for legacy orders placed before branchId existed).
+  const orderCity = (order.deliveryCity || addr.city || '').trim().toLowerCase();
+  const zone = orderCity ? zones.find((z) => (z.city || '').trim().toLowerCase() === orderCity) : null;
+  const resolvedBranchId = order.branchId || zone?.branchId || null;
+  const branch = resolvedBranchId ? branches.find((b) => String(b._id) === String(resolvedBranchId)) : null;
+  const origin = branch?.origin || {};
+  const hasOrigin = !!(origin.addressLine1 || origin.addressLine2 || origin.city);
+  const sellerAddr = hasOrigin ? origin : company;
+  const invoicePrefix = branch?.invoicePrefix || company.invoicePrefix || 'INV';
+  const invoiceNo = `${invoicePrefix}-${order.orderNumber}`;
   const items = order.items || [];
 
   return (
@@ -79,8 +100,8 @@ export default function InvoicePage({ params }) {
             <div style={{ fontSize: '1.4rem', fontWeight: 800, color: '#D81B60' }}>{company.name || 'The Cake Bake'}</div>
             {company.legalName && <div style={{ fontSize: '0.85rem', color: '#555' }}>{company.legalName}</div>}
             <div style={{ fontSize: '0.8rem', color: '#555', marginTop: 4 }}>
-              {[company.addressLine1, company.addressLine2].filter(Boolean).join(', ')}<br />
-              {[company.city, company.state, company.pincode].filter(Boolean).join(', ')}
+              {[sellerAddr.addressLine1, sellerAddr.addressLine2].filter(Boolean).join(', ')}<br />
+              {[sellerAddr.city, sellerAddr.state, sellerAddr.pincode].filter(Boolean).join(', ')}
             </div>
             <div style={{ fontSize: '0.8rem', color: '#555', marginTop: 4 }}>
               {company.phone && <>📞 {company.phone} &nbsp;</>}

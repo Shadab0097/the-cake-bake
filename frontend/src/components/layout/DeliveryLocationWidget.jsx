@@ -3,9 +3,10 @@
 import { useEffect, useRef, useState } from 'react';
 import { useDispatch, useSelector } from 'react-redux';
 import { motion, AnimatePresence, useReducedMotion } from 'framer-motion';
-import { FiMapPin, FiChevronDown, FiCheck, FiClock, FiX } from 'react-icons/fi';
-import { checkPincode, clearDeliveryLocationState } from '@/store/slices/deliverySlice';
+import { FiMapPin, FiChevronDown, FiCheck, FiClock, FiX, FiNavigation, FiLoader } from 'react-icons/fi';
+import { checkPincode, detectLocation, clearDeliveryLocationState } from '@/store/slices/deliverySlice';
 import { closeDeliveryPopover, toggleDeliveryPopover } from '@/store/slices/uiSlice';
+import { isGeolocationEnabled, isGeolocationSupported } from '@/lib/geolocation.mjs';
 import { formatPrice } from '@/lib/utils';
 
 const PIN_RE = /^\d{6}$/;
@@ -94,11 +95,12 @@ export default function DeliveryLocationWidget({ variant = 'desktop' }) {
 function LocationPopover({ variant }) {
   const dispatch = useDispatch();
   const reduceMotion = useReducedMotion();
-  const { pincode, city, status, message, deliveryCharge, sameDayAvailable, isChecking, error } =
+  const { pincode, city, status, message, deliveryCharge, sameDayAvailable, isChecking, isDetecting, error } =
     useSelector((s) => s.delivery);
 
   const [input, setInput] = useState(pincode || '');
   const [touched, setTouched] = useState(false);
+  const [detectError, setDetectError] = useState('');
   const inputRef = useRef(null);
 
   useEffect(() => {
@@ -107,11 +109,33 @@ function LocationPopover({ variant }) {
   }, []);
 
   const valid = PIN_RE.test(input);
+  const canDetect = isGeolocationEnabled() && isGeolocationSupported();
 
   const submit = (e) => {
     e?.preventDefault();
     setTouched(true);
     if (valid) dispatch(checkPincode(input));
+  };
+
+  // Manual "Use my location": detect, then mirror the result into the input so
+  // the inline serviceability card shows (no toast — that's only for first-visit
+  // auto-detect). On failure, surface a short, friendly hint.
+  const handleDetect = async () => {
+    setDetectError('');
+    setTouched(false);
+    const action = await dispatch(detectLocation({ auto: false }));
+    if (detectLocation.fulfilled.match(action)) {
+      setInput(action.payload.pincode);
+    } else {
+      const code = action.payload;
+      setDetectError(
+        code === 'GEO_DENIED'
+          ? 'Location access is blocked. Please enter your pincode below.'
+          : code === 'NO_PINCODE'
+            ? 'Couldn’t pinpoint your pincode — please enter it below.'
+            : 'Couldn’t detect your location. Please enter your pincode below.'
+      );
+    }
   };
 
   const showResult = !isChecking && pincode && input === pincode && status;
@@ -167,6 +191,30 @@ function LocationPopover({ variant }) {
         <p className="text-xs text-error mt-2">Enter a valid 6-digit pincode.</p>
       )}
       {error && <p className="text-xs text-error mt-2">{error}</p>}
+
+      {canDetect && (
+        <>
+          <div className="flex items-center gap-2 my-3" aria-hidden="true">
+            <span className="h-px flex-1 bg-outline-variant/30" />
+            <span className="text-[11px] uppercase tracking-wide text-outline">or</span>
+            <span className="h-px flex-1 bg-outline-variant/30" />
+          </div>
+          <button
+            type="button"
+            onClick={handleDetect}
+            disabled={isDetecting || isChecking}
+            className="w-full flex items-center justify-center gap-2 px-4 py-2 rounded-xl border border-pink-deep/40 text-pink-deep text-sm font-semibold hover:bg-pink-light/15 disabled:opacity-60 transition-colors"
+          >
+            {isDetecting ? (
+              <FiLoader className="w-4 h-4 animate-spin" />
+            ) : (
+              <FiNavigation className="w-4 h-4" />
+            )}
+            {isDetecting ? 'Detecting…' : 'Use my current location'}
+          </button>
+          {detectError && <p className="text-xs text-error mt-2">{detectError}</p>}
+        </>
+      )}
 
       {showResult && (
         <div className="mt-3">

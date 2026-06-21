@@ -177,6 +177,11 @@ export default function Navbar() {
       };
     }
     return link;
+  }).concat({
+    // Public order tracking. Signed-in users go straight to their orders;
+    // guests reach the order-number + email lookup page.
+    label: 'Track Order',
+    href: isAuthenticated ? '/account' : '/track-order',
   });
 
   const trimmedSearch = searchQuery.trim();

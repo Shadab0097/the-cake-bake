@@ -6,6 +6,8 @@ process.env.JWT_SECRET = process.env.JWT_SECRET || 'auth-service-test-secret';
 process.env.JWT_REFRESH_SECRET = process.env.JWT_REFRESH_SECRET || 'auth-refresh-test-secret';
 
 const authService = require('../src/modules/auth/auth.service');
+const { USER_ROLES } = require('../src/utils/constants');
+const { ADMIN_ROLES } = require('../src/utils/adminAccess');
 
 test('refresh token hashes are deterministic and never equal the raw token', () => {
   const rawToken = 'raw-refresh-token';
@@ -78,4 +80,22 @@ test('generated refresh tokens are scope-bound and unique per rotation', () => {
   assert.ok(decoded.jti);
   assert.equal(decodedAdmin.scope, 'admin');
   assert.ok(decodedAdmin.jti);
+});
+
+test('admin login gate admits EVERY admin-tier role (incl. branch admin), not just admin/superadmin', () => {
+  // Regression guard: the login gate must accept the same set as the adminAuth
+  // middleware (ADMIN_ROLES) — branchadmin/manager/staff were once locked out.
+  for (const role of ADMIN_ROLES) {
+    assert.equal(authService.isAdminUser({ role }), true, `${role} should pass the admin login gate`);
+  }
+  assert.equal(authService.isAdminUser({ role: USER_ROLES.BRANCHADMIN }), true);
+  assert.equal(authService.isAdminUser({ role: USER_ROLES.MANAGER }), true);
+  assert.equal(authService.isAdminUser({ role: USER_ROLES.STAFF }), true);
+});
+
+test('admin login gate rejects customers and unknown/empty roles', () => {
+  assert.equal(authService.isAdminUser({ role: USER_ROLES.CUSTOMER }), false);
+  assert.equal(authService.isAdminUser({ role: 'nonsense' }), false);
+  assert.equal(authService.isAdminUser({}), false);
+  assert.equal(authService.isAdminUser(null), false);
 });

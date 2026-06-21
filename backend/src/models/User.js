@@ -35,6 +35,14 @@ const userSchema = new mongoose.Schema(
       enum: Object.values(USER_ROLES),
       default: USER_ROLES.CUSTOMER,
     },
+    // Branches this admin is walled to (data-scope). Empty = owner / HQ: sees
+    // every branch, incl. future ones. One or more = sees only these branches.
+    // Orthogonal to `role` (which gates features); together they define access.
+    branchIds: {
+      type: [{ type: mongoose.Schema.Types.ObjectId, ref: 'Branch' }],
+      default: [],
+      index: true,
+    },
     avatar: {
       type: String,
       default: '',
@@ -61,6 +69,12 @@ const userSchema = new mongoose.Schema(
       type: Boolean,
       default: false,
       index: true,
+    },
+    // Set when an admin is created with a temporary password or has had their
+    // password reset by a super admin; the user should change it on next login.
+    mustChangePassword: {
+      type: Boolean,
+      default: false,
     },
     codDisabledReason: {
       type: String,

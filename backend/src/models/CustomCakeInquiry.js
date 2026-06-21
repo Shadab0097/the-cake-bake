@@ -66,6 +66,14 @@ const customCakeInquirySchema = new mongoose.Schema(
       type: String,
       default: '',
     },
+    // Fulfilling branch, resolved from city at submit (falls back to the default
+    // branch). Null = unrouted/legacy — owner-only in admin lists until backfill.
+    branchId: {
+      type: mongoose.Schema.Types.ObjectId,
+      ref: 'Branch',
+      default: null,
+      index: true,
+    },
     budget: {
       type: String,
       default: '',

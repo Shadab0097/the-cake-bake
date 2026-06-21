@@ -1,15 +1,22 @@
 'use client';
 
-import { useEffect, useState, useCallback } from 'react';
+import { useEffect, useMemo, useState, useCallback } from 'react';
 import Link from 'next/link';
+import {
+  HiOutlineMagnifyingGlass,
+  HiOutlineFunnel,
+  HiOutlineMapPin,
+  HiOutlineXMark,
+  HiOutlineCalendarDays,
+  HiOutlineEye,
+  HiOutlineEnvelope,
+  HiOutlinePhone,
+  HiOutlineTruck,
+} from 'react-icons/hi2';
 import adminApi, { formatPrice, formatDateTime, ORDER_STATUSES, PAYMENT_STATUSES } from '@/lib/adminApi';
 import { StatusBadge, Pagination, LoadingSkeleton, EmptyState, RefreshButton, AdminModal, AdminToast, useAdminToast } from '@/components/admin/AdminUI';
-
-const STATUS_COLORS = {
-  pending: '#f59e0b', confirmed: '#3b82f6', preparing: '#8b5cf6',
-  packed: '#06b6d4', dispatched: '#f97316', out_for_delivery: '#10b981',
-  delivered: '#22c55e', cancelled: '#ef4444', refunded: '#6b7280',
-};
+import AdminCombobox from '@/components/admin/AdminCombobox';
+import AdminDateRangePicker from '@/components/admin/AdminDateRangePicker';
 
 const STATUS_LABELS = {
   pending: 'Pending', confirmed: 'Confirmed', preparing: 'Preparing',
@@ -17,15 +24,20 @@ const STATUS_LABELS = {
   delivered: 'Delivered', cancelled: 'Cancelled', refunded: 'Refunded',
 };
 
-const STATUS_ICON = {
-  pending: '🕐', confirmed: '✅', preparing: '🎂', packed: '📦',
-  dispatched: '🚚', out_for_delivery: '🛵', delivered: '🎉',
-  cancelled: '❌', refunded: '💸',
+// Professional status hues — mirror the StatusBadge palette in admin.css.
+const STATUS_HEX = {
+  pending: '#FBBF24', confirmed: '#60A5FA', preparing: '#A5B4FC', packed: '#7DD3FC',
+  dispatched: '#5EEAD4', out_for_delivery: '#5EEAD4', delivered: '#4ADE80',
+  completed: '#4ADE80', cancelled: '#F87171', refunded: '#E879F9', expired: '#F87171', failed: '#F87171',
 };
+const statusHex = (s) => STATUS_HEX[s] || '#9BA4B5';
 
 const UNPAID_ONLINE_ALLOWED_STATUSES = new Set(['cancelled']);
 
-// Small address modal content
+const fmtLocal = (date) => `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, '0')}-${String(date.getDate()).padStart(2, '0')}`;
+const titleCase = (v = '') => v.replace(/_/g, ' ').replace(/\b\w/g, (c) => c.toUpperCase());
+
+// Delivery-address modal (icons instead of emoji).
 function AddressModal({ order, onClose }) {
   if (!order) return null;
   const addr = order.shippingAddress || {};
@@ -34,46 +46,35 @@ function AddressModal({ order, onClose }) {
   const phone = order.user?.phone || order.guestInfo?.phone || addr.phone || '';
 
   return (
-    <AdminModal open={!!order} title={`📍 Delivery Address — #${order.orderNumber}`} onClose={onClose} width={420}>
-      <div style={{ fontSize: '0.875rem', lineHeight: 1.85 }}>
-        {/* Customer */}
-        <div style={{ marginBottom: '0.75rem', padding: '0.75rem', background: 'var(--admin-bg)', borderRadius: 'var(--admin-radius-sm)', border: '1px solid var(--admin-border)' }}>
-          <div style={{ fontWeight: 700, color: 'var(--admin-text)', marginBottom: '0.125rem' }}>{customer}</div>
-          {email && <div style={{ color: 'var(--admin-text-muted)', fontSize: '0.8rem' }}>✉ {email}</div>}
-          {phone && <div style={{ color: 'var(--admin-text-muted)', fontSize: '0.8rem' }}>📱 {phone}</div>}
-          {!order.user && (
-            <span style={{ display: 'inline-block', marginTop: '0.25rem', fontSize: '0.65rem', fontWeight: 700, padding: '0.1rem 0.45rem', borderRadius: 20, background: '#8b5cf6', color: '#fff', letterSpacing: '0.04em' }}>GUEST</span>
-          )}
+    <AdminModal open={!!order} title={`Delivery Address — #${order.orderNumber}`} onClose={onClose} width={420}>
+      <div className="admin-addr">
+        <div className="admin-addr-block">
+          <div className="admin-addr-name">{customer}</div>
+          {email && <div className="admin-addr-line"><HiOutlineEnvelope aria-hidden /> {email}</div>}
+          {phone && <div className="admin-addr-line"><HiOutlinePhone aria-hidden /> {phone}</div>}
+          {!order.user && <span className="admin-pill admin-pill-guest" style={{ marginTop: '0.35rem' }}>Guest</span>}
         </div>
 
-        {/* Address */}
         {addr.fullName || addr.addressLine1 ? (
-          <div style={{ padding: '0.75rem', background: 'var(--admin-bg)', borderRadius: 'var(--admin-radius-sm)', border: '1px solid var(--admin-border)', color: 'var(--admin-text-secondary)' }}>
-            <div style={{ fontWeight: 600, color: 'var(--admin-text)', marginBottom: '0.25rem' }}>{addr.fullName}</div>
-            {addr.phone && <div>📱 {addr.phone}</div>}
-            <div style={{ marginTop: '0.25rem' }}>{addr.addressLine1}</div>
-            {addr.addressLine2 && <div>{addr.addressLine2}</div>}
-            {addr.area && <div>📍 {addr.area}</div>}
-            {addr.landmark && (
-              <div style={{ color: 'var(--admin-text-muted)', fontSize: '0.8rem', marginTop: '0.125rem' }}>
-                📌 Landmark: {addr.landmark}
-              </div>
-            )}
-            <div style={{ fontWeight: 600, color: 'var(--admin-text)', marginTop: '0.375rem' }}>
+          <div className="admin-addr-block">
+            <div className="admin-addr-name">{addr.fullName}</div>
+            {addr.phone && <div className="admin-addr-line"><HiOutlinePhone aria-hidden /> {addr.phone}</div>}
+            <div style={{ marginTop: '0.25rem', color: 'var(--admin-text-secondary)' }}>{addr.addressLine1}</div>
+            {addr.addressLine2 && <div style={{ color: 'var(--admin-text-secondary)' }}>{addr.addressLine2}</div>}
+            {addr.area && <div className="admin-addr-line"><HiOutlineMapPin aria-hidden /> {addr.area}</div>}
+            {addr.landmark && <div className="admin-addr-muted">Landmark: {addr.landmark}</div>}
+            <div className="admin-addr-name" style={{ marginTop: '0.375rem' }}>
               {addr.city}{addr.state ? `, ${addr.state}` : ''} — {addr.pincode}
             </div>
           </div>
         ) : (
-          <div style={{ color: 'var(--admin-text-muted)', fontSize: '0.875rem', textAlign: 'center', padding: '1rem' }}>
-            No address on file
-          </div>
+          <div className="admin-addr-muted" style={{ textAlign: 'center', padding: '1rem' }}>No address on file</div>
         )}
 
-        {/* Delivery schedule summary */}
         {(order.deliveryDate || order.deliverySlot) && (
-          <div style={{ marginTop: '0.75rem', padding: '0.625rem 0.75rem', background: 'var(--admin-accent-soft)', borderRadius: 'var(--admin-radius-sm)', border: '1px solid rgba(216,27,96,0.2)', fontSize: '0.8rem', color: 'var(--admin-text-secondary)' }}>
-            🚚 Deliver on{' '}
-            <strong style={{ color: 'var(--admin-text)' }}>
+          <div className="admin-addr-schedule">
+            <HiOutlineTruck aria-hidden /> Deliver on{' '}
+            <strong>
               {order.deliveryDate ? new Date(order.deliveryDate).toLocaleDateString('en-IN', { day: '2-digit', month: 'short', year: 'numeric' }) : '—'}
             </strong>
             {(order.deliverySlot?.label || order.deliverySlot?.startTime) && (
@@ -83,15 +84,41 @@ function AddressModal({ order, onClose }) {
         )}
 
         <div style={{ marginTop: '1rem', textAlign: 'right' }}>
-          <Link
-            href={`/admin/orders/${order._id}`}
-            style={{ fontSize: '0.8125rem', color: 'var(--admin-accent-hover)', textDecoration: 'none', fontWeight: 500 }}
-          >
-            View full order →
-          </Link>
+          <Link href={`/admin/orders/${order._id}`} className="admin-link">View full order →</Link>
         </div>
       </div>
     </AdminModal>
+  );
+}
+
+// Inline quick-status <select>, tinted by the current status.
+function QuickStatus({ order, saving, onChange }) {
+  const isUnpaidOnline = order.paymentMethod === 'online' && order.paymentStatus !== 'paid';
+  if (saving) return <span className="admin-quick-saving">Saving…</span>;
+  const hex = statusHex(order.status);
+  return (
+    <select
+      className="admin-status-select"
+      value={order.status}
+      onChange={(e) => onChange(order, e.target.value)}
+      title="Change order status"
+      style={{ borderColor: `${hex}66`, color: hex }}
+    >
+      {ORDER_STATUSES.map((s) => (
+        <option key={s} value={s} disabled={isUnpaidOnline && !UNPAID_ONLINE_ALLOWED_STATUSES.has(s)}>
+          {STATUS_LABELS[s] || s}
+        </option>
+      ))}
+    </select>
+  );
+}
+
+function PaymentChip({ method }) {
+  if (method !== 'cod' && method !== 'online') return <span className="admin-row-meta">—</span>;
+  return (
+    <span className={`admin-payment-chip ${method === 'cod' ? 'admin-payment-chip-cod' : 'admin-payment-chip-online'}`}>
+      {method === 'cod' ? 'COD' : 'Online'}
+    </span>
   );
 }
 
@@ -101,11 +128,10 @@ export default function AdminOrdersPage() {
   const [page, setPage] = useState(1);
   const [totalPages, setTotalPages] = useState(1);
   const [total, setTotal] = useState(0);
-  const [filters, setFilters] = useState({ status: '', paymentStatus: '', orderNumber: '', city: '', from: '', to: '' });
+  const [filters, setFilters] = useState({ status: '', paymentStatus: '', orderNumber: '', city: '', branchId: '', from: '', to: '' });
   const [cities, setCities] = useState([]);
-  // inline quick-status: { [orderId]: true }
+  const [branches, setBranches] = useState([]);
   const [quickSaving, setQuickSaving] = useState({});
-  // address modal
   const [addressOrder, setAddressOrder] = useState(null);
   const { toast, showToast, hideToast } = useAdminToast();
 
@@ -117,6 +143,7 @@ export default function AdminOrdersPage() {
       if (filters.paymentStatus) params.paymentStatus = filters.paymentStatus;
       if (filters.orderNumber) params.orderNumber = filters.orderNumber;
       if (filters.city) params.city = filters.city;
+      if (filters.branchId) params.branchId = filters.branchId;
       if (filters.from && filters.to) { params.from = filters.from; params.to = filters.to; }
       const res = await adminApi.orders.list(params);
       const d = res.data.data;
@@ -132,128 +159,217 @@ export default function AdminOrdersPage() {
 
   useEffect(() => { fetchOrders(); }, [fetchOrders]);
 
-  // Serviceable cities for the location filter (non-critical — load once).
   useEffect(() => {
     let active = true;
-    adminApi.delivery.getZones()
-      .then((res) => {
+    Promise.all([
+      adminApi.delivery.getZones(),
+      adminApi.delivery.getBranches().catch(() => ({ data: { data: [] } })),
+    ])
+      .then(([zonesRes, branchesRes]) => {
         if (!active) return;
-        setCities(Array.from(new Set((res.data.data || []).map((zone) => zone.city).filter(Boolean))).sort());
+        setCities(Array.from(new Set((zonesRes.data.data || []).map((zone) => zone.city).filter(Boolean))).sort());
+        setBranches((branchesRes.data.data || []).filter((b) => b.isActive !== false));
       })
       .catch(() => {});
     return () => { active = false; };
   }, []);
 
-  // ── Inline quick-status update ─────────────────────────────
   const handleQuickStatus = async (order, newStatus) => {
     if (newStatus === order.status) return;
-    setQuickSaving(prev => ({ ...prev, [order._id]: true }));
-    // Optimistic update
-    setOrders(prev => prev.map(o => o._id === order._id ? { ...o, status: newStatus } : o));
+    setQuickSaving((prev) => ({ ...prev, [order._id]: true }));
+    setOrders((prev) => prev.map((o) => (o._id === order._id ? { ...o, status: newStatus } : o)));
     try {
       await adminApi.orders.updateStatus(order._id, newStatus, '');
       showToast(`Order #${order.orderNumber} → "${STATUS_LABELS[newStatus]}"`, 'success');
     } catch (err) {
-      // Roll back
-      setOrders(prev => prev.map(o => o._id === order._id ? { ...o, status: order.status } : o));
+      setOrders((prev) => prev.map((o) => (o._id === order._id ? { ...o, status: order.status } : o)));
       showToast(err.response?.data?.message || 'Status update failed', 'error');
     } finally {
-      setQuickSaving(prev => { const n = { ...prev }; delete n[order._id]; return n; });
+      setQuickSaving((prev) => { const n = { ...prev }; delete n[order._id]; return n; });
     }
   };
+
+  const setFilter = useCallback((patch) => { setFilters((f) => ({ ...f, ...patch })); setPage(1); }, []);
+
+  const cityOptions = useMemo(() => cities.map((c) => ({ value: c, label: c })), [cities]);
+  const branchOptions = useMemo(
+    () => branches.map((b) => ({ value: b._id, label: b.code ? `${b.name} (${b.code})` : b.name })),
+    [branches],
+  );
+  const paymentOptions = useMemo(() => PAYMENT_STATUSES.map((s) => ({ value: s, label: titleCase(s) })), []);
+
+  const hasFilters = filters.status || filters.paymentStatus || filters.orderNumber || filters.city || filters.branchId || filters.from || filters.to;
+
+  // Per-order view data shared by the desktop table + mobile cards.
+  const view = useMemo(() => orders.map((order) => {
+    const firstItem = order.items?.[0];
+    const moreItems = (order.items?.length || 1) - 1;
+    const customerName = order.user?.name || order.guestInfo?.name || order.shippingAddress?.fullName || '—';
+    return {
+      order,
+      id: order._id,
+      orderNumber: order.orderNumber,
+      href: `/admin/orders/${order._id}`,
+      isNew: (Date.now() - new Date(order.createdAt).getTime()) < 60 * 60 * 1000,
+      fromInquiry: order.source === 'inquiry',
+      isGuest: !order.user,
+      customerName,
+      initial: (customerName || '?').trim().charAt(0).toUpperCase() || '?',
+      contact: order.user?.email || order.guestInfo?.email || order.user?.phone || order.guestInfo?.phone || '',
+      itemName: firstItem?.name || null,
+      itemMeta: firstItem
+        ? `${firstItem.weight || ''} · Qty ${firstItem.quantity}${firstItem.flavor ? ` · ${firstItem.flavor}` : ''}`
+        : '',
+      moreItems,
+      deliveryDate: order.deliveryDate ? new Date(order.deliveryDate).toLocaleDateString('en-IN', { day: '2-digit', month: 'short' }) : '—',
+      deliverySlot: order.deliverySlot?.label || order.deliverySlot?.startTime || '',
+      total: formatPrice(order.total),
+      createdAtLabel: formatDateTime(order.createdAt),
+    };
+  }), [orders]);
 
   return (
     <div>
       <AdminToast {...toast} onClose={hideToast} />
-
-      {/* Address modal */}
       <AddressModal order={addressOrder} onClose={() => setAddressOrder(null)} />
 
-      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '1.5rem', flexWrap: 'wrap', gap: '1rem' }}>
-        <h1 style={{ margin: 0 }}>Orders</h1>
-        <div style={{ display: 'flex', alignItems: 'center', gap: '0.75rem' }}>
-          <span style={{ fontSize: '0.875rem', color: 'var(--admin-text-muted)', background: 'var(--admin-surface)', padding: '0.25rem 0.75rem', borderRadius: 20, border: '1px solid var(--admin-border)' }}>{total} total orders</span>
+      <div className="admin-page-header admin-sales-header">
+        <div className="admin-page-heading">
+          <div className="admin-page-kicker">Operations</div>
+          <h1 className="admin-page-title admin-title-gradient">
+            Orders
+            {total > 0 && <span className="admin-count-badge">{total.toLocaleString('en-IN')}</span>}
+          </h1>
+          <div className="admin-page-subtitle">Track, filter, and update fulfillment across every order.</div>
+        </div>
+        <div className="admin-page-actions">
+          {filters.from && filters.to && (
+            <span className="admin-range-pill">
+              <HiOutlineCalendarDays aria-hidden />
+              {filters.from} – {filters.to}
+            </span>
+          )}
           <RefreshButton onRefresh={fetchOrders} />
         </div>
       </div>
 
-      {/* Quick status filter chips */}
-      <div style={{ display: 'flex', gap: '0.375rem', marginBottom: '1rem', flexWrap: 'wrap' }}>
-        {['', ...ORDER_STATUSES].map(s => (
-          <button
-            key={s || 'all'}
-            onClick={() => { setFilters(f => ({ ...f, status: s })); setPage(1); }}
-            style={{
-              padding: '0.3rem 0.75rem', borderRadius: 20, fontSize: '0.75rem', fontWeight: 500, border: 'none', cursor: 'pointer',
-              background: filters.status === s ? (STATUS_COLORS[s] || 'var(--admin-accent)') : 'var(--admin-surface)',
-              color: filters.status === s ? '#fff' : 'var(--admin-text-secondary)',
-              border: `1px solid ${filters.status === s ? 'transparent' : 'var(--admin-border)'}`,
-              textTransform: 'capitalize', transition: 'all 0.2s',
-            }}
-          >
-            {s ? s.replace(/_/g, ' ') : 'All'}
-          </button>
-        ))}
+      {/* Status filter chips */}
+      <div className="admin-chip-row" role="group" aria-label="Filter by status">
+        {['', ...ORDER_STATUSES].map((s) => {
+          const activeChip = filters.status === s;
+          const hex = s ? statusHex(s) : 'var(--admin-accent-hover)';
+          return (
+            <button
+              key={s || 'all'}
+              type="button"
+              className={`admin-chip ${activeChip ? 'active' : ''}`}
+              onClick={() => setFilter({ status: s })}
+              aria-pressed={activeChip}
+              style={activeChip ? { color: s ? hex : '#fff', borderColor: s ? `${hex}66` : 'transparent', background: s ? `${hex}22` : 'var(--admin-accent)' } : undefined}
+            >
+              {s ? titleCase(s) : 'All'}
+            </button>
+          );
+        })}
       </div>
 
-      {/* Filters */}
-      <div className="admin-card" style={{ marginBottom: '1.5rem', display: 'flex', gap: '0.75rem', flexWrap: 'wrap', alignItems: 'center' }}>
-        <input
-          className="admin-input"
-          placeholder="🔍 Search order #..."
-          value={filters.orderNumber}
-          onChange={(e) => { setFilters(f => ({ ...f, orderNumber: e.target.value })); setPage(1); }}
-          style={{ maxWidth: 200 }}
-        />
-        <select
-          className="admin-input admin-select"
-          value={filters.paymentStatus}
-          onChange={(e) => { setFilters(f => ({ ...f, paymentStatus: e.target.value })); setPage(1); }}
-          style={{ maxWidth: 170 }}
-        >
-          <option value="">All Payments</option>
-          {PAYMENT_STATUSES.map(s => <option key={s} value={s}>{s}</option>)}
-        </select>
-        <select
-          className="admin-input admin-select"
-          value={filters.city}
-          onChange={(e) => { setFilters(f => ({ ...f, city: e.target.value })); setPage(1); }}
-          style={{ maxWidth: 160 }}
-        >
-          <option value="">All Cities</option>
-          {cities.map(c => <option key={c} value={c}>{c}</option>)}
-        </select>
-        <div style={{ display: 'flex', gap: '0.4rem', alignItems: 'center' }} title="Filter by order date">
-          <input
-            type="date"
-            className="admin-input"
-            value={filters.from}
-            max={filters.to || undefined}
-            onChange={(e) => { setFilters(f => ({ ...f, from: e.target.value })); setPage(1); }}
-          />
-          <span style={{ color: 'var(--admin-text-muted)', fontSize: '0.8rem' }}>to</span>
-          <input
-            type="date"
-            className="admin-input"
-            value={filters.to}
-            min={filters.from || undefined}
-            onChange={(e) => { setFilters(f => ({ ...f, to: e.target.value })); setPage(1); }}
-          />
+      {/* Premium filter panel */}
+      <div className="admin-card admin-filter-panel">
+        <div className="admin-filter-panel-head">
+          <div className="admin-filter-panel-title">
+            <HiOutlineFunnel aria-hidden />
+            <span>Filters</span>
+          </div>
+          <div className="admin-filter-chips" />
+          {hasFilters && (
+            <button
+              type="button"
+              className="admin-btn admin-btn-ghost admin-btn-sm admin-filter-reset"
+              onClick={() => { setFilters({ status: '', paymentStatus: '', orderNumber: '', city: '', branchId: '', from: '', to: '' }); setPage(1); }}
+            >
+              <HiOutlineXMark aria-hidden /> Clear
+            </button>
+          )}
         </div>
-        {(filters.status || filters.paymentStatus || filters.orderNumber || filters.city || filters.from || filters.to) && (
-          <button className="admin-btn admin-btn-ghost admin-btn-sm" onClick={() => { setFilters({ status: '', paymentStatus: '', orderNumber: '', city: '', from: '', to: '' }); setPage(1); }}>
-            ✕ Clear
-          </button>
-        )}
+
+        <div className="admin-filter-panel-fields">
+          <div className="admin-filter-field">
+            <span className="admin-filter-label">Search</span>
+            <div className="admin-search-field">
+              <HiOutlineMagnifyingGlass aria-hidden />
+              <input
+                className="admin-search-input"
+                placeholder="Order number…"
+                value={filters.orderNumber}
+                onChange={(e) => setFilter({ orderNumber: e.target.value })}
+              />
+            </div>
+          </div>
+
+          <div className="admin-filter-field">
+            <span className="admin-filter-label">Payment</span>
+            <AdminCombobox
+              ariaLabel="Filter by payment status"
+              value={filters.paymentStatus}
+              onChange={(paymentStatus) => setFilter({ paymentStatus })}
+              options={paymentOptions}
+              emptyLabel="All Payments"
+              placeholder="All Payments"
+              searchPlaceholder="Search…"
+            />
+          </div>
+
+          {branchOptions.length > 0 && (
+            <div className="admin-filter-field">
+              <span className="admin-filter-label">Branch</span>
+              <AdminCombobox
+                ariaLabel="Filter by branch"
+                value={filters.branchId}
+                onChange={(branchId) => setFilter({ branchId })}
+                options={branchOptions}
+                emptyLabel="All Branches"
+                placeholder="All Branches"
+                searchPlaceholder="Search branches…"
+                leadingIcon={<HiOutlineMapPin aria-hidden />}
+              />
+            </div>
+          )}
+
+          <div className="admin-filter-field">
+            <span className="admin-filter-label">City</span>
+            <AdminCombobox
+              ariaLabel="Filter by city"
+              value={filters.city}
+              onChange={(city) => setFilter({ city })}
+              options={cityOptions}
+              emptyLabel="All Cities"
+              placeholder="All Cities"
+              searchPlaceholder="Search cities…"
+              leadingIcon={<HiOutlineMapPin aria-hidden />}
+            />
+          </div>
+
+          <div className="admin-filter-field">
+            <span className="admin-filter-label">Order date</span>
+            <AdminDateRangePicker
+              from={filters.from}
+              to={filters.to}
+              max={fmtLocal(new Date())}
+              onChange={({ from, to }) => setFilter({ from, to })}
+            />
+          </div>
+        </div>
       </div>
 
-      {/* Table */}
-      <div className="admin-card" style={{ padding: 0 }}>
-        {loading ? <LoadingSkeleton rows={10} cols={7} /> : orders.length === 0 ? (
-          <EmptyState message="No orders found" icon="📦" />
+      <div className="admin-card admin-orders-panel" style={{ padding: 0 }}>
+        {loading ? (
+          <LoadingSkeleton rows={10} cols={7} />
+        ) : view.length === 0 ? (
+          <EmptyState message="No orders found" />
         ) : (
           <>
-            <div className="admin-table-wrap">
+            {/* Desktop table */}
+            <div className="admin-table-wrap admin-orders-scroll">
               <table className="admin-table">
                 <thead>
                   <tr>
@@ -261,7 +377,7 @@ export default function AdminOrdersPage() {
                     <th>Customer</th>
                     <th>Items</th>
                     <th>Delivery</th>
-                    <th>Total</th>
+                    <th className="admin-num">Total</th>
                     <th>Status</th>
                     <th>Payment</th>
                     <th>Date</th>
@@ -269,149 +385,126 @@ export default function AdminOrdersPage() {
                   </tr>
                 </thead>
                 <tbody>
-                  {orders.map((order) => {
-                    const firstItem = order.items?.[0];
-                    const moreItems = (order.items?.length || 1) - 1;
-                    const isNew = (Date.now() - new Date(order.createdAt).getTime()) < 60 * 60 * 1000;
-                    const isUnpaidOnline = order.paymentMethod === 'online' && order.paymentStatus !== 'paid';
-                    return (
-                      <tr key={order._id}>
-                        <td>
-                          <div style={{ display: 'flex', alignItems: 'center', gap: '0.4rem', flexWrap: 'wrap' }}>
-                            <Link href={`/admin/orders/${order._id}`} style={{ color: 'var(--admin-accent-hover)', textDecoration: 'none', fontWeight: 700, fontSize: '0.9rem' }}>
-                              #{order.orderNumber}
-                            </Link>
-                            {isNew && (
-                              <span style={{ fontSize: '0.6rem', fontWeight: 700, padding: '0.1rem 0.4rem', borderRadius: 20, background: '#22c55e', color: '#fff', letterSpacing: '0.04em', animation: 'adminPulse 2s infinite' }}>
-                                NEW
-                              </span>
-                            )}
-                            {order.source === 'inquiry' && (
-                              <span className="admin-pill admin-pill-guest">FROM INQUIRY</span>
-                            )}
-                          </div>
-                        </td>
-                        <td>
-                          <div style={{ display: 'flex', alignItems: 'center', gap: '0.4rem', flexWrap: 'wrap' }}>
-                            <span style={{ fontWeight: 500, fontSize: '0.875rem' }}>
-                              {order.user?.name || order.guestInfo?.name || order.shippingAddress?.fullName || '—'}
-                            </span>
-                            {!order.user && (
-                              <span style={{ fontSize: '0.6rem', fontWeight: 700, padding: '0.1rem 0.4rem', borderRadius: 20, background: '#8b5cf6', color: '#fff', letterSpacing: '0.04em' }}>
-                                GUEST
-                              </span>
-                            )}
-                          </div>
-                          <div style={{ fontSize: '0.75rem', color: 'var(--admin-text-muted)' }}>
-                            {order.user?.email || order.guestInfo?.email || order.user?.phone || order.guestInfo?.phone || ''}
-                          </div>
-                        </td>
-                        <td style={{ maxWidth: 200 }}>
-                          {firstItem && (
-                            <div>
-                              <div style={{ fontWeight: 500, fontSize: '0.8125rem', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis', maxWidth: 160 }}>
-                                {firstItem.name}
-                              </div>
-                              <div style={{ fontSize: '0.7rem', color: 'var(--admin-text-muted)' }}>
-                                {firstItem.weight} · Qty {firstItem.quantity}
-                                {firstItem.flavor ? ` · ${firstItem.flavor}` : ''}
-                                {moreItems > 0 ? <span style={{ color: 'var(--admin-accent)' }}> +{moreItems} more</span> : ''}
-                              </div>
+                  {view.map((v) => (
+                    <tr key={v.id}>
+                      <td>
+                        <div className="admin-order-num-cell">
+                          <Link href={v.href} className="admin-table-action-link">#{v.orderNumber}</Link>
+                          {v.isNew && <span className="admin-pill admin-pill-success">New</span>}
+                          {v.fromInquiry && <span className="admin-pill admin-pill-guest">From Inquiry</span>}
+                        </div>
+                      </td>
+                      <td>
+                        <div className="admin-cust">
+                          <span className="admin-cust-avatar" aria-hidden>{v.initial}</span>
+                          <div className="admin-cust-info">
+                            <div className="admin-cust-name">
+                              {v.customerName}
+                              {v.isGuest && <span className="admin-pill admin-pill-guest">Guest</span>}
                             </div>
-                          )}
-                        </td>
-                        <td style={{ fontSize: '0.8rem', color: 'var(--admin-text-secondary)', whiteSpace: 'nowrap' }}>
-                          <div>{order.deliveryDate ? new Date(order.deliveryDate).toLocaleDateString('en-IN', { day: '2-digit', month: 'short' }) : '—'}</div>
-                          <div style={{ color: 'var(--admin-text-muted)', fontSize: '0.72rem' }}>{order.deliverySlot?.label || order.deliverySlot?.startTime || '—'}</div>
-                        </td>
-                        <td style={{ fontWeight: 700 }}>{formatPrice(order.total)}</td>
-
-                        {/* ── Inline Quick-Status Cell ── */}
-                        <td>
-                          {quickSaving[order._id] ? (
-                            <span style={{ fontSize: '0.75rem', color: 'var(--admin-text-muted)' }}>Saving…</span>
-                          ) : (
-                            <select
-                              value={order.status}
-                              onChange={(e) => handleQuickStatus(order, e.target.value)}
-                              title="Change order status"
-                              style={{
-                                fontSize: '0.72rem',
-                                fontWeight: 600,
-                                padding: '0.25rem 0.5rem',
-                                border: `2px solid ${STATUS_COLORS[order.status] || 'var(--admin-border)'}`,
-                                borderRadius: 'var(--admin-radius-sm)',
-                                background: 'var(--admin-surface)',
-                                color: STATUS_COLORS[order.status] || 'var(--admin-text)',
-                                cursor: 'pointer',
-                                outline: 'none',
-                                minWidth: 100,
-                                paddingRight: '1.5rem',
-                                // custom arrow color trick via background-image override
-                                WebkitAppearance: 'none',
-                                MozAppearance: 'none',
-                                appearance: 'none',
-                                backgroundImage: `url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='12' viewBox='0 0 12 12'%3E%3Cpath fill='%239BA4B5' d='M6 8L1 3h10z'/%3E%3C/svg%3E")`,
-                                backgroundRepeat: 'no-repeat',
-                                backgroundPosition: 'right 0.4rem center',
-                              }}
-                            >
-                              {ORDER_STATUSES.map(s => (
-                                <option key={s} value={s} disabled={isUnpaidOnline && !UNPAID_ONLINE_ALLOWED_STATUSES.has(s)}>
-                                  {STATUS_ICON[s]} {STATUS_LABELS[s] || s}
-                                </option>
-                              ))}
-                            </select>
-                          )}
-                        </td>
-
-                        <td>
-                          <div style={{ display: 'flex', flexDirection: 'column', gap: '0.25rem' }}>
-                            <span style={{
-                              display: 'inline-block', fontSize: '0.7rem', fontWeight: 700, padding: '0.15rem 0.5rem', borderRadius: 20,
-                              background: order.paymentMethod === 'cod' ? 'rgba(217,119,6,0.12)' : 'rgba(59,130,246,0.12)',
-                              color: order.paymentMethod === 'cod' ? '#d97706' : '#3b82f6',
-                              border: `1px solid ${order.paymentMethod === 'cod' ? 'rgba(217,119,6,0.3)' : 'rgba(59,130,246,0.3)'}`,
-                              textTransform: 'uppercase', letterSpacing: '0.04em',
-                            }}>
-                              {order.paymentMethod === 'cod' ? '💵 COD' : order.paymentMethod === 'online' ? '💳 Online' : '—'}
-                            </span>
-                            <StatusBadge status={order.paymentStatus} />
+                            {v.contact && <div className="admin-row-meta">{v.contact}</div>}
                           </div>
-                        </td>
-                        <td style={{ color: 'var(--admin-text-muted)', fontSize: '0.75rem', whiteSpace: 'nowrap' }}>
-                          {formatDateTime(order.createdAt)}
-                        </td>
-
-                        {/* ── Actions Cell ── */}
-                        <td>
-                          <div style={{ display: 'flex', flexDirection: 'column', gap: '0.375rem' }}>
-                            {/* Address button */}
-                            <button
-                              className="admin-btn admin-btn-ghost admin-btn-sm"
-                              onClick={() => setAddressOrder(order)}
-                              title="View delivery address"
-                              style={{ display: 'flex', alignItems: 'center', gap: '0.3rem', whiteSpace: 'nowrap', fontSize: '0.75rem' }}
-                            >
-                              📍 Address
-                            </button>
-                            {/* View detail link */}
-                            <Link
-                              href={`/admin/orders/${order._id}`}
-                              className="admin-btn admin-btn-ghost admin-btn-sm"
-                              style={{ textDecoration: 'none', textAlign: 'center', fontSize: '0.75rem', whiteSpace: 'nowrap' }}
-                            >
-                              🔍 Details
-                            </Link>
+                        </div>
+                      </td>
+                      <td style={{ maxWidth: 200 }}>
+                        {v.itemName && (
+                          <div>
+                            <div className="admin-row-title admin-ellipsis">{v.itemName}</div>
+                            <div className="admin-row-meta">
+                              {v.itemMeta}
+                              {v.moreItems > 0 && <span style={{ color: 'var(--admin-accent-hover)' }}> +{v.moreItems} more</span>}
+                            </div>
                           </div>
-                        </td>
-                      </tr>
-                    );
-                  })}
+                        )}
+                      </td>
+                      <td style={{ whiteSpace: 'nowrap' }}>
+                        <div style={{ color: 'var(--admin-text-secondary)', fontSize: '0.8rem' }}>{v.deliveryDate}</div>
+                        <div className="admin-row-meta">{v.deliverySlot || '—'}</div>
+                      </td>
+                      <td className="admin-num admin-row-value">{v.total}</td>
+                      <td>
+                        <QuickStatus order={v.order} saving={!!quickSaving[v.id]} onChange={handleQuickStatus} />
+                      </td>
+                      <td>
+                        <div style={{ display: 'flex', flexDirection: 'column', gap: '0.3rem', alignItems: 'flex-start' }}>
+                          <PaymentChip method={v.order.paymentMethod} />
+                          <StatusBadge status={v.order.paymentStatus} />
+                        </div>
+                      </td>
+                      <td className="admin-row-meta" style={{ whiteSpace: 'nowrap' }}>{v.createdAtLabel}</td>
+                      <td>
+                        <div style={{ display: 'flex', flexDirection: 'column', gap: '0.375rem' }}>
+                          <button
+                            className="admin-btn admin-btn-ghost admin-btn-sm"
+                            onClick={() => setAddressOrder(v.order)}
+                            title="View delivery address"
+                          >
+                            <HiOutlineMapPin aria-hidden /> Address
+                          </button>
+                          <Link href={v.href} className="admin-btn admin-btn-ghost admin-btn-sm" style={{ textDecoration: 'none' }}>
+                            <HiOutlineEye aria-hidden /> Details
+                          </Link>
+                        </div>
+                      </td>
+                    </tr>
+                  ))}
                 </tbody>
               </table>
             </div>
-            <div style={{ padding: '0 1rem' }}>
+
+            {/* Mobile cards */}
+            <div className="admin-orders-cards" style={{ padding: '1rem' }}>
+              {view.map((v) => (
+                <div key={v.id} className="admin-order-card admin-order-card-static">
+                  <div className="admin-order-card-row">
+                    <div className="admin-order-num-cell">
+                      <Link href={v.href} className="admin-order-card-num">#{v.orderNumber}</Link>
+                      {v.isNew && <span className="admin-pill admin-pill-success">New</span>}
+                      {v.fromInquiry && <span className="admin-pill admin-pill-guest">Inquiry</span>}
+                    </div>
+                    <span className="admin-order-card-total">{v.total}</span>
+                  </div>
+
+                  <div className="admin-cust">
+                    <span className="admin-cust-avatar" aria-hidden>{v.initial}</span>
+                    <div className="admin-cust-info">
+                      <div className="admin-cust-name">
+                        {v.customerName}
+                        {v.isGuest && <span className="admin-pill admin-pill-guest">Guest</span>}
+                      </div>
+                      {v.contact && <div className="admin-row-meta">{v.contact}</div>}
+                    </div>
+                  </div>
+
+                  {v.itemName && (
+                    <div className="admin-order-card-product">
+                      <span className="admin-row-title">{v.itemName}</span>
+                      <span className="admin-row-meta">
+                        {v.itemMeta}{v.moreItems > 0 ? ` · +${v.moreItems} more` : ''}
+                      </span>
+                    </div>
+                  )}
+
+                  <div className="admin-order-card-foot">
+                    <QuickStatus order={v.order} saving={!!quickSaving[v.id]} onChange={handleQuickStatus} />
+                    <PaymentChip method={v.order.paymentMethod} />
+                    <StatusBadge status={v.order.paymentStatus} />
+                    <span className="admin-order-card-delivery">Deliver {v.deliveryDate}</span>
+                  </div>
+
+                  <div className="admin-order-card-actions">
+                    <button className="admin-btn admin-btn-ghost admin-btn-sm" onClick={() => setAddressOrder(v.order)}>
+                      <HiOutlineMapPin aria-hidden /> Address
+                    </button>
+                    <Link href={v.href} className="admin-btn admin-btn-secondary admin-btn-sm" style={{ textDecoration: 'none' }}>
+                      <HiOutlineEye aria-hidden /> Details
+                    </Link>
+                  </div>
+                </div>
+              ))}
+            </div>
+
+            <div style={{ padding: '0 1rem 0.5rem' }}>
               <Pagination page={page} totalPages={totalPages} total={total} onPageChange={setPage} />
             </div>
           </>

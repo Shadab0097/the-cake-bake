@@ -271,6 +271,22 @@ const env = {
     folder: process.env.CLOUDINARY_FOLDER || 'the-cake-bake',
   },
 
+  // ── LocationIQ reverse geocoding ─────────────────────────────────────────
+  // Powers the storefront "auto-detect my location" feature: browser GPS
+  // coordinates are reverse-geocoded into an Indian pincode that then flows
+  // through the existing /delivery/check-pincode serviceability lookup.
+  // Optional: when apiKey is empty the endpoint returns GEOCODING_DISABLED and
+  // the frontend silently falls back to manual pincode entry.
+  locationiq: {
+    apiKey: process.env.LOCATIONIQ_API_KEY || '',
+    // Use 'https://eu1.locationiq.com/v1' for EU-region tokens.
+    baseUrl: (process.env.LOCATIONIQ_BASE_URL || 'https://us1.locationiq.com/v1').replace(/\/+$/, ''),
+    timeoutMs: parsePositiveInt(process.env.LOCATIONIQ_TIMEOUT_MS, 5000),
+    // Coordinates → pincode is effectively static, so cache aggressively to
+    // protect the free-tier daily quota. Default 1 day.
+    cacheTtlSeconds: parsePositiveInt(process.env.LOCATIONIQ_CACHE_TTL_SECONDS, 86400),
+  },
+
   orders: {
     expiryJobEnabled: process.env.ENABLE_ORDER_EXPIRY_JOB !== 'false',
     onlinePaymentExpiryMinutes: parsePositiveInt(process.env.ORDER_PAYMENT_EXPIRY_MINUTES, 30),

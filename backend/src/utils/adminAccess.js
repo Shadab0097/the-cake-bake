@@ -6,6 +6,7 @@ const ADMIN_ROLES = new Set([
   USER_ROLES.ADMIN,
   USER_ROLES.MANAGER,
   USER_ROLES.STAFF,
+  USER_ROLES.BRANCHADMIN,
 ]);
 
 // Roles with unrestricted admin access. Legacy 'admin' is treated as full so
@@ -18,6 +19,18 @@ const FINANCIAL_SECTIONS = new Set(['profit', 'insights', 'costs', 'gst', 'setti
 // Sections a Staff member may use (operations only).
 const STAFF_SECTIONS = new Set(['dashboard', 'orders', 'refunds', 'delivery', 'inquiries', 'customers']);
 
+// Sections a branch admin (walled via User.branchIds) may use. Deliberately
+// limited to surfaces whose DATA is already branch-scoped server-side, so a
+// branch admin can never see another branch's rows. This set GROWS as more
+// entities get scoped (P3: delivery/inquiries/customers/coupons; settings+own
+// staff later). Excluded for now: anything not yet walled (delivery, inquiries,
+// customers, coupons) and owner-only surfaces (gst, company, insights, costs,
+// catalog, reviews, notifications, logs, chatbot, admin-user mgmt).
+const BRANCHADMIN_SECTIONS = new Set([
+  'dashboard', 'orders', 'refunds', 'sales', 'profit', // P1 (order-derived, walled)
+  'coupons', 'inquiries', 'customers', // P3 (per-branch entities, walled)
+]);
+
 // Map an admin path's first segment to a coarse section key. Works for both API
 // paths (relative to /admin, e.g. '/profit') and app routes.
 const sectionForPath = (path = '') => {
@@ -26,6 +39,8 @@ const sectionForPath = (path = '') => {
     '': 'dashboard', dashboard: 'dashboard', analytics: 'dashboard',
     sales: 'sales',
     profit: 'profit',
+    'branch-breakdown': 'profit', // owner/financial comparison — gated like profit
+
     'customer-analytics': 'insights', insights: 'insights',
     variants: 'costs', costs: 'costs',
     gst: 'gst',
@@ -52,6 +67,7 @@ const canAccess = (role, section) => {
   if (FULL_ROLES.has(role)) return true;
   if (role === USER_ROLES.MANAGER) return !FINANCIAL_SECTIONS.has(section);
   if (role === USER_ROLES.STAFF) return STAFF_SECTIONS.has(section);
+  if (role === USER_ROLES.BRANCHADMIN) return BRANCHADMIN_SECTIONS.has(section);
   return false;
 };
 
@@ -60,6 +76,7 @@ module.exports = {
   FULL_ROLES,
   FINANCIAL_SECTIONS,
   STAFF_SECTIONS,
+  BRANCHADMIN_SECTIONS,
   sectionForPath,
   canAccess,
 };

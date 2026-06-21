@@ -6,6 +6,7 @@ import adminApiClient from '@/lib/adminApiClient';
 import { setAdminAccessToken } from '@/lib/authToken.mjs';
 import { setAdminFlash, consumeAdminFlash } from '@/lib/adminFlash.mjs';
 import { useAdminToast } from '@/components/admin/AdminUI';
+import { isAdminRole } from '@/lib/adminAccess.mjs';
 
 export default function AdminLoginPage() {
   const [email, setEmail] = useState('');
@@ -28,7 +29,7 @@ export default function AdminLoginPage() {
     adminApiClient.get('/users/me')
       .then((res) => {
         const user = res.data.data;
-        if (user.role === 'admin' || user.role === 'superadmin') {
+        if (isAdminRole(user.role)) {
           router.replace('/admin');
         } else {
           setChecking(false);
@@ -46,7 +47,7 @@ export default function AdminLoginPage() {
       const res = await adminApiClient.post('/auth/login', { email, password, scope: 'admin' });
       const { accessToken, user } = res.data.data;
 
-      if (user.role !== 'admin' && user.role !== 'superadmin') {
+      if (!isAdminRole(user.role)) {
         setError('Access denied. Admin credentials required.');
         setLoading(false);
         return;

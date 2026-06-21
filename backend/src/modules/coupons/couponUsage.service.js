@@ -78,15 +78,23 @@ class CouponUsageService {
     };
   }
 
-  async findValidCoupon(couponCode, subtotal, session = null) {
+  async findValidCoupon(couponCode, subtotal, session = null, branchId = undefined) {
     const now = new Date();
-    const query = Coupon.findOne({
+    const criteria = {
       code: this.normalizeCode(couponCode),
       isActive: true,
       validFrom: { $lte: now },
       validUntil: { $gte: now },
       minOrderAmount: { $lte: subtotal },
-    });
+    };
+    // Branch scoping: a branch-owned coupon is valid only for orders fulfilled
+    // by that branch; chain-wide coupons (branchId:null) are valid everywhere.
+    // `branchId` undefined => no branch context (preview) => unrestricted. When
+    // supplied (checkout), a null/unknown order branch limits to chain-wide.
+    if (branchId !== undefined) {
+      criteria.$or = branchId ? [{ branchId: null }, { branchId }] : [{ branchId: null }];
+    }
+    const query = Coupon.findOne(criteria);
 
     return session ? query.session(session) : query;
   }
@@ -101,8 +109,8 @@ class CouponUsageService {
     return Math.max(counter?.count || 0, usageCount || 0);
   }
 
-  async validateForCheckout({ couponCode, userId, guestInfo, subtotal, session = null }) {
-    const coupon = await this.findValidCoupon(couponCode, subtotal, session);
+  async validateForCheckout({ couponCode, userId, guestInfo, subtotal, session = null, branchId = undefined }) {
+    const coupon = await this.findValidCoupon(couponCode, subtotal, session, branchId);
     if (!coupon) throw ApiError.badRequest('Coupon is no longer valid for this order', [{ field: 'couponCode', code: 'COUPON_INVALID', message: 'Coupon is no longer valid for this order' }], 'COUPON_INVALID');
 
     if (coupon.usageLimit > 0 && coupon.usageCount >= coupon.usageLimit) {

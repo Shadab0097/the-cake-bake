@@ -15,17 +15,22 @@ import {
   HiArrowTrendingUp,
   HiArrowTrendingDown,
   HiOutlineXMark,
+  HiOutlineChevronUpDown,
+  HiOutlineChevronUp,
+  HiOutlineChevronDown,
 } from 'react-icons/hi2';
 import adminApi, { formatPrice, formatDate } from '@/lib/adminApi';
 import { exportToCsv, paiseToRupees } from '@/lib/exportCsv';
 import { LoadingSkeleton, RefreshButton } from '@/components/admin/AdminUI';
+import AdminCombobox from '@/components/admin/AdminCombobox';
+import AdminDateRangePicker from '@/components/admin/AdminDateRangePicker';
 import {
-  RevenueTrendChart,
-  HorizontalBarChart,
-  Sparkline,
+  DashRevenueTrend,
+  DashTopBars,
+  DashDonut,
+  MuiSpark,
   compactRupees,
-  fullRupees,
-} from '@/components/admin/AdminCharts';
+} from '@/components/admin/AdminMuiCharts';
 
 const PRESETS = [
   { key: '7', label: '7 Days' },
@@ -34,16 +39,6 @@ const PRESETS = [
   { key: 'mtd', label: 'This Month' },
   { key: 'custom', label: 'Custom' },
 ];
-
-const COLORS = {
-  accent: '#D81B60',
-  accentHover: '#F06292',
-  info: '#3B82F6',
-  infoLight: '#60A5FA',
-  violet: '#7C3AED',
-  violetLight: '#A78BFA',
-  muted: '#778092',
-};
 
 // Detailed-records table dimensions. Each maps to one slice of the sales payload.
 const TABLE_DIMENSIONS = [
@@ -60,7 +55,7 @@ function getErrorMessage(error, fallback = 'Failed to load sales data') {
 }
 
 // Translate the filter UI into backend query params.
-function buildParams({ preset, from, to, city, product }) {
+function buildParams({ preset, from, to, city, product, branchId }) {
   const params = {};
   if (preset === 'custom' && from && to) {
     params.from = from;
@@ -74,6 +69,7 @@ function buildParams({ preset, from, to, city, product }) {
   }
   if (city) params.city = city;
   if (product) params.product = product;
+  if (branchId) params.branchId = branchId;
   return params;
 }
 
@@ -114,12 +110,28 @@ function SalesKpiCard({ label, value, previous, icon, trend, tone, spark, sparkC
       </div>
       <div className="admin-kpi-value">{value}</div>
       <div className="admin-kpi-label">{label}</div>
-      <Sparkline data={spark} color={sparkColor || tone} />
+      <MuiSpark data={spark} color={sparkColor || tone} />
       <div className="admin-kpi-foot">
         <span className="admin-kpi-foot-label">vs prev</span>
         <span className="admin-kpi-foot-value">{previous}</span>
       </div>
     </div>
+  );
+}
+
+// Clickable, ARIA-correct sortable column header for the records table.
+function SortHeader({ label, columnKey, sort, onSort, numeric = false, width }) {
+  const active = sort.key === columnKey;
+  const ariaSort = active ? (sort.dir === 'asc' ? 'ascending' : 'descending') : 'none';
+  return (
+    <th className={numeric ? 'admin-num' : undefined} aria-sort={ariaSort} style={width ? { width } : undefined}>
+      <button type="button" className={`admin-th-sort ${active ? 'active' : ''}`} onClick={() => onSort(columnKey)}>
+        <span>{label}</span>
+        {active
+          ? (sort.dir === 'asc' ? <HiOutlineChevronUp aria-hidden /> : <HiOutlineChevronDown aria-hidden />)
+          : <HiOutlineChevronUpDown aria-hidden />}
+      </button>
+    </th>
   );
 }
 
@@ -137,9 +149,10 @@ function ShareCell({ value, total, tone = 'accent' }) {
 }
 
 export default function AdminSalesPage() {
-  const [filters, setFilters] = useState({ preset: '30', from: '', to: '', city: '', product: '' });
+  const [filters, setFilters] = useState({ preset: '30', from: '', to: '', city: '', product: '', branchId: '' });
   const [data, setData] = useState(null);
   const [cities, setCities] = useState([]);
+  const [branches, setBranches] = useState([]);
   const [products, setProducts] = useState([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
@@ -150,13 +163,15 @@ export default function AdminSalesPage() {
     let active = true;
     (async () => {
       try {
-        const [zonesRes, productsRes] = await Promise.all([
+        const [zonesRes, productsRes, branchesRes] = await Promise.all([
           adminApi.delivery.getZones(),
           adminApi.products.list({ limit: 100 }),
+          adminApi.delivery.getBranches().catch(() => ({ data: { data: [] } })),
         ]);
         if (!active) return;
         const zoneCities = Array.from(new Set((zonesRes.data.data || []).map((zone) => zone.city).filter(Boolean))).sort();
         setCities(zoneCities);
+        setBranches((branchesRes.data.data || []).filter((b) => b.isActive !== false));
         const productList = (productsRes.data.data?.items || [])
           .map((product) => ({ _id: product._id, name: product.name }))
           .sort((a, b) => a.name.localeCompare(b.name));
@@ -297,6 +312,30 @@ export default function AdminSalesPage() {
     [activeRows],
   );
 
+  // Sortable detailed-records table. Columns differ per dimension, so reset to
+  // the default (revenue, high→low) whenever the dimension changes.
+  const [sort, setSort] = useState({ key: 'revenue', dir: 'desc' });
+  useEffect(() => { setSort({ key: 'revenue', dir: 'desc' }); }, [tableDim]);
+
+  const sortedRows = useMemo(() => {
+    const rows = [...activeRows];
+    const { key, dir } = sort;
+    const mul = dir === 'asc' ? 1 : -1;
+    rows.sort((a, b) => {
+      if (key === 'label') {
+        return mul * String(a.label).localeCompare(String(b.label), undefined, { numeric: true });
+      }
+      return mul * ((a[key] || 0) - (b[key] || 0));
+    });
+    return rows;
+  }, [activeRows, sort]);
+
+  const onSort = useCallback((key) => {
+    setSort((prev) => (prev.key === key
+      ? { key, dir: prev.dir === 'asc' ? 'desc' : 'asc' }
+      : { key, dir: key === 'label' ? 'asc' : 'desc' }));
+  }, []);
+
   const exportTable = useCallback(() => {
     const stamp = fmtLocal(new Date());
     if (tableDim === 'products') {
@@ -348,12 +387,26 @@ export default function AdminSalesPage() {
     ]);
   }, [data]);
 
+  const cityOptions = useMemo(() => cities.map((c) => ({ value: c, label: c })), [cities]);
+  const branchOptions = useMemo(
+    () => branches.map((b) => ({ value: b._id, label: b.code ? `${b.name} (${b.code})` : b.name })),
+    [branches],
+  );
+  const productOptions = useMemo(
+    () => products.map((p) => ({ value: p._id, label: p.name })),
+    [products],
+  );
+
   const productName = useMemo(
     () => products.find((p) => p._id === filters.product)?.name || '',
     [products, filters.product],
   );
+  const branchName = useMemo(
+    () => branches.find((b) => b._id === filters.branchId)?.name || '',
+    [branches, filters.branchId],
+  );
 
-  const hasFilters = filters.city || filters.product || filters.preset !== '30';
+  const hasFilters = filters.city || filters.product || filters.branchId || filters.preset !== '30';
 
   return (
     <div>
@@ -392,6 +445,15 @@ export default function AdminSalesPage() {
             <span>Filters</span>
           </div>
           <div className="admin-filter-chips">
+            {filters.branchId && (
+              <button
+                type="button"
+                className="admin-filter-chip"
+                onClick={() => setFilters((prev) => ({ ...prev, branchId: '' }))}
+              >
+                <HiOutlineMapPin aria-hidden /> {branchName || 'Branch'} <HiOutlineXMark aria-hidden />
+              </button>
+            )}
             {filters.city && (
               <button
                 type="button"
@@ -415,7 +477,7 @@ export default function AdminSalesPage() {
             <button
               type="button"
               className="admin-btn admin-btn-ghost admin-btn-sm admin-filter-reset"
-              onClick={() => setFilters({ preset: '30', from: '', to: '', city: '', product: '' })}
+              onClick={() => setFilters({ preset: '30', from: '', to: '', city: '', product: '', branchId: '' })}
             >
               <HiOutlineXMark aria-hidden /> Reset
             </button>
@@ -443,50 +505,57 @@ export default function AdminSalesPage() {
           {filters.preset === 'custom' && (
             <div className="admin-filter-field">
               <span className="admin-filter-label">Range</span>
-              <div className="admin-filter-range-inputs">
-                <input
-                  type="date"
-                  className="admin-input"
-                  value={filters.from}
-                  max={filters.to || undefined}
-                  onChange={(e) => setFilters((prev) => ({ ...prev, from: e.target.value }))}
-                />
-                <span className="admin-filter-range-sep">to</span>
-                <input
-                  type="date"
-                  className="admin-input"
-                  value={filters.to}
-                  min={filters.from || undefined}
-                  onChange={(e) => setFilters((prev) => ({ ...prev, to: e.target.value }))}
-                />
-              </div>
+              <AdminDateRangePicker
+                from={filters.from}
+                to={filters.to}
+                max={fmtLocal(new Date())}
+                onChange={({ from, to }) => setFilters((prev) => ({ ...prev, from, to }))}
+              />
+            </div>
+          )}
+
+          {branchOptions.length > 0 && (
+            <div className="admin-filter-field">
+              <span className="admin-filter-label">Branch</span>
+              <AdminCombobox
+                ariaLabel="Filter by branch"
+                value={filters.branchId}
+                onChange={(branchId) => setFilters((prev) => ({ ...prev, branchId }))}
+                options={branchOptions}
+                emptyLabel="All Branches"
+                placeholder="All Branches"
+                searchPlaceholder="Search branches…"
+                leadingIcon={<HiOutlineMapPin aria-hidden />}
+              />
             </div>
           )}
 
           <div className="admin-filter-field">
             <span className="admin-filter-label">City</span>
-            <select
-              className="admin-input admin-select"
+            <AdminCombobox
+              ariaLabel="Filter by city"
               value={filters.city}
-              onChange={(e) => setFilters((prev) => ({ ...prev, city: e.target.value }))}
-              style={{ maxWidth: 180 }}
-            >
-              <option value="">All Cities</option>
-              {cities.map((city) => <option key={city} value={city}>{city}</option>)}
-            </select>
+              onChange={(city) => setFilters((prev) => ({ ...prev, city }))}
+              options={cityOptions}
+              emptyLabel="All Cities"
+              placeholder="All Cities"
+              searchPlaceholder="Search cities…"
+              leadingIcon={<HiOutlineMapPin aria-hidden />}
+            />
           </div>
 
           <div className="admin-filter-field">
             <span className="admin-filter-label">Product</span>
-            <select
-              className="admin-input admin-select"
+            <AdminCombobox
+              ariaLabel="Filter by product"
               value={filters.product}
-              onChange={(e) => setFilters((prev) => ({ ...prev, product: e.target.value }))}
-              style={{ maxWidth: 220 }}
-            >
-              <option value="">All Products</option>
-              {products.map((product) => <option key={product._id} value={product._id}>{product.name}</option>)}
-            </select>
+              onChange={(product) => setFilters((prev) => ({ ...prev, product }))}
+              options={productOptions}
+              emptyLabel="All Products"
+              placeholder="All Products"
+              searchPlaceholder="Search products…"
+              leadingIcon={<HiOutlineCube aria-hidden />}
+            />
           </div>
         </div>
       </div>
@@ -527,7 +596,7 @@ export default function AdminSalesPage() {
               </>
             )}
           >
-            <RevenueTrendChart data={revenueByDay} height={320} />
+            <DashRevenueTrend data={revenueByDay} height={320} />
           </SalesChartCard>
 
           <div className="admin-chart-grid-triple" style={{ marginTop: '1.75rem' }}>
@@ -548,18 +617,12 @@ export default function AdminSalesPage() {
                 </button>
               )}
             >
-              <HorizontalBarChart
+              <DashTopBars
                 data={productSeries}
-                color="accent"
-                gradientId="salesProductsBar"
-                valueFormatter={compactRupees}
+                tone="accent"
+                valueKind="currency"
                 height={340}
                 emptyMessage="No product sales in this period"
-                tooltipRows={(p) => [
-                  { label: 'Revenue', value: fullRupees(p.value), color: COLORS.accentHover },
-                  { label: 'Units sold', value: (p.units || 0).toLocaleString('en-IN'), color: COLORS.accent },
-                  { label: 'Orders', value: (p.orders || 0).toLocaleString('en-IN'), color: COLORS.muted },
-                ]}
               />
             </SalesChartCard>
 
@@ -580,24 +643,18 @@ export default function AdminSalesPage() {
                 </button>
               )}
             >
-              <HorizontalBarChart
+              <DashTopBars
                 data={addonSeries}
-                color="violet"
-                gradientId="salesAddonsBar"
-                valueFormatter={compactRupees}
+                tone="violet"
+                valueKind="currency"
                 height={340}
                 emptyMessage="No add-on sales in this period"
-                tooltipRows={(p) => [
-                  { label: 'Revenue', value: fullRupees(p.value), color: COLORS.violetLight },
-                  { label: 'Units sold', value: (p.units || 0).toLocaleString('en-IN'), color: COLORS.violet },
-                  { label: 'Orders', value: (p.orders || 0).toLocaleString('en-IN'), color: COLORS.muted },
-                ]}
               />
             </SalesChartCard>
 
             <SalesChartCard
-              title="Top Cities"
-              subtitle="By revenue in this period"
+              title="Revenue by City"
+              subtitle="Share of revenue by location"
               action={citySeries.length > 0 && (
                 <button
                   className="admin-btn admin-btn-secondary admin-btn-sm"
@@ -611,17 +668,13 @@ export default function AdminSalesPage() {
                 </button>
               )}
             >
-              <HorizontalBarChart
-                data={citySeries}
-                color="info"
-                gradientId="salesCitiesBar"
-                valueFormatter={compactRupees}
-                height={340}
+              <DashDonut
+                data={citySeries.map((c) => ({ id: c.name, label: c.name, value: c.value }))}
+                valueKind="currency"
+                height={300}
+                centerValue={compactRupees(citySeries.reduce((sum, c) => sum + c.value, 0))}
+                centerCaption="Revenue"
                 emptyMessage="No city sales in this period"
-                tooltipRows={(p) => [
-                  { label: 'Revenue', value: fullRupees(p.value), color: COLORS.info },
-                  { label: 'Orders', value: (p.orders || 0).toLocaleString('en-IN'), color: COLORS.infoLight },
-                ]}
               />
             </SalesChartCard>
           </div>
@@ -673,37 +726,37 @@ export default function AdminSalesPage() {
                     {(tableDim === 'products' || tableDim === 'addons') && (
                       <tr>
                         <th style={{ width: 48 }}>#</th>
-                        <th>{tableDim === 'addons' ? 'Add-on' : 'Product'}</th>
-                        <th className="admin-num">Units</th>
-                        <th className="admin-num">Orders</th>
-                        <th className="admin-num">Revenue</th>
+                        <SortHeader label={tableDim === 'addons' ? 'Add-on' : 'Product'} columnKey="label" sort={sort} onSort={onSort} />
+                        <SortHeader label="Units" columnKey="units" sort={sort} onSort={onSort} numeric />
+                        <SortHeader label="Orders" columnKey="orders" sort={sort} onSort={onSort} numeric />
+                        <SortHeader label="Revenue" columnKey="revenue" sort={sort} onSort={onSort} numeric />
                         <th style={{ width: 160 }}>Share of revenue</th>
                       </tr>
                     )}
                     {tableDim === 'cities' && (
                       <tr>
                         <th style={{ width: 48 }}>#</th>
-                        <th>City</th>
-                        <th className="admin-num">Orders</th>
-                        <th className="admin-num">Revenue</th>
+                        <SortHeader label="City" columnKey="label" sort={sort} onSort={onSort} />
+                        <SortHeader label="Orders" columnKey="orders" sort={sort} onSort={onSort} numeric />
+                        <SortHeader label="Revenue" columnKey="revenue" sort={sort} onSort={onSort} numeric />
                         <th style={{ width: 160 }}>Share of revenue</th>
                       </tr>
                     )}
                     {tableDim === 'daily' && (
                       <tr>
-                        <th>Date</th>
-                        <th className="admin-num">Orders</th>
-                        <th className="admin-num">Revenue</th>
+                        <SortHeader label="Date" columnKey="label" sort={sort} onSort={onSort} />
+                        <SortHeader label="Orders" columnKey="orders" sort={sort} onSort={onSort} numeric />
+                        <SortHeader label="Revenue" columnKey="revenue" sort={sort} onSort={onSort} numeric />
                         <th style={{ width: 160 }}>Share of revenue</th>
                       </tr>
                     )}
                   </thead>
                   <tbody>
-                    {activeRows.map((row, i) => (
+                    {sortedRows.map((row, i) => (
                       <tr key={`${tableDim}-${row.label}-${i}`}>
                         {(tableDim === 'products' || tableDim === 'addons') && (
                           <>
-                            <td className="admin-records-rank">{row.rank}</td>
+                            <td className="admin-records-rank">{i + 1}</td>
                             <td className="admin-records-name">{row.label}</td>
                             <td className="admin-num">{(row.units || 0).toLocaleString('en-IN')}</td>
                             <td className="admin-num">{(row.orders || 0).toLocaleString('en-IN')}</td>
@@ -713,7 +766,7 @@ export default function AdminSalesPage() {
                         )}
                         {tableDim === 'cities' && (
                           <>
-                            <td className="admin-records-rank">{row.rank}</td>
+                            <td className="admin-records-rank">{i + 1}</td>
                             <td className="admin-records-name">{row.label}</td>
                             <td className="admin-num">{(row.orders || 0).toLocaleString('en-IN')}</td>
                             <td className="admin-num admin-records-revenue">{formatPrice(row.revenue || 0)}</td>

@@ -236,7 +236,9 @@ export default function CheckoutPage() {
 
   // Payment
   const [paymentMethod, setPaymentMethod] = useState('cod');
+  const [codAvailable, setCodAvailable] = useState(true); // effective COD for the chosen address (global AND zone)
   const [placing, setPlacing] = useState(false);
+  const [checkingServiceability, setCheckingServiceability] = useState(false);
   const [savingAddress, setSavingAddress] = useState(false);
   const orderInProgressRef = useRef(false);
   const checkoutIdempotencyKeyRef = useRef(null);
@@ -379,7 +381,48 @@ export default function CheckoutPage() {
     setStep(2);
   };
 
-  const handleDeliveryContinue = () => {
+  // Proactive serviceability check so the customer is warned at the address
+  // step, not at the final Place Order click. Returns true to proceed. On a
+  // missing pincode or a failed lookup we allow proceeding — the authoritative
+  // server-side gate at order placement still blocks undeliverable zones.
+  const ensureServiceable = async (pincode) => {
+    const pin = String(pincode || '').trim();
+    if (!/^[1-9][0-9]{5}$/.test(pin)) return true;
+    setCheckingServiceability(true);
+    try {
+      const res = await api.post('/delivery/check-pincode', { pincode: pin });
+      const data = res.data?.data || {};
+      if (data.status === 'coming_soon') {
+        dispatch(addToast({
+          message: `Delivery to ${data.city || `pincode ${pin}`} is launching soon — we can’t take orders here just yet.`,
+          type: 'warning',
+          duration: 6000,
+        }));
+        return false;
+      }
+      if (data.serviceable === false || data.status === 'unavailable') {
+        dispatch(addToast({
+          message: `Sorry, we don’t deliver to ${pin} yet. Please try a different delivery address.`,
+          type: 'error',
+          duration: 6000,
+        }));
+        return false;
+      }
+      // Effective COD availability for this address (global switch AND zone switch).
+      const codOk = data.codAvailable !== false;
+      setCodAvailable(codOk);
+      // If COD just became unavailable, move signed-in users to online payment.
+      if (!codOk && checkoutMode === 'auth') setPaymentMethod('online');
+      return true; // live / serviceable
+    } catch {
+      return true; // lookup failed — don't trap the user
+    } finally {
+      setCheckingServiceability(false);
+    }
+  };
+
+  const handleDeliveryContinue = async () => {
+    if (checkingServiceability) return;
     if (!deliveryDate || !deliverySlot) {
       dispatch(addToast({ message: 'Please select a delivery date and slot', type: 'error' }));
       return;
@@ -414,6 +457,12 @@ export default function CheckoutPage() {
         return;
       }
     }
+
+    const pin = checkoutMode === 'auth'
+      ? (showNewAddress ? newAddress.pincode : addresses.find((a) => a._id === selectedAddress)?.pincode)
+      : guestAddress.pincode;
+    if (!(await ensureServiceable(pin))) return;
+
     setStep(checkoutMode === 'auth' ? 2 : 3);
   };
 
@@ -908,17 +957,19 @@ export default function CheckoutPage() {
 
                   <div className="flex items-center gap-3 flex-wrap">
                     <button
-                      onClick={() => {
-                        if (selectedAddress) {
-                          setStep(2);
-                        } else {
+                      onClick={async () => {
+                        if (!selectedAddress) {
                           dispatch(addToast({ message: 'Please select or add an address', type: 'error' }));
+                          return;
                         }
+                        const addr = addresses.find((a) => a._id === selectedAddress);
+                        if (!(await ensureServiceable(addr?.pincode))) return;
+                        setStep(2);
                       }}
                       className="flex items-center gap-2 px-6 py-3 rounded-xl gradient-primary text-white font-semibold hover:opacity-90 transition-opacity disabled:opacity-50"
-                      disabled={!selectedAddress}
+                      disabled={!selectedAddress || checkingServiceability}
                     >
-                      Continue <FiArrowRight className="w-4 h-4" />
+                      {checkingServiceability ? 'Checking…' : <>Continue <FiArrowRight className="w-4 h-4" /></>}
                     </button>
 
                     {showNewAddress && (
@@ -934,6 +985,8 @@ export default function CheckoutPage() {
                             dispatch(addToast({ message: 'Please select an area / sector', type: 'error' }));
                             return;
                           }
+                          // Warn before saving an address we can't deliver to.
+                          if (!(await ensureServiceable(newAddress.pincode))) return;
                           setSavingAddress(true);
                           try {
                             const payload = {
@@ -962,7 +1015,7 @@ export default function CheckoutPage() {
                             setSavingAddress(false);
                           }
                         }}
-                        disabled={savingAddress}
+                        disabled={savingAddress || checkingServiceability}
                         className="flex items-center gap-2 px-6 py-3 rounded-xl border-2 border-pink-deep text-pink-deep font-semibold hover:bg-pink-deep/5 transition-colors disabled:opacity-50"
                       >
                         {savingAddress ? (
@@ -1086,9 +1139,10 @@ export default function CheckoutPage() {
 
                   <button
                     onClick={handleDeliveryContinue}
-                    className="mt-6 flex items-center gap-2 px-8 py-3 rounded-xl gradient-primary text-white font-semibold hover:opacity-90 transition-opacity"
+                    disabled={checkingServiceability}
+                    className="mt-6 flex items-center gap-2 px-8 py-3 rounded-xl gradient-primary text-white font-semibold hover:opacity-90 transition-opacity disabled:opacity-60"
                   >
-                    Continue <FiArrowRight className="w-4 h-4" />
+                    {checkingServiceability ? 'Checking…' : <>Continue <FiArrowRight className="w-4 h-4" /></>}
                   </button>
                 </motion.div>
               )}
@@ -1233,8 +1287,8 @@ export default function CheckoutPage() {
 
                   <div className="space-y-3 mb-8">
                     {[
-                      { value: 'cod', label: 'Cash on Delivery', desc: 'Pay when your cake arrives at your door', icon: '💵' },
-                      { value: 'online', label: 'Pay Online (Razorpay)', desc: 'Credit card, debit card, UPI, net banking', icon: '💳', disabled: checkoutMode === 'guest' },
+                      { value: 'cod', label: 'Cash on Delivery', desc: 'Pay when your cake arrives at your door', icon: '💵', disabled: !codAvailable, disabledNote: 'Cash on Delivery is unavailable for this delivery area' },
+                      { value: 'online', label: 'Pay Online (Razorpay)', desc: 'Credit card, debit card, UPI, net banking', icon: '💳', disabled: checkoutMode === 'guest', disabledNote: 'Login required for online payment' },
                     ].map((opt) => (
                       <label
                         key={opt.value}
@@ -1255,10 +1309,16 @@ export default function CheckoutPage() {
                         <span className="text-2xl">{opt.icon}</span>
                         <div>
                           <p className="text-sm font-semibold text-dark">{opt.label}</p>
-                          <p className="text-xs text-outline">{opt.disabled ? 'Login required for online payment' : opt.desc}</p>
+                          <p className="text-xs text-outline">{opt.disabled ? (opt.disabledNote || 'Unavailable') : opt.desc}</p>
                         </div>
                       </label>
                     ))}
+                    {!codAvailable && checkoutMode === 'guest' && (
+                      <p className="text-xs text-error">
+                        Cash on Delivery isn’t available for this area right now, and online payment requires an account.
+                        Please <a href="/login" className="underline font-medium">log in</a> to pay online, or choose a different delivery address.
+                      </p>
+                    )}
                   </div>
 
                   <button

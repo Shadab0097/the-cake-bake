@@ -41,8 +41,21 @@ class AdminService {
    * Dashboard overview — sales stats, order counts, revenue
    */
   async getDashboard(query = {}) {
-    // Cache dashboard for 60 seconds to prevent DB overload from rapid refreshes
-    return cache.getOrSet('admin:dashboard', async () => {
+    const { toObjectIds, orderBranchMatch, withBranch } = require('../../utils/branchScope');
+    const branchIds = toObjectIds(query);
+    const branchKey = branchIds.map(String).sort().join(',');
+    // Cache dashboard for 60 seconds to prevent DB overload from rapid refreshes.
+    // Per-branch key so a walled admin never reads the owner's data; the
+    // owner/global key stays 'admin:dashboard' (cleared on every order change),
+    // branch keys self-expire on the 60s TTL.
+    const dashKey = branchKey ? `admin:dashboard:${branchKey}` : 'admin:dashboard';
+    return cache.getOrSet(dashKey, async () => {
+    const branchMatch = await orderBranchMatch(branchIds.map(String));
+    // Branch-scoped filters for non-Order collections that carry their own
+    // branch field: refunds (snapshotted branchId) and coupons (branch link;
+    // null = chain-wide, so a branch also sees chain-wide coupons).
+    const refundBranchFilter = branchIds.length ? { branchId: { $in: branchIds } } : {};
+    const couponBranchFilter = branchIds.length ? { $or: [{ branchId: null }, { branchId: { $in: branchIds } }] } : {};
     const now = new Date();
     const todayStart = startOfDay(now);
     const todayEnd = endOfDay(now);
@@ -103,29 +116,29 @@ class AdminService {
       abandonedCarts,
       topCoupons,
     ] = await Promise.all([
-      Order.countDocuments({ paymentStatus: 'paid' }),
-      Order.countDocuments({ paymentStatus: 'paid', createdAt: { $gte: todayStart, $lte: todayEnd } }),
-      Order.countDocuments({ paymentStatus: 'paid', createdAt: { $gte: monthStart, $lte: monthEnd } }),
+      Order.countDocuments(withBranch({ paymentStatus: 'paid' }, branchMatch)),
+      Order.countDocuments(withBranch({ paymentStatus: 'paid', createdAt: { $gte: todayStart, $lte: todayEnd } }, branchMatch)),
+      Order.countDocuments(withBranch({ paymentStatus: 'paid', createdAt: { $gte: monthStart, $lte: monthEnd } }, branchMatch)),
 
       Order.aggregate([
-        { $match: { paymentStatus: 'paid' } },
+        { $match: withBranch({ paymentStatus: 'paid' }, branchMatch) },
         { $group: { _id: null, total: { $sum: '$total' } } },
       ]),
       Order.aggregate([
-        { $match: { paymentStatus: 'paid', createdAt: { $gte: todayStart, $lte: todayEnd } } },
+        { $match: withBranch({ paymentStatus: 'paid', createdAt: { $gte: todayStart, $lte: todayEnd } }, branchMatch) },
         { $group: { _id: null, total: { $sum: '$total' } } },
       ]),
       Order.aggregate([
-        { $match: { paymentStatus: 'paid', createdAt: { $gte: monthStart, $lte: monthEnd } } },
+        { $match: withBranch({ paymentStatus: 'paid', createdAt: { $gte: monthStart, $lte: monthEnd } }, branchMatch) },
         { $group: { _id: null, total: { $sum: '$total' } } },
       ]),
 
       User.countDocuments({ role: 'customer' }),
       Product.countDocuments({ isActive: true }),
-      Order.countDocuments(actionableOrderFilter),
+      Order.countDocuments(withBranch(actionableOrderFilter, branchMatch)),
 
       // Recent dashboard orders exclude failed/expired online attempts; those remain filterable in Orders.
-      Order.find(dashboardOrderFilter)
+      Order.find(withBranch(dashboardOrderFilter, branchMatch))
         .populate('user', 'name email phone')
         .sort({ createdAt: -1 })
         .limit(10)
@@ -133,11 +146,11 @@ class AdminService {
         .lean(),
 
       Order.aggregate([
-        { $match: dashboardOrderFilter },
+        { $match: withBranch(dashboardOrderFilter, branchMatch) },
         { $group: { _id: '$status', count: { $sum: 1 } } },
       ]),
       Order.aggregate([
-        { $match: { ...dashboardOrderFilter, createdAt: { $gte: todayStart, $lte: todayEnd } } },
+        { $match: withBranch({ ...dashboardOrderFilter, createdAt: { $gte: todayStart, $lte: todayEnd } }, branchMatch) },
         { $group: { _id: '$status', count: { $sum: 1 } } },
       ]),
       Payment.aggregate([
@@ -155,10 +168,10 @@ class AdminService {
         .lean(),
       Variant.countDocuments({ isActive: true, stock: { $lte: LOW_STOCK_THRESHOLD } }),
       Refund.aggregate([
-        { $match: { status: { $ne: REFUND_STATUSES.REFUNDED } } },
+        { $match: { status: { $ne: REFUND_STATUSES.REFUNDED }, ...refundBranchFilter } },
         { $group: { _id: '$status', count: { $sum: 1 } } },
       ]),
-      Refund.find({ status: { $in: [REFUND_STATUSES.REQUESTED, REFUND_STATUSES.APPROVED, REFUND_STATUSES.PROCESSING, REFUND_STATUSES.FAILED] } })
+      Refund.find({ status: { $in: [REFUND_STATUSES.REQUESTED, REFUND_STATUSES.APPROVED, REFUND_STATUSES.PROCESSING, REFUND_STATUSES.FAILED] }, ...refundBranchFilter })
         .populate('order', 'orderNumber')
         .sort({ createdAt: 1 })
         .limit(8)
@@ -179,11 +192,11 @@ class AdminService {
         .limit(8)
         .select('channel type recipient errorMessage createdAt')
         .lean(),
-      Order.find({
+      Order.find(withBranch({
         paymentMethod: 'cod',
         'codRisk.decision': 'review',
         status: { $in: activeOrderStatuses },
-      })
+      }, branchMatch))
         .sort({ createdAt: -1 })
         .limit(8)
         .select('orderNumber guestInfo user total status codRisk createdAt')
@@ -198,7 +211,7 @@ class AdminService {
         'items.0': { $exists: true },
         updatedAt: { $lte: abandonedCartCutoff },
       }),
-      Coupon.find({ isActive: true })
+      Coupon.find({ isActive: true, ...couponBranchFilter })
         .sort({ usageCount: -1, updatedAt: -1 })
         .limit(8)
         .select('code usageCount usageLimit validUntil')
@@ -299,18 +312,22 @@ class AdminService {
    * Analytics — revenue by day for last N days
    */
   async getAnalytics(query) {
+    const { toObjectIds, orderBranchMatch } = require('../../utils/branchScope');
     const days = parseInt(query.days, 10) || 30;
-    const cacheKey = `admin:analytics:${days}`;
+    const branchIds = toObjectIds(query);
+    const cacheKey = `admin:analytics:${days}:${branchIds.map(String).sort().join(',')}`;
 
     return cache.getOrSet(cacheKey, async () => {
     const startDate = new Date();
     startDate.setDate(startDate.getDate() - days);
+    const branchMatch = await orderBranchMatch(branchIds.map(String));
 
     const revenueByDay = await Order.aggregate([
       {
         $match: {
           paymentStatus: 'paid',
           createdAt: { $gte: startDate },
+          ...branchMatch,
         },
       },
       {
@@ -324,7 +341,7 @@ class AdminService {
     ]);
 
     const topProducts = await Order.aggregate([
-      { $match: { paymentStatus: 'paid', createdAt: { $gte: startDate } } },
+      { $match: { paymentStatus: 'paid', createdAt: { $gte: startDate }, ...branchMatch } },
       { $unwind: '$items' },
       {
         $group: {
@@ -338,7 +355,7 @@ class AdminService {
     ]);
 
     const topCities = await Order.aggregate([
-      { $match: { paymentStatus: 'paid', createdAt: { $gte: startDate } } },
+      { $match: { paymentStatus: 'paid', createdAt: { $gte: startDate }, ...branchMatch } },
       {
         $group: {
           _id: '$deliveryCity',
@@ -366,6 +383,12 @@ class AdminService {
   async getSalesAnalytics(query = {}) {
     const ApiError = require('../../utils/ApiError');
     const city = (query.city || '').trim();
+    // Optional multi-city filter (a branch spans several zones/cities).
+    const cities = Array.isArray(query.cities) ? query.cities.map((c) => String(c).trim()).filter(Boolean) : [];
+    // Optional branch filter — authoritative location key (snapshotted on each
+    // order). When set alongside cities, also catches legacy orders that have no
+    // branchId snapshot but whose deliveryCity belongs to the branch.
+    const branchIds = require('../../utils/branchScope').toObjectIds(query);
     const product = (query.product || '').trim();
     const productId = product && mongoose.Types.ObjectId.isValid(product)
       ? new mongoose.Types.ObjectId(product)
@@ -391,12 +414,25 @@ class AdminService {
     const prevEnd = new Date(startDate.getTime() - 1);
     const prevStart = new Date(startDate.getTime() - rangeMs - 1);
 
-    const cacheKey = `admin:sales:${startDate.toISOString()}:${endDate.toISOString()}:${city}:${product}`;
+    const cacheKey = `admin:sales:${startDate.toISOString()}:${endDate.toISOString()}:${city}:${cities.join('|')}:${branchIds.map(String).sort().join(',')}:${product}`;
 
     return cache.getOrSet(cacheKey, async () => {
+      // When filtering by branch, also gather its zones' cities so legacy orders
+      // (placed before branchId was snapshotted) are still attributed to it.
+      let effectiveCities = cities;
+      if (branchIds.length && !effectiveCities.length) {
+        const DeliveryZone = require('../../models/DeliveryZone');
+        const zs = await DeliveryZone.find({ branchId: { $in: branchIds } }).select('city').lean();
+        effectiveCities = [...new Set(zs.map((z) => z.city).filter(Boolean))];
+      }
       const matchFor = (start, end) => {
         const match = { paymentStatus: 'paid', createdAt: { $gte: start, $lte: end } };
-        if (city) match.deliveryCity = city;
+        if (branchIds.length) {
+          match.$or = effectiveCities.length
+            ? [{ branchId: { $in: branchIds } }, { branchId: null, deliveryCity: { $in: effectiveCities } }]
+            : [{ branchId: { $in: branchIds } }];
+        } else if (cities.length) match.deliveryCity = { $in: cities };
+        else if (city) match.deliveryCity = city;
         return match;
       };
       const lineRevenue = { $multiply: ['$items.price', '$items.quantity'] };
@@ -533,6 +569,8 @@ class AdminService {
   async getProfitAnalytics(query = {}) {
     const ApiError = require('../../utils/ApiError');
     const city = (query.city || '').trim();
+    const cities = Array.isArray(query.cities) ? query.cities.map((c) => String(c).trim()).filter(Boolean) : [];
+    const branchIds = require('../../utils/branchScope').toObjectIds(query);
 
     let startDate;
     let endDate;
@@ -552,12 +590,23 @@ class AdminService {
     const prevEnd = new Date(startDate.getTime() - 1);
     const prevStart = new Date(startDate.getTime() - rangeMs - 1);
 
-    const cacheKey = `admin:profit:${startDate.toISOString()}:${endDate.toISOString()}:${city}`;
+    const cacheKey = `admin:profit:${startDate.toISOString()}:${endDate.toISOString()}:${city}:${cities.join('|')}:${branchIds.map(String).sort().join(',')}`;
 
     return cache.getOrSet(cacheKey, async () => {
+      let effectiveCities = cities;
+      if (branchIds.length && !effectiveCities.length) {
+        const DeliveryZone = require('../../models/DeliveryZone');
+        const zs = await DeliveryZone.find({ branchId: { $in: branchIds } }).select('city').lean();
+        effectiveCities = [...new Set(zs.map((z) => z.city).filter(Boolean))];
+      }
       const matchFor = (start, end) => {
         const match = { paymentStatus: 'paid', createdAt: { $gte: start, $lte: end } };
-        if (city) match.deliveryCity = city;
+        if (branchIds.length) {
+          match.$or = effectiveCities.length
+            ? [{ branchId: { $in: branchIds } }, { branchId: null, deliveryCity: { $in: effectiveCities } }]
+            : [{ branchId: { $in: branchIds } }];
+        } else if (cities.length) match.deliveryCity = { $in: cities };
+        else if (city) match.deliveryCity = city;
         return match;
       };
 
@@ -600,7 +649,7 @@ class AdminService {
           },
         },
         { $addFields: { profit: { $subtract: ['$grossSales', { $add: ['$cogs', '$discounts', '$gatewayFees'] }] } } },
-        { $project: { grossSales: 1, profit: 1 } },
+        { $project: { grossSales: 1, profit: 1, cogs: 1 } },
         { $sort: { _id: 1 } },
       ];
 
@@ -673,6 +722,91 @@ class AdminService {
         topProducts,
       };
     }, 120);
+  }
+
+  /**
+   * Per-branch breakdown of revenue, orders, units, and net profit for a date
+   * range — the owner's "compare all branches" view (vs. the branch filter which
+   * shows one branch at a time). Profit uses the same model as getProfitAnalytics
+   * (grossSales − COGS − discounts − gateway fees). A walled caller is limited to
+   * their branches; an owner sees every branch plus an "Unassigned" bucket for
+   * orders with no branch.
+   */
+  async getBranchBreakdown(query = {}) {
+    const { toObjectIds, orderBranchMatch, withBranch } = require('../../utils/branchScope');
+    const branchIds = toObjectIds(query);
+
+    let startDate;
+    let endDate;
+    if (query.from && query.to) {
+      startDate = startOfDay(new Date(query.from));
+      endDate = endOfDay(new Date(query.to));
+    } else {
+      const days = Math.min(Math.max(parseInt(query.days, 10) || 30, 1), 366);
+      endDate = endOfDay(new Date());
+      startDate = startOfDay(new Date(Date.now() - (days - 1) * 24 * 60 * 60 * 1000));
+    }
+    if (Number.isNaN(startDate.getTime()) || Number.isNaN(endDate.getTime()) || startDate > endDate) {
+      throw ApiError.badRequest('Invalid date range');
+    }
+
+    const cacheKey = `admin:branch-breakdown:${startDate.toISOString()}:${endDate.toISOString()}:${branchIds.map(String).sort().join(',')}`;
+
+    return cache.getOrSet(cacheKey, async () => {
+      const branchMatch = await orderBranchMatch(branchIds.map(String)); // {} for owner
+      const match = withBranch({ paymentStatus: 'paid', createdAt: { $gte: startDate, $lte: endDate } }, branchMatch);
+
+      const cogsExpr = { $reduce: { input: '$items', initialValue: 0, in: { $add: ['$$value', { $multiply: [{ $ifNull: ['$$this.cost', 0] }, '$$this.quantity'] }] } } };
+      const unitsExpr = { $reduce: { input: '$items', initialValue: 0, in: { $add: ['$$value', '$$this.quantity'] } } };
+      const discountsExpr = { $add: [{ $ifNull: ['$discount', 0] }, { $ifNull: ['$pointsDiscount', 0] }] };
+      const gatewayExpr = { $cond: [{ $eq: ['$paymentMethod', 'online'] }, { $multiply: ['$total', GATEWAY_FEE_RATE] }, 0] };
+
+      const rows = await Order.aggregate([
+        { $match: match },
+        {
+          $group: {
+            _id: '$branchId',
+            revenue: { $sum: '$total' },
+            grossSales: { $sum: '$subtotal' },
+            cogs: { $sum: cogsExpr },
+            discounts: { $sum: discountsExpr },
+            gatewayFees: { $sum: gatewayExpr },
+            orders: { $sum: 1 },
+            units: { $sum: unitsExpr },
+          },
+        },
+        { $lookup: { from: 'branches', localField: '_id', foreignField: '_id', as: 'branch' } },
+        { $sort: { revenue: -1 } },
+      ]);
+
+      const branches = rows.map((r) => {
+        const gatewayFees = Math.round(r.gatewayFees || 0);
+        const netProfit = (r.grossSales || 0) - (r.cogs || 0) - (r.discounts || 0) - gatewayFees;
+        const branch = r.branch && r.branch[0];
+        return {
+          branchId: r._id || null,
+          branchName: branch?.name || (r._id ? 'Unknown branch' : 'Unassigned'),
+          branchCode: branch?.code || '',
+          revenue: r.revenue || 0,
+          grossSales: r.grossSales || 0,
+          orders: r.orders || 0,
+          units: r.units || 0,
+          netProfit,
+          margin: r.grossSales > 0 ? Math.round((netProfit / r.grossSales) * 10000) / 100 : 0,
+          aov: r.orders > 0 ? Math.round((r.revenue || 0) / r.orders) : 0,
+        };
+      });
+
+      const totals = branches.reduce((acc, b) => ({
+        revenue: acc.revenue + b.revenue,
+        grossSales: acc.grossSales + b.grossSales,
+        orders: acc.orders + b.orders,
+        units: acc.units + b.units,
+        netProfit: acc.netProfit + b.netProfit,
+      }), { revenue: 0, grossSales: 0, orders: 0, units: 0, netProfit: 0 });
+
+      return { range: { from: startDate, to: endDate }, branches, totals };
+    }, 60);
   }
 
   /**
@@ -815,7 +949,9 @@ class AdminService {
   /**
    * List customers with order stats
    */
-  async getCustomers(query) {
+  // Customer accounts are global, but a walled admin only sees customers who
+  // have ordered from one of their branches (derived from order history).
+  async getCustomers(query, scope = null) {
     const { parsePagination, paginatedResponse } = require('../../utils/pagination');
     const { page, limit, skip } = parsePagination(query);
 
@@ -829,6 +965,13 @@ class AdminService {
       ];
     }
 
+    if (scope) {
+      const { withBranch, orderBranchMatch } = require('../../utils/branchScope');
+      const match = await orderBranchMatch(scope);
+      const userIds = await Order.distinct('user', withBranch({ user: { $ne: null } }, match));
+      filter._id = { $in: userIds };
+    }
+
     const [customers, total] = await Promise.all([
       User.find(filter).sort({ createdAt: -1 }).skip(skip).limit(limit).lean(),
       User.countDocuments(filter),
@@ -838,18 +981,25 @@ class AdminService {
   }
 
   /**
-   * Get customer detail with their orders
+   * Get customer detail with their orders. A walled admin sees only the
+   * customer's orders fulfilled by their branches, and a customer with no such
+   * orders is treated as not found (no cross-branch customer peeking).
    */
-  async getCustomerDetail(customerId) {
+  async getCustomerDetail(customerId, scope = null) {
+    const ApiError = require('../../utils/ApiError');
+    let orderFilter = { user: customerId };
+    if (scope) {
+      const { withBranch, orderBranchMatch } = require('../../utils/branchScope');
+      orderFilter = withBranch(orderFilter, await orderBranchMatch(scope));
+    }
+
     const [customer, orders] = await Promise.all([
       User.findById(customerId).lean(),
-      Order.find({ user: customerId }).sort({ createdAt: -1 }).limit(20).lean(),
+      Order.find(orderFilter).sort({ createdAt: -1 }).limit(20).lean(),
     ]);
 
-    if (!customer) {
-      const ApiError = require('../../utils/ApiError');
-      throw ApiError.notFound('Customer not found');
-    }
+    if (!customer) throw ApiError.notFound('Customer not found');
+    if (scope && orders.length === 0) throw ApiError.notFound('Customer not found');
 
     return { customer, orders };
   }
@@ -861,8 +1011,17 @@ class AdminService {
    * @param {string} reason - admin-provided reason
    * @param {string} adminId - who performed the action
    */
-  async adjustCustomerPoints(customerId, points, reason, adminId) {
+  async adjustCustomerPoints(customerId, points, reason, adminId, scope = null) {
     const ApiError = require('../../utils/ApiError');
+
+    // A walled admin may only adjust points for a customer who has ordered from
+    // one of their branches.
+    if (scope) {
+      const { withBranch, orderBranchMatch } = require('../../utils/branchScope');
+      const inBranch = await Order.exists(withBranch({ user: customerId }, await orderBranchMatch(scope)));
+      if (!inBranch) throw ApiError.notFound('Customer not found');
+    }
+
     const session = await mongoose.startSession();
     let result = null;
 
@@ -914,25 +1073,165 @@ class AdminService {
       if (Array.isArray(r.recipients)) update['reports.recipients'] = r.recipients.map((x) => String(x).trim()).filter(Boolean);
       if (r.hour !== undefined) update['reports.hour'] = Math.min(Math.max(parseInt(r.hour, 10) || 0, 0), 23);
     }
+    let commerceChanged = false;
+    if (payload.commerce && typeof payload.commerce === 'object') {
+      const cm = payload.commerce;
+      if (cm.codEnabled !== undefined) { update['commerce.codEnabled'] = !!cm.codEnabled; commerceChanged = true; }
+    }
+    if (payload.storeLocation && typeof payload.storeLocation === 'object') {
+      const sl = payload.storeLocation;
+      const textKeys = ['addressLine1', 'addressLine2', 'city', 'state', 'pincode', 'defaultCity'];
+      textKeys.forEach((key) => { if (sl[key] !== undefined) update[`storeLocation.${key}`] = String(sl[key]).trim(); });
+      ['lat', 'lng'].forEach((key) => {
+        if (sl[key] === undefined) return;
+        if (sl[key] === null || sl[key] === '') { update[`storeLocation.${key}`] = null; return; }
+        const num = Number(sl[key]);
+        if (!Number.isNaN(num)) update[`storeLocation.${key}`] = num;
+      });
+    }
+    if (payload.defaultBranchId !== undefined) {
+      const v = payload.defaultBranchId;
+      if (v === null || v === '') update.defaultBranchId = null;
+      else if (mongoose.Types.ObjectId.isValid(v)) update.defaultBranchId = new mongoose.Types.ObjectId(v);
+      // invalid values are ignored (no change)
+      commerceChanged = true; // defaultBranchId is served via the commerce cache
+    }
     const doc = await Settings.findOneAndUpdate(
       { key: 'global' },
       { $set: update },
       { new: true, upsert: true, setDefaultsOnInsert: true }
     );
+
+    // Bust caches that read commerce settings (checkout COD policy + the
+    // per-pincode serviceability response that now carries codAvailable).
+    if (commerceChanged) {
+      const { bustCommerceConfig } = require('../../utils/commerceSettings');
+      const cache = require('../../utils/cache');
+      await bustCommerceConfig();
+      await cache.invalidatePattern('delivery:');
+    }
+
     return doc.toObject();
   }
 
   // ── Admin user management ───────────────────────────────────────────────
   async listAdminUsers() {
-    return User.find({ role: { $in: ['superadmin', 'admin', 'manager', 'staff'] } })
-      .select('name email phone role lastLogin createdAt')
+    return User.find({ role: { $in: ['superadmin', 'admin', 'manager', 'staff', 'branchadmin'] } })
+      .select('name email phone role branchIds isActive mustChangePassword lastLogin createdAt')
+      .populate('branchIds', 'name code')
       .sort({ createdAt: 1 })
       .lean();
   }
 
+  // Validate a requested branchIds[] for an admin account: every id must be a
+  // real Branch, and a 'branchadmin' must be walled to at least one branch
+  // (an empty set would make them an unrestricted owner — a privilege leak).
+  // Returns a deduped ObjectId[].
+  async _validateBranchIds(branchIds, role) {
+    const ApiError = require('../../utils/ApiError');
+    const Branch = require('../../models/Branch');
+    const raw = Array.isArray(branchIds) ? branchIds : [];
+    const ids = [...new Set(raw.map(String).filter((s) => mongoose.Types.ObjectId.isValid(s)))];
+    if (ids.length) {
+      const count = await Branch.countDocuments({ _id: { $in: ids } });
+      if (count !== ids.length) throw ApiError.badRequest('One or more selected branches do not exist');
+    }
+    if (role === 'branchadmin' && !ids.length) {
+      throw ApiError.badRequest('A branch admin must be assigned at least one branch');
+    }
+    return ids.map((s) => new mongoose.Types.ObjectId(s));
+  }
+
+  // Super-admin only: create a new admin-tier user. We issue a one-time
+  // temporary password (returned to the caller exactly once) and flag the
+  // account to change it. This avoids any dependency on email delivery and
+  // never stores or logs a plaintext password.
+  async createAdminUser({ name, email, phone, role, branchIds } = {}, actingUserId = null) {
+    const ApiError = require('../../utils/ApiError');
+    const crypto = require('crypto');
+    const ASSIGNABLE = ['staff', 'manager', 'admin', 'superadmin', 'branchadmin'];
+    if (!ASSIGNABLE.includes(role)) throw ApiError.badRequest('Invalid role for an admin user');
+
+    const resolvedBranchIds = await this._validateBranchIds(branchIds, role);
+
+    const normalizedEmail = String(email || '').trim().toLowerCase();
+    const existing = await User.findOne({ email: normalizedEmail });
+    if (existing) {
+      throw ApiError.conflict('A user with this email already exists', [{ field: 'email', code: 'EMAIL_EXISTS', message: 'A user with this email already exists' }], 'EMAIL_EXISTS');
+    }
+
+    const normalizedPhone = phone ? String(phone).trim() : '';
+    if (normalizedPhone) {
+      const phoneExists = await User.findOne({ phone: normalizedPhone });
+      if (phoneExists) {
+        throw ApiError.conflict('A user with this phone number already exists', [{ field: 'phone', code: 'PHONE_EXISTS', message: 'A user with this phone number already exists' }], 'PHONE_EXISTS');
+      }
+    }
+
+    // ~12 url-safe chars — comfortably above the 6-char minimum.
+    const tempPassword = crypto.randomBytes(9).toString('base64url');
+    const user = await User.create({
+      name: String(name || '').trim(),
+      email: normalizedEmail,
+      phone: normalizedPhone || undefined,
+      passwordHash: tempPassword, // hashed by the User pre-save hook
+      role,
+      branchIds: resolvedBranchIds,
+      isActive: true,
+      isVerified: true,
+      mustChangePassword: true,
+    });
+
+    return {
+      user: {
+        _id: user._id,
+        name: user.name,
+        email: user.email,
+        phone: user.phone || '',
+        role: user.role,
+        branchIds: resolvedBranchIds.map(String),
+        isActive: user.isActive,
+        mustChangePassword: true,
+        createdAt: user.createdAt,
+      },
+      tempPassword, // surfaced once to the super admin to hand over securely
+    };
+  }
+
+  // Super-admin only: set which branches an admin account is walled to. Empty
+  // set => owner/HQ (sees all branches). Busts the user cache so the new scope
+  // takes effect immediately rather than after the 30s auth-cache TTL.
+  async setAdminBranches(targetId, branchIds, actingUserId) {
+    const ApiError = require('../../utils/ApiError');
+    const user = await User.findById(targetId);
+    if (!user) throw ApiError.notFound('User not found');
+    if (!['superadmin', 'admin', 'manager', 'staff', 'branchadmin'].includes(user.role)) {
+      throw ApiError.badRequest('This user is not an admin account');
+    }
+
+    const resolved = await this._validateBranchIds(branchIds, user.role);
+
+    // Never wall the last unrestricted super admin — that would remove the only
+    // account able to see every branch (and manage cross-branch settings).
+    const isCurrentlyUnwalled = !user.branchIds || user.branchIds.length === 0;
+    if (user.role === 'superadmin' && isCurrentlyUnwalled && resolved.length) {
+      const unwalledSupers = await User.countDocuments({
+        role: 'superadmin',
+        isActive: { $ne: false },
+        $or: [{ branchIds: { $size: 0 } }, { branchIds: { $exists: false } }],
+      });
+      if (unwalledSupers <= 1) throw ApiError.badRequest('Cannot wall the only unrestricted super admin');
+    }
+
+    user.branchIds = resolved;
+    await user.save();
+    await require('../../middleware/auth').invalidateUserCache(user._id);
+    return { _id: user._id, name: user.name, email: user.email, role: user.role, branchIds: resolved.map(String) };
+  }
+
   async setAdminRole(targetId, role, actingUserId) {
     const ApiError = require('../../utils/ApiError');
-    const ASSIGNABLE = ['superadmin', 'admin', 'manager', 'staff', 'customer'];
+    const ASSIGNABLE = ['superadmin', 'admin', 'manager', 'staff', 'branchadmin', 'customer'];
     if (!ASSIGNABLE.includes(role)) throw ApiError.badRequest('Invalid role');
     if (String(targetId) === String(actingUserId)) throw ApiError.badRequest('You cannot change your own role');
 
@@ -946,9 +1245,64 @@ class AdminService {
       if (supers <= 1) throw ApiError.badRequest('Cannot demote the only super admin');
     }
 
+    // A branch admin must already be walled to a branch, else the role would
+    // grant branch-only sections over ALL branches' data. Assign branches first.
+    if (role === 'branchadmin' && (!user.branchIds || user.branchIds.length === 0)) {
+      throw ApiError.badRequest('Assign at least one branch before making this user a branch admin');
+    }
+
     user.role = role;
     await user.save();
+    await require('../../middleware/auth').invalidateUserCache(user._id);
     return { _id: user._id, name: user.name, email: user.email, role: user.role };
+  }
+
+  // Super-admin only: enable/disable an admin account. Inactive accounts are
+  // blocked at login; we also clear refresh tokens to force an immediate logout.
+  async setAdminActive(targetId, isActive, actingUserId) {
+    const ApiError = require('../../utils/ApiError');
+    if (String(targetId) === String(actingUserId)) throw ApiError.badRequest('You cannot change your own active status');
+
+    const user = await User.findById(targetId);
+    if (!user) throw ApiError.notFound('User not found');
+    if (!['superadmin', 'admin', 'manager', 'staff', 'branchadmin'].includes(user.role)) {
+      throw ApiError.badRequest('This user is not an admin account');
+    }
+
+    if (isActive === false && user.role === 'superadmin') {
+      const activeSupers = await User.countDocuments({ role: 'superadmin', isActive: { $ne: false } });
+      if (activeSupers <= 1) throw ApiError.badRequest('Cannot deactivate the only active super admin');
+    }
+
+    user.isActive = !!isActive;
+    if (!isActive) {
+      user.refreshToken = '';
+      user.adminRefreshToken = '';
+    }
+    await user.save();
+    return { _id: user._id, name: user.name, email: user.email, role: user.role, isActive: user.isActive };
+  }
+
+  // Super-admin only: reset an admin's password to a fresh one-time temporary
+  // password (returned once). Forces re-login by clearing refresh tokens.
+  async resetAdminPassword(targetId, actingUserId) {
+    const ApiError = require('../../utils/ApiError');
+    const crypto = require('crypto');
+
+    const user = await User.findById(targetId).select('+passwordHash');
+    if (!user) throw ApiError.notFound('User not found');
+    if (!['superadmin', 'admin', 'manager', 'staff', 'branchadmin'].includes(user.role)) {
+      throw ApiError.badRequest('This user is not an admin account');
+    }
+
+    const tempPassword = crypto.randomBytes(9).toString('base64url');
+    user.passwordHash = tempPassword; // re-hashed by the pre-save hook
+    user.mustChangePassword = true;
+    user.refreshToken = '';
+    user.adminRefreshToken = '';
+    await user.save();
+
+    return { _id: user._id, name: user.name, email: user.email, role: user.role, tempPassword };
   }
 
   // ── GST summary (output tax collected) ──────────────────────────────────

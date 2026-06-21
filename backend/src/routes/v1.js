@@ -45,7 +45,7 @@ router.use('/banners', require('../modules/banners/banner.routes'));
 router.use('/cart', require('../modules/cart/cart.routes'));
 router.use('/checkout', orderLimiter, checkoutRouter);               // Rate limit order creation
 router.use('/guest-checkout', orderLimiter, guestCheckoutRouter);     // Guest COD orders (no auth)
-router.use('/guest-orders', orderLimiter, guestTrackingRouter);       // Guest order tracking (signed token)
+router.use('/guest-orders', guestTrackingRouter);                     // Guest order tracking (per-route limits: token GET + email lookup)
 router.use('/orders', orderRouter);
 router.use('/payments', require('../modules/payments/payment.routes'));
 router.use('/coupons', require('../modules/coupons/coupon.routes'));

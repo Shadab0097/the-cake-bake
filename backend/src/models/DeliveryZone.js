@@ -43,6 +43,23 @@ const deliveryZoneSchema = new mongoose.Schema(
       type: String,
       default: '14:00',
     },
+    // Per-zone Cash-on-Delivery switch. Effective COD availability is
+    // (global commerce.codEnabled) AND (zone.codEnabled). Defaults to true so
+    // existing zones keep offering COD after this field is added.
+    codEnabled: {
+      type: Boolean,
+      default: true,
+    },
+    // Owning branch / store. Per-location settings (ship-from address, invoice
+    // prefix, report recipients, COD default) live on the Branch; this links a
+    // delivery area to the store that fulfils it. Null = unassigned (falls back
+    // to global Settings on invoices).
+    branchId: {
+      type: mongoose.Schema.Types.ObjectId,
+      ref: 'Branch',
+      default: null,
+      index: true,
+    },
     // 'live' = delivering now; 'coming_soon' = configured but not yet serviceable.
     // Coming-soon zones are excluded from the public checkout zone list but are
     // still matched by check-pincode so the storefront can show a teaser.

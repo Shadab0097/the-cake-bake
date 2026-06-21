@@ -20,6 +20,38 @@ const ApiResponse = require('../../utils/ApiResponse');
 const ApiError = require('../../utils/ApiError');
 const uploadService = require('../media/upload.service');
 const cache = require('../../utils/cache');
+const { resolveBranchIds, orderBranchMatch, withBranch, toObjectIds, computeScope } = require('../../utils/branchScope');
+
+// Id-level branch guard. Owner (null scope) passes through untouched; a walled
+// admin may touch a row only if it belongs to one of their branches. Uses the
+// exact same match as the list endpoints so a detail/action route can never be
+// a side door into another branch's data. A miss returns 404 (not 403) so we
+// never confirm the existence of an out-of-branch record.
+async function assertOrderInScope(req, orderId) {
+  const scopeIds = resolveBranchIds(req.branchScope);
+  if (!scopeIds) return; // owner / HQ — no constraint
+  const Order = require('../../models/Order');
+  const match = await orderBranchMatch(scopeIds);
+  const ok = await Order.exists(withBranch({ _id: orderId }, match));
+  if (!ok) throw ApiError.notFound('Order not found');
+}
+
+// The caller's branch set for entity-level scoping: null for an owner/HQ admin
+// (no constraint) or a string[] of their branchIds for a walled admin.
+function scopeBranchIds(req) {
+  return req.branchScope?.global ? null : req.branchScope.branchIds;
+}
+
+async function assertRefundInScope(req, refundId) {
+  const scopeIds = resolveBranchIds(req.branchScope);
+  if (!scopeIds) return; // owner / HQ — no constraint
+  const Refund = require('../../models/Refund');
+  const ids = toObjectIds({ branchIds: scopeIds });
+  // Refunds snapshot branchId; legacy refunds (null) stay owner-only, so a
+  // walled admin matching against their own ids simply won't see them.
+  const ok = await Refund.exists(withBranch({ _id: refundId }, { branchId: { $in: ids } }));
+  if (!ok) throw ApiError.notFound('Refund not found');
+}
 
 const normalizeBannerPayload = (payload = {}) => {
   const data = { ...payload };
@@ -37,24 +69,56 @@ const normalizeBannerPayload = (payload = {}) => {
   return data;
 };
 
+// ---- Identity / branch scope ----
+// Who am I + which branches may I act on. Powers the admin branch picker: owner
+// sees all active branches (+ an "All" option, added client-side); a walled
+// admin sees only their assigned branches and the picker locks to them.
+const getMe = asyncHandler(async (req, res) => {
+  const Branch = require('../../models/Branch');
+  const scope = computeScope(req.user);
+  const filter = scope.global ? { isActive: true } : { _id: { $in: scope.branchIds } };
+  const branches = await Branch.find(filter).select('name code isActive').sort({ name: 1 }).lean();
+  ApiResponse.ok({
+    id: req.user._id,
+    name: req.user.name,
+    email: req.user.email,
+    role: req.user.role,
+    branchIds: (req.user.branchIds || []).map(String),
+    isBranchScoped: !scope.global,
+    branches,
+  }).send(res);
+});
+
 // ---- Dashboard ----
 const getDashboard = asyncHandler(async (req, res) => {
-  const data = await adminService.getDashboard(req.query);
+  const branchIds = resolveBranchIds(req.branchScope, req.query.branchId);
+  const data = await adminService.getDashboard({ ...req.query, branchIds: branchIds || [] });
   ApiResponse.ok(data).send(res);
 });
 
 const getAnalytics = asyncHandler(async (req, res) => {
-  const data = await adminService.getAnalytics(req.query);
+  const branchIds = resolveBranchIds(req.branchScope, req.query.branchId);
+  const data = await adminService.getAnalytics({ ...req.query, branchIds: branchIds || [] });
   ApiResponse.ok(data).send(res);
 });
 
 const getSales = asyncHandler(async (req, res) => {
-  const data = await adminService.getSalesAnalytics(req.query);
+  const branchIds = resolveBranchIds(req.branchScope, req.query.branchId);
+  const data = await adminService.getSalesAnalytics({ ...req.query, branchIds: branchIds || [] });
   ApiResponse.ok(data).send(res);
 });
 
 const getProfit = asyncHandler(async (req, res) => {
-  const data = await adminService.getProfitAnalytics(req.query);
+  const branchIds = resolveBranchIds(req.branchScope, req.query.branchId);
+  const data = await adminService.getProfitAnalytics({ ...req.query, branchIds: branchIds || [] });
+  ApiResponse.ok(data).send(res);
+});
+
+// Owner-only "compare all branches" breakdown (route maps to an owner-only
+// section). A walled caller is scoped to their branches by resolveBranchIds.
+const getBranchBreakdown = asyncHandler(async (req, res) => {
+  const branchIds = resolveBranchIds(req.branchScope, req.query.branchId);
+  const data = await adminService.getBranchBreakdown({ ...req.query, branchIds: branchIds || [] });
   ApiResponse.ok(data).send(res);
 });
 
@@ -99,6 +163,26 @@ const setAdminRole = asyncHandler(async (req, res) => {
   ApiResponse.ok(data, 'Role updated').send(res);
 });
 
+const createAdminUser = asyncHandler(async (req, res) => {
+  const data = await adminService.createAdminUser(req.body, req.user._id);
+  ApiResponse.created(data, 'Admin user created').send(res);
+});
+
+const setAdminActive = asyncHandler(async (req, res) => {
+  const data = await adminService.setAdminActive(req.params.id, req.body.isActive, req.user._id);
+  ApiResponse.ok(data, data.isActive ? 'User activated' : 'User deactivated').send(res);
+});
+
+const setAdminBranches = asyncHandler(async (req, res) => {
+  const data = await adminService.setAdminBranches(req.params.id, req.body.branchIds, req.user._id);
+  ApiResponse.ok(data, 'Branch access updated').send(res);
+});
+
+const resetAdminPassword = asyncHandler(async (req, res) => {
+  const data = await adminService.resetAdminPassword(req.params.id, req.user._id);
+  ApiResponse.ok(data, 'Password reset').send(res);
+});
+
 const sendDailyReportNow = asyncHandler(async (req, res) => {
   const reportService = require('./report.service');
   const result = await reportService.sendDailyReport();
@@ -126,21 +210,25 @@ const getPaymentDiagnostics = asyncHandler(async (req, res) => {
 });
 
 const getRefunds = asyncHandler(async (req, res) => {
-  const result = await refundService.list(req.query);
+  const branchIds = resolveBranchIds(req.branchScope, req.query.branchId);
+  const result = await refundService.list({ ...req.query, branchIds: branchIds || [] });
   ApiResponse.ok(result).send(res);
 });
 
 const approveRefund = asyncHandler(async (req, res) => {
+  await assertRefundInScope(req, req.params.id);
   const refund = await refundService.approve(req.params.id, req.user._id, req.body?.note || 'Refund approved');
   ApiResponse.ok(refund, 'Refund approved').send(res);
 });
 
 const processRefund = asyncHandler(async (req, res) => {
+  await assertRefundInScope(req, req.params.id);
   const refund = await refundService.processApproved(req.params.id, req.user._id);
   ApiResponse.ok(refund, 'Refund processed').send(res);
 });
 
 const failRefund = asyncHandler(async (req, res) => {
+  await assertRefundInScope(req, req.params.id);
   const refund = await refundService.markFailed(req.params.id, req.user._id, req.body?.reason || 'Refund failed');
   ApiResponse.ok(refund, 'Refund marked failed').send(res);
 });
@@ -208,13 +296,16 @@ const deleteCategory = asyncHandler(async (req, res) => {
 
 // ---- Orders ----
 const getOrders = asyncHandler(async (req, res) => {
-  const result = await orderService.adminGetOrders(req.query);
+  const branchIds = resolveBranchIds(req.branchScope, req.query.branchId);
+  const result = await orderService.adminGetOrders({ ...req.query, branchIds: branchIds || [] });
   ApiResponse.ok(result).send(res);
 });
 
 const getOrderDetail = asyncHandler(async (req, res) => {
   const Order = require('../../models/Order');
-  const order = await Order.findById(req.params.id)
+  const scopeIds = resolveBranchIds(req.branchScope);
+  const match = await orderBranchMatch(scopeIds || []); // {} for owner
+  const order = await Order.findOne(withBranch({ _id: req.params.id }, match))
     .populate('user', 'name email phone')
     .populate('paymentId')
     .lean();
@@ -223,6 +314,7 @@ const getOrderDetail = asyncHandler(async (req, res) => {
 });
 
 const updateOrderStatus = asyncHandler(async (req, res) => {
+  await assertOrderInScope(req, req.params.id);
   const order = await orderService.updateOrderStatus(
     req.params.id,
     req.body.status,
@@ -238,22 +330,22 @@ const updateOrderStatus = asyncHandler(async (req, res) => {
 
 // ---- Coupons ----
 const listCoupons = asyncHandler(async (req, res) => {
-  const result = await couponService.listCoupons(req.query);
+  const result = await couponService.listCoupons(req.query, scopeBranchIds(req));
   ApiResponse.ok(result).send(res);
 });
 
 const createCoupon = asyncHandler(async (req, res) => {
-  const coupon = await couponService.createCoupon(req.body);
+  const coupon = await couponService.createCoupon(req.body, scopeBranchIds(req));
   ApiResponse.created(coupon, 'Coupon created').send(res);
 });
 
 const updateCoupon = asyncHandler(async (req, res) => {
-  const coupon = await couponService.updateCoupon(req.params.id, req.body);
+  const coupon = await couponService.updateCoupon(req.params.id, req.body, scopeBranchIds(req));
   ApiResponse.ok(coupon, 'Coupon updated').send(res);
 });
 
 const deleteCoupon = asyncHandler(async (req, res) => {
-  await couponService.deleteCoupon(req.params.id);
+  await couponService.deleteCoupon(req.params.id, scopeBranchIds(req));
   ApiResponse.ok(null, 'Coupon deactivated').send(res);
 });
 
@@ -288,6 +380,21 @@ const updateZone = asyncHandler(async (req, res) => {
   ApiResponse.ok(zone, 'Zone updated').send(res);
 });
 
+const getBranches = asyncHandler(async (req, res) => {
+  const branches = await deliveryService.adminGetBranches();
+  ApiResponse.ok(branches).send(res);
+});
+
+const createBranch = asyncHandler(async (req, res) => {
+  const branch = await deliveryService.createBranch(req.body);
+  ApiResponse.created(branch, 'Branch created').send(res);
+});
+
+const updateBranch = asyncHandler(async (req, res) => {
+  const branch = await deliveryService.updateBranch(req.params.id, req.body);
+  ApiResponse.ok(branch, 'Branch updated').send(res);
+});
+
 // ---- Add-Ons ----
 const listAddOns = asyncHandler(async (req, res) => {
   const filter = {};
@@ -314,40 +421,40 @@ const deleteAddOn = asyncHandler(async (req, res) => {
 
 // ---- Inquiries ----
 const getCustomInquiries = asyncHandler(async (req, res) => {
-  const result = await inquiryService.adminListCustomInquiries(req.query);
+  const result = await inquiryService.adminListCustomInquiries(req.query, scopeBranchIds(req));
   ApiResponse.ok(result).send(res);
 });
 
 const getCorporateInquiries = asyncHandler(async (req, res) => {
-  const result = await inquiryService.adminListCorporateInquiries(req.query);
+  const result = await inquiryService.adminListCorporateInquiries(req.query, scopeBranchIds(req));
   ApiResponse.ok(result).send(res);
 });
 
 const updateInquiry = asyncHandler(async (req, res) => {
-  const inquiry = await inquiryService.adminUpdateInquiry(req.params.id, req.body);
+  const inquiry = await inquiryService.adminUpdateInquiry(req.params.id, req.body, scopeBranchIds(req));
   ApiResponse.ok(inquiry, 'Inquiry updated').send(res);
 });
 
 const sendInquiryQuote = asyncHandler(async (req, res) => {
   const inquiryQuoteService = require('../inquiries/inquiryQuote.service');
-  const result = await inquiryQuoteService.sendQuote(req.params.id, req.body, req.user._id);
+  const result = await inquiryQuoteService.sendQuote(req.params.id, req.body, req.user._id, scopeBranchIds(req));
   ApiResponse.created(result, 'Quote sent to customer').send(res);
 });
 
 // ---- Customers ----
 const getCustomers = asyncHandler(async (req, res) => {
-  const result = await adminService.getCustomers(req.query);
+  const result = await adminService.getCustomers(req.query, scopeBranchIds(req));
   ApiResponse.ok(result).send(res);
 });
 
 const getCustomerDetail = asyncHandler(async (req, res) => {
-  const result = await adminService.getCustomerDetail(req.params.id);
+  const result = await adminService.getCustomerDetail(req.params.id, scopeBranchIds(req));
   ApiResponse.ok(result).send(res);
 });
 
 const adjustCustomerPoints = asyncHandler(async (req, res) => {
   const { points, reason } = req.body;
-  const result = await adminService.adjustCustomerPoints(req.params.id, points, reason, req.user._id);
+  const result = await adminService.adjustCustomerPoints(req.params.id, points, reason, req.user._id, scopeBranchIds(req));
   ApiResponse.ok(result, 'Points adjusted').send(res);
 });
 
@@ -476,14 +583,16 @@ const getChatbotStats = asyncHandler(async (req, res) => {
 });
 
 module.exports = {
-  getDashboard, getAnalytics, getSales, getProfit, listVariants, getCustomerAnalytics, getGstReport,
-  getSettings, updateSettings, getCompany, listAdminUsers, setAdminRole, sendDailyReportNow,
+  getMe,
+  getDashboard, getAnalytics, getSales, getProfit, getBranchBreakdown, listVariants, getCustomerAnalytics, getGstReport,
+  getSettings, updateSettings, getCompany, listAdminUsers, setAdminRole, createAdminUser, setAdminActive, resetAdminPassword, setAdminBranches, sendDailyReportNow,
   getAuditLogs, getOperationalAlerts, getApplicationErrors, getPaymentDiagnostics, getRefunds, approveRefund, processRefund, failRefund,
   listProducts, createProduct, updateProduct, deleteProduct, addVariant, updateVariant, getProductVariants, bulkImportProducts,
   listCategories, createCategory, updateCategory, deleteCategory,
   getOrders, getOrderDetail, updateOrderStatus,
   listCoupons, createCoupon, updateCoupon, deleteCoupon,
   getSlots, createSlot, updateSlot, getZones, createZone, updateZone,
+  getBranches, createBranch, updateBranch,
   listAddOns, createAddOn, updateAddOn, deleteAddOn,
   getCustomInquiries, getCorporateInquiries, updateInquiry, sendInquiryQuote,
   getCustomers, getCustomerDetail, adjustCustomerPoints,

@@ -99,6 +99,7 @@ const updateCoupon = {
     usageLimit: Joi.number().min(0),
     perUserLimit: Joi.number().min(0),
     isActive: Joi.boolean(),
+    branchId: Joi.string().pattern(objectIdPattern).allow(null, ''),
   }).messages(joiXssMessages),
 };
 
@@ -130,6 +131,45 @@ const sendNotification = {
   }),
 };
 
+// ---- Admin user management (super-admin only) ----
+const ADMIN_ASSIGNABLE_ROLES = ['staff', 'manager', 'admin', 'superadmin', 'branchadmin'];
+const branchIdsField = Joi.array().items(Joi.string().pattern(objectIdPattern)).single().default([]);
+
+const createAdminUser = {
+  body: Joi.object({
+    name: Joi.string().trim().min(2).max(100).required().custom(joiSanitize),
+    email: Joi.string().email().lowercase().trim().max(254).required(),
+    phone: Joi.string().trim().pattern(/^\+?[0-9]{10,15}$/).allow('').default('').messages({
+      'string.pattern.base': 'Phone must be 10–15 digits',
+    }),
+    role: Joi.string().valid(...ADMIN_ASSIGNABLE_ROLES).required(),
+    branchIds: branchIdsField,
+  }).messages(joiXssMessages),
+};
+
+const setAdminRole = {
+  params: idParam,
+  body: Joi.object({
+    // 'customer' is allowed so a super admin can fully revoke admin access.
+    role: Joi.string().valid(...ADMIN_ASSIGNABLE_ROLES, 'customer').required(),
+  }),
+};
+
+const setAdminActive = {
+  params: idParam,
+  body: Joi.object({
+    isActive: Joi.boolean().required(),
+  }),
+};
+
+// Empty array is allowed (= un-wall an admin back to owner/HQ scope).
+const setAdminBranches = {
+  params: idParam,
+  body: Joi.object({
+    branchIds: branchIdsField,
+  }),
+};
+
 module.exports = {
   updateOrderStatus,
   createBanner,
@@ -142,6 +182,10 @@ module.exports = {
   updateInquiry,
   sendInquiryQuote,
   sendNotification,
+  createAdminUser,
+  setAdminRole,
+  setAdminActive,
+  setAdminBranches,
   // Loyalty Points
   adjustPoints: {
     params: idParam,

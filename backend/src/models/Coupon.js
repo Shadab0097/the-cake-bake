@@ -66,6 +66,14 @@ const couponSchema = new mongoose.Schema(
         ref: 'Product',
       },
     ],
+    // Owning branch. Null = chain-wide (valid for every branch's orders). Set =
+    // valid only for orders fulfilled by this branch; managed by that branch.
+    branchId: {
+      type: mongoose.Schema.Types.ObjectId,
+      ref: 'Branch',
+      default: null,
+      index: true,
+    },
     isActive: {
       type: Boolean,
       default: true,

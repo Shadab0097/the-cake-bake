@@ -1,5 +1,6 @@
 const DeliverySlot = require('../../models/DeliverySlot');
 const DeliveryZone = require('../../models/DeliveryZone');
+const Branch = require('../../models/Branch');
 const Order = require('../../models/Order');
 const ApiError = require('../../utils/ApiError');
 const { startOfDay, endOfDay } = require('../../utils/helpers');
@@ -88,6 +89,13 @@ class DeliveryService {
         };
       }
 
+      // Effective COD = global commerce switch AND this zone's switch. The
+      // storefront uses this to hide the COD option; the server still enforces
+      // the same rule at order placement.
+      const { getCommerceConfig } = require('../../utils/commerceSettings');
+      const commerceConfig = await getCommerceConfig();
+      const codAvailable = commerceConfig.codEnabled && zone.codEnabled !== false;
+
       return {
         serviceable: true,
         status: 'live',
@@ -96,6 +104,7 @@ class DeliveryService {
         freeDeliveryAbove: zone.freeDeliveryAbove,
         sameDayAvailable: zone.sameDayAvailable,
         sameDayCutoffTime: zone.sameDayCutoffTime,
+        codAvailable,
       };
     }, 600); // Cache 10 minutes — zones rarely change
   }
@@ -105,7 +114,7 @@ class DeliveryService {
     // coming-soon city as a deliverable destination.
     return cache.getOrSet('delivery:zones', () => {
       return DeliveryZone.find({ isActive: true, status: { $ne: 'coming_soon' } })
-        .select('state city areas pincodes deliveryCharge freeDeliveryAbove sameDayAvailable')
+        .select('state city areas pincodes deliveryCharge freeDeliveryAbove sameDayAvailable codEnabled')
         .sort({ city: 1 })
         .lean();
     }, 300); // Cache 5 minutes
@@ -136,6 +145,27 @@ class DeliveryService {
   }
   async adminGetSlots() { return DeliverySlot.find().sort({ sortOrder: 1 }).lean(); }
   async adminGetZones() { return DeliveryZone.find().sort({ city: 1 }).lean(); }
+
+  // ── Branches (store locations) ──────────────────────────────────────────
+  async adminGetBranches() { return Branch.find().sort({ name: 1 }).lean(); }
+
+  async createBranch(data) {
+    const branch = await Branch.create(data);
+    await cache.invalidatePattern('delivery:');
+    return branch;
+  }
+
+  async updateBranch(id, data) {
+    const branch = await Branch.findByIdAndUpdate(id, data, { new: true });
+    if (!branch) throw ApiError.notFound('Branch not found', [], 'BRANCH_NOT_FOUND');
+    // COD is enforced per-zone at checkout, so a branch-level COD change writes
+    // through to every zone it owns to keep the two in sync.
+    if (data.codEnabled !== undefined) {
+      await DeliveryZone.updateMany({ branchId: id }, { $set: { codEnabled: !!data.codEnabled } });
+    }
+    await cache.invalidatePattern('delivery:');
+    return branch;
+  }
 }
 
 module.exports = new DeliveryService();

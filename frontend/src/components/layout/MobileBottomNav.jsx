@@ -3,13 +3,14 @@
 import Link from 'next/link';
 import { usePathname } from 'next/navigation';
 import { useSelector, useDispatch } from 'react-redux';
-import { FiHome, FiGrid, FiShoppingBag, FiHeart, FiUser } from 'react-icons/fi';
+import { FiHome, FiGrid, FiShoppingBag, FiHeart, FiUser, FiPackage } from 'react-icons/fi';
 import { openCartDrawer } from '@/store/slices/cartSlice';
 
 const tabs = [
   { label: 'Home', href: '/', icon: FiHome },
   { label: 'Shop', href: '/products', icon: FiGrid },
   { label: 'Cart', href: null, icon: FiShoppingBag, isCart: true },
+  { label: 'Track', href: '/track-order', icon: FiPackage },
   { label: 'Wishlist', href: '/wishlist', icon: FiHeart },
   { label: 'Account', href: '/account', icon: FiUser },
 ];

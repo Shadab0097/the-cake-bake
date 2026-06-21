@@ -5,12 +5,13 @@ import adminApi, { formatPrice } from '@/lib/adminApi';
 import { AdminModal, AdminToast, useAdminToast, EmptyState, LoadingSkeleton, RefreshButton } from '@/components/admin/AdminUI';
 
 const emptySlot = { label: '', startTime: '', endTime: '', maxOrders: 50, extraCharge: 0, isActive: true, cities: '', sortOrder: 0 };
-const emptyZone = { state: '', city: '', pincodes: '', areas: '', deliveryCharge: '', freeDeliveryAbove: '', sameDayAvailable: false, sameDayCutoffTime: '14:00', status: 'live', isActive: true };
+const emptyZone = { state: '', city: '', pincodes: '', areas: '', deliveryCharge: '', freeDeliveryAbove: '', sameDayAvailable: false, sameDayCutoffTime: '14:00', codEnabled: true, status: 'live', isActive: true, branchId: '' };
 
 export default function AdminDeliveryPage() {
   const [tab, setTab] = useState('slots');
   const [slots, setSlots] = useState([]);
   const [zones, setZones] = useState([]);
+  const [branches, setBranches] = useState([]);
   const [loading, setLoading] = useState(true);
   const [modal, setModal] = useState({ open: false, type: '', mode: 'create', data: null });
   const [form, setForm] = useState({});
@@ -20,9 +21,14 @@ export default function AdminDeliveryPage() {
   const fetch = useCallback(async () => {
     setLoading(true);
     try {
-      const [slotsRes, zonesRes] = await Promise.all([adminApi.delivery.getSlots(), adminApi.delivery.getZones()]);
+      const [slotsRes, zonesRes, branchesRes] = await Promise.all([
+        adminApi.delivery.getSlots(),
+        adminApi.delivery.getZones(),
+        adminApi.delivery.getBranches().catch(() => ({ data: { data: [] } })),
+      ]);
       setSlots(slotsRes.data.data || []);
       setZones(zonesRes.data.data || []);
+      setBranches(branchesRes.data.data || []);
     } catch (err) { console.error(err); }
     finally { setLoading(false); }
   }, []);
@@ -58,6 +64,7 @@ export default function AdminDeliveryPage() {
           freeDeliveryAbove: Number(form.freeDeliveryAbove) || 0,
           pincodes: form.pincodes ? form.pincodes.split(',').map(p => p.trim()).filter(Boolean) : [],
           areas: form.areas ? form.areas.split(',').map(a => a.trim()).filter(Boolean) : [],
+          branchId: form.branchId || null, // '' can't cast to ObjectId
         };
         if (modal.mode === 'create') await adminApi.delivery.createZone(data);
         else await adminApi.delivery.updateZone(modal.data._id, data);
@@ -121,7 +128,7 @@ export default function AdminDeliveryPage() {
           {zones.length === 0 ? <EmptyState message="No delivery zones" icon="🗺️" /> : (
             <div className="admin-table-wrap">
               <table className="admin-table">
-                <thead><tr><th>State</th><th>City</th><th>Areas</th><th>Delivery Charge</th><th>Free Above</th><th>Same Day</th><th>Cutoff</th><th>Status</th><th>Active</th><th>Actions</th></tr></thead>
+                <thead><tr><th>State</th><th>City</th><th>Areas</th><th>Delivery Charge</th><th>Free Above</th><th>Same Day</th><th>Cutoff</th><th>COD</th><th>Status</th><th>Active</th><th>Actions</th></tr></thead>
                 <tbody>
                   {zones.map(z => (
                     <tr key={z._id}>
@@ -140,6 +147,7 @@ export default function AdminDeliveryPage() {
                       <td>{z.freeDeliveryAbove ? formatPrice(z.freeDeliveryAbove) : '—'}</td>
                       <td>{z.sameDayAvailable ? <span style={{ color: 'var(--admin-success)' }}>✓</span> : '—'}</td>
                       <td style={{ color: 'var(--admin-text-secondary)' }}>{z.sameDayCutoffTime || '—'}</td>
+                      <td>{z.codEnabled !== false ? <span style={{ color: 'var(--admin-success)' }}>✓</span> : <span style={{ color: 'var(--admin-text-muted)' }}>Off</span>}</td>
                       <td><span className={`admin-badge ${z.status === 'coming_soon' ? 'badge-inactive' : 'badge-active'}`}>{z.status === 'coming_soon' ? 'Coming soon' : 'Live'}</span></td>
                       <td><span className={`admin-badge ${z.isActive !== false ? 'badge-active' : 'badge-inactive'}`}>{z.isActive !== false ? 'Active' : 'Inactive'}</span></td>
                       <td><button className="admin-btn admin-btn-ghost admin-btn-sm" onClick={() => openModal('zone', 'edit', z)}>Edit</button></td>
@@ -176,6 +184,16 @@ export default function AdminDeliveryPage() {
               <div className="admin-field"><label className="admin-label">State *</label><input className="admin-input" value={form.state || ''} onChange={e => setForm(f => ({ ...f, state: e.target.value }))} placeholder="Punjab" /></div>
               <div className="admin-field"><label className="admin-label">City *</label><input className="admin-input" value={form.city || ''} onChange={e => setForm(f => ({ ...f, city: e.target.value }))} placeholder="Amritsar" /></div>
             </div>
+            <div className="admin-field">
+              <label className="admin-label">Branch / Store</label>
+              <select className="admin-input admin-select" value={form.branchId || ''} onChange={e => setForm(f => ({ ...f, branchId: e.target.value }))}>
+                <option value="">— Unassigned (uses global settings) —</option>
+                {branches.map(b => (
+                  <option key={b._id} value={b._id}>{b.name}{b.code ? ` (${b.code})` : ''}{b.isActive === false ? ' · inactive' : ''}</option>
+                ))}
+              </select>
+              <p style={{ fontSize: '0.75rem', color: 'var(--admin-text-muted)', marginTop: '0.25rem' }}>The store that fulfils this area — drives invoice ship-from address, prefix &amp; per-branch reports. Manage branches in Settings.</p>
+            </div>
             <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '1rem' }}>
               <div className="admin-field"><label className="admin-label">Delivery Charge (paise)</label><input className="admin-input" type="number" value={form.deliveryCharge || ''} onChange={e => setForm(f => ({ ...f, deliveryCharge: e.target.value }))} /></div>
               <div className="admin-field"><label className="admin-label">Free Above (paise)</label><input className="admin-input" type="number" value={form.freeDeliveryAbove || ''} onChange={e => setForm(f => ({ ...f, freeDeliveryAbove: e.target.value }))} /></div>
@@ -191,6 +209,13 @@ export default function AdminDeliveryPage() {
             </div>
             <label style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', fontSize: '0.875rem', color: 'var(--admin-text-secondary)', cursor: 'pointer' }}>
               <input type="checkbox" checked={form.isActive !== false} onChange={e => setForm(f => ({ ...f, isActive: e.target.checked }))} /> Active
+            </label>
+            <label style={{ display: 'flex', alignItems: 'flex-start', gap: '0.5rem', fontSize: '0.875rem', color: 'var(--admin-text-secondary)', cursor: 'pointer', marginTop: '0.75rem' }}>
+              <input type="checkbox" checked={form.codEnabled !== false} onChange={e => setForm(f => ({ ...f, codEnabled: e.target.checked }))} style={{ marginTop: '0.2rem' }} />
+              <span>
+                Cash on Delivery in this zone
+                <span style={{ display: 'block', fontSize: '0.75rem', color: 'var(--admin-text-muted)' }}>When off, customers in this area must pay online. The global COD switch (Settings) must also be on.</span>
+              </span>
             </label>
           </>
         )}

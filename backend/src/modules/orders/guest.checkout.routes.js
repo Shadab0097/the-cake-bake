@@ -183,12 +183,16 @@ router.post(
     const total = subtotal + deliveryCharge;
     if (total <= 0) throw ApiError.badRequest('Invalid order total', [], 'INVALID_ORDER_TOTAL');
 
+    const { getCommerceConfig } = require('../../utils/commerceSettings');
+    const commerceConfig = await getCommerceConfig();
     const codRiskAssessment = await codAbuseService.assertCanUseCOD({
       guestInfo,
       shippingAddress,
       total,
       isGuest: true,
       requestContext,
+      globalCodEnabled: commerceConfig.codEnabled,
+      zoneCodEnabled: zone?.codEnabled !== false,
     });
 
     // ── Normalise delivery slot ──────────────────────────────────────────────
@@ -227,6 +231,7 @@ router.post(
         deliveryDate: new Date(deliveryDate),
         deliverySlot: slotObj,
         deliveryCity: shippingAddress.city,
+        branchId: zone?.branchId || commerceConfig.defaultBranchId || null,
         subtotal,
         deliveryCharge,
         discount: 0,
@@ -275,7 +280,7 @@ router.post(
       setImmediate(async () => {
         try {
           const notificationService = require('../notifications/notification.service');
-          await notificationService.sendOrderConfirmation(createdOrder);
+          await notificationService.sendOrderConfirmation(createdOrder, null, { trackingToken: tracking.token });
         } catch (err) {
           logger.warn('[GuestCheckout] Order notification failed:', err.message);
         }

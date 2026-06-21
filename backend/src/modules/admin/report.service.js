@@ -1,6 +1,8 @@
 const adminService = require('./admin.service');
 const emailService = require('../notifications/email.service');
 const User = require('../../models/User');
+const DeliveryZone = require('../../models/DeliveryZone');
+const Branch = require('../../models/Branch');
 const logger = require('../../middleware/logger');
 const { startOfDay, endOfDay } = require('../../utils/helpers');
 
@@ -70,4 +72,53 @@ const sendDailyReport = async (forDate) => {
   return { ...result, recipients, dateLabel };
 };
 
-module.exports = { buildDailyReport, sendDailyReport, resolveRecipients };
+// Per-branch digests. Every active branch with its own report switched on and
+// recipients set gets a digest scoped to the cities it owns (all its zones).
+// Has its own on/off toggle, independent of the global Daily Email Report
+// switch — the latter only governs the super-admin all-locations digest. These
+// are additive, not a replacement.
+const sendLocationReports = async (forDate = new Date(Date.now() - 24 * 60 * 60 * 1000)) => {
+  const from = ymd(startOfDay(forDate));
+  const to = ymd(endOfDay(forDate));
+  const branches = await Branch.find({
+    isActive: true,
+    reportEnabled: true,
+    reportRecipients: { $exists: true, $not: { $size: 0 } },
+  }).lean();
+
+  if (!branches.length) return [];
+
+  const settings = await adminService.getSettings();
+  const brand = settings.company?.name || 'The Cake Bake';
+  const results = [];
+
+  for (const branch of branches) {
+    const recipients = (branch.reportRecipients || []).filter(Boolean);
+    if (!recipients.length) continue;
+    try {
+      // The cities this branch is responsible for (its zones).
+      const zones = await DeliveryZone.find({ branchId: branch._id }).select('city').lean();
+      const cities = [...new Set(zones.map((z) => z.city).filter(Boolean))];
+      if (!cities.length) {
+        logger.warn(`[DailyReport] Branch "${branch.name}" has no zones; skipping its report`);
+        continue;
+      }
+      // branchId is authoritative (snapshotted on orders); cities also passed so
+      // legacy orders without a branch snapshot are still counted by city.
+      const [sales, profit] = await Promise.all([
+        adminService.getSalesAnalytics({ from, to, branchId: branch._id, cities }),
+        adminService.getProfitAnalytics({ from, to, branchId: branch._id, cities }),
+      ]);
+      const subject = `${brand} · ${branch.name} — Daily report ${from}`;
+      const html = buildHtml({ dateLabel: `${from} · ${branch.name}`, sales, profit, company: settings.company });
+      const result = await emailService.sendMail(recipients, subject, html);
+      results.push({ branch: branch.name, recipients, success: !!result.success });
+    } catch (error) {
+      logger.error(`[DailyReport] Branch report failed for ${branch.name}: ${error.message}`);
+      results.push({ branch: branch.name, recipients, success: false });
+    }
+  }
+  return results;
+};
+
+module.exports = { buildDailyReport, sendDailyReport, sendLocationReports, resolveRecipients };

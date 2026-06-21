@@ -5,6 +5,7 @@ import { HiOutlineBars3, HiOutlineArrowRightStartOnRectangle } from 'react-icons
 import adminApiClient from '@/lib/adminApiClient';
 import { clearAdminAccessToken } from '@/lib/authToken.mjs';
 import { setAdminFlash } from '@/lib/adminFlash.mjs';
+import { ROLE_LABELS } from '@/lib/adminAccess.mjs';
 
 export default function AdminTopbar({ user, title = 'Admin', subtitle = '', onMenuToggle }) {
   const router = useRouter();
@@ -43,12 +44,21 @@ export default function AdminTopbar({ user, title = 'Admin', subtitle = '', onMe
       {/* Right */}
       <div className="admin-topbar-right">
         <span className="admin-env-badge">{environment}</span>
+        {user?.isBranchScoped && (
+          <span
+            className="admin-env-badge"
+            style={{ background: 'rgba(216,27,96,0.12)', color: '#F48FB1', borderColor: 'rgba(216,27,96,0.3)' }}
+            title="You are scoped to these branches"
+          >
+            {(user.branches || []).map((b) => b.name).join(', ') || `${user.branchIds?.length || 0} branch`}
+          </span>
+        )}
         {user && (
           <div className="admin-user-chip">
             <div className="admin-user-meta">
               <div className="admin-user-name">{user.name || 'Admin'}</div>
               <div className={`admin-user-role${user.role === 'superadmin' ? ' admin-user-role-super' : ''}`}>
-                {user.role}
+                {ROLE_LABELS[user.role] || user.role}
               </div>
             </div>
             <div className="admin-avatar">

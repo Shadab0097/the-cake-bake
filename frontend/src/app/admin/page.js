@@ -18,13 +18,13 @@ import {
   HiOutlineUsers,
 } from 'react-icons/hi2';
 import adminApi, { formatDateTime, formatPrice } from '@/lib/adminApi';
-import { LoadingSkeleton, RefreshButton, StatCard, StatusBadge } from '@/components/admin/AdminUI';
+import { LoadingSkeleton, RefreshButton, StatusBadge } from '@/components/admin/AdminUI';
 import {
-  OrderStatusDonut,
-  RevenueTrendChart,
-  TopCitiesChart,
-  TopProductsChart,
-} from '@/components/admin/AdminCharts';
+  DashRevenueTrend,
+  DashTopBars,
+  DashStatusDonut,
+} from '@/components/admin/AdminMuiCharts';
+import BranchBreakdown from '@/components/admin/BranchBreakdown';
 
 const RANGE_OPTIONS = [
   { value: 7, label: '7 days' },
@@ -72,6 +72,19 @@ function ChartCard({ title, subtitle, keys, children, loading }) {
           </div>
         )}
         {children}
+      </div>
+    </div>
+  );
+}
+
+// Premium tone-coded headline metric tile — icon chip + value + label.
+function DashMetricCard({ label, value, icon, tone = 'info' }) {
+  return (
+    <div className={`admin-card admin-metric-card tone-${tone}`}>
+      <span className="admin-metric-icon">{icon}</span>
+      <div className="admin-metric-body">
+        <div className="admin-metric-value">{value}</div>
+        <div className="admin-metric-label">{label}</div>
       </div>
     </div>
   );
@@ -158,7 +171,7 @@ export default function AdminDashboardPage() {
 
   const overview = dashData?.overview || {};
   const operations = dashData?.operations || {};
-  const recentOrders = dashData?.recentOrders || [];
+  const recentOrders = useMemo(() => dashData?.recentOrders || [], [dashData]);
   const statusDistribution = dashData?.statusDistribution;
   const statusDist = useMemo(() => (
     Object.entries(statusDistribution || {}).map(([_id, count]) => ({ _id, count }))
@@ -235,15 +248,61 @@ export default function AdminDashboardPage() {
   ];
 
   const stats = [
-    { label: 'Total Revenue', value: formatPrice(overview.totalRevenue || 0), icon: <HiOutlineCurrencyRupee />, color: 'var(--admin-accent-soft)' },
-    { label: "Today's Revenue", value: formatPrice(overview.todayRevenue || 0), icon: <HiOutlineCurrencyRupee />, color: 'var(--admin-success-soft)' },
-    { label: 'Monthly Revenue', value: formatPrice(overview.monthRevenue || 0), icon: <HiOutlineCalendarDays />, color: 'var(--admin-info-soft)' },
-    { label: 'Total Orders', value: (overview.totalOrders || 0).toLocaleString(), icon: <HiOutlineShoppingBag />, color: 'var(--admin-accent-soft)' },
-    { label: "Today's Orders", value: overview.todayOrders || 0, icon: <HiOutlineClock />, color: 'var(--admin-success-soft)' },
-    { label: 'Pending Orders', value: overview.pendingOrders || 0, icon: <HiOutlineShoppingBag />, color: 'var(--admin-warning-soft)' },
-    { label: 'Total Customers', value: (overview.totalCustomers || 0).toLocaleString(), icon: <HiOutlineUsers />, color: 'var(--admin-info-soft)' },
-    { label: 'Active Products', value: overview.totalProducts || 0, icon: <HiOutlineCube />, color: 'var(--admin-success-soft)' },
+    { label: 'Total Revenue', value: formatPrice(overview.totalRevenue || 0), icon: <HiOutlineCurrencyRupee />, tone: 'accent' },
+    { label: "Today's Revenue", value: formatPrice(overview.todayRevenue || 0), icon: <HiOutlineCurrencyRupee />, tone: 'success' },
+    { label: 'Monthly Revenue', value: formatPrice(overview.monthRevenue || 0), icon: <HiOutlineCalendarDays />, tone: 'info' },
+    { label: 'Total Orders', value: (overview.totalOrders || 0).toLocaleString(), icon: <HiOutlineShoppingBag />, tone: 'accent' },
+    { label: "Today's Orders", value: overview.todayOrders || 0, icon: <HiOutlineClock />, tone: 'success' },
+    { label: 'Pending Orders', value: overview.pendingOrders || 0, icon: <HiOutlineShoppingBag />, tone: 'warning' },
+    { label: 'Total Customers', value: (overview.totalCustomers || 0).toLocaleString(), icon: <HiOutlineUsers />, tone: 'info' },
+    { label: 'Active Products', value: overview.totalProducts || 0, icon: <HiOutlineCube />, tone: 'violet' },
   ];
+
+  // Chart series — richer tooltips than the legacy single-metric charts.
+  const productSeries = useMemo(
+    () => topProducts.slice(0, 8).map((row) => ({
+      name: row._id || 'Product',
+      value: row.totalQuantity || 0,
+      revenue: (row.totalRevenue || 0) / 100,
+    })),
+    [topProducts],
+  );
+  const citySeries = useMemo(
+    () => topCities.filter((row) => row._id).slice(0, 8).map((row) => ({
+      name: row._id || 'Unknown',
+      value: (row.revenue || 0) / 100,
+      orders: row.orders || 0,
+    })),
+    [topCities],
+  );
+
+  // Flatten recent orders once; both the desktop table and the mobile order
+  // cards render from this so the derivation logic lives in one place.
+  const recentOrdersView = useMemo(() => recentOrders.map((order) => {
+    const firstItem = order.items?.[0];
+    const createdAt = order.createdAt ? new Date(order.createdAt).getTime() : 0;
+    const customerName = order.user?.name || order.guestInfo?.name || order.shippingAddress?.fullName || '-';
+    return {
+      id: order._id,
+      orderNumber: order.orderNumber,
+      href: `/admin/orders/${order._id}`,
+      isNew: createdAt > 0 && (Date.now() - createdAt) < 60 * 60 * 1000,
+      fromInquiry: order.source === 'inquiry',
+      isGuest: !order.user,
+      customerName,
+      initial: (customerName || '?').trim().charAt(0).toUpperCase() || '?',
+      createdAtLabel: formatDateTime(order.createdAt),
+      productName: firstItem?.name || null,
+      productMeta: firstItem ? `${firstItem.weight || ''}${order.items?.length > 1 ? ` +${order.items.length - 1}` : ''}` : '',
+      deliveryLabel: order.deliveryDate
+        ? new Date(order.deliveryDate).toLocaleDateString('en-IN', { day: '2-digit', month: 'short' })
+        : '-',
+      total: formatPrice(order.total || 0),
+      status: order.status,
+      isCod: order.paymentMethod === 'cod',
+      paymentStatus: order.paymentStatus,
+    };
+  }), [recentOrders]);
 
   if (loading && !dashData) {
     return (
@@ -290,7 +349,7 @@ export default function AdminDashboardPage() {
 
       <div className="admin-dashboard-grid admin-animate-in">
         {stats.map((stat) => (
-          <StatCard key={stat.label} {...stat} />
+          <DashMetricCard key={stat.label} {...stat} />
         ))}
       </div>
 
@@ -340,24 +399,27 @@ export default function AdminDashboardPage() {
               </>
             )}
           >
-            <RevenueTrendChart data={revenueByDay} />
+            <DashRevenueTrend data={revenueByDay} height={300} />
           </ChartCard>
 
           <ChartCard title="Order Status" subtitle="All active orders by stage">
-            <OrderStatusDonut data={statusDist} />
+            <DashStatusDonut data={statusDist} />
           </ChartCard>
         </div>
 
         <div className="admin-chart-grid-secondary">
           <ChartCard title="Top Products" subtitle={`By units sold · last ${rangeDays} days`} loading={analyticsLoading}>
-            <TopProductsChart data={topProducts} />
+            <DashTopBars data={productSeries} tone="accent" valueKind="count" emptyMessage="No product sales in this window" />
           </ChartCard>
 
           <ChartCard title="Top Cities" subtitle={`By revenue · last ${rangeDays} days`} loading={analyticsLoading}>
-            <TopCitiesChart data={topCities} />
+            <DashTopBars data={citySeries} tone="info" valueKind="currency" emptyMessage="No city sales in this window" />
           </ChartCard>
         </div>
       </section>
+
+      {/* Owner-only: side-by-side branch comparison (self-hides for branch admins) */}
+      <BranchBreakdown />
 
       <div className="admin-dashboard-panel-grid admin-animate-in">
         <SectionCard title="Low Stock" action={<Link href="/admin/products" className="admin-link">Manage</Link>}>
@@ -456,77 +518,116 @@ export default function AdminDashboardPage() {
 
       <div className="admin-card admin-section-animate">
         <div className="admin-section-heading">
-          <h3>Recent Orders</h3>
+          <div>
+            <h3>
+              Recent Orders
+              {recentOrdersView.length > 0 && <span className="admin-count-badge">{recentOrdersView.length}</span>}
+            </h3>
+            <div className="admin-section-subtitle">Latest orders across every channel.</div>
+          </div>
           <Link href="/admin/orders" className="admin-link">View all</Link>
         </div>
 
-        {recentOrders.length > 0 ? (
-          <div className="admin-table-wrap">
-            <table className="admin-table">
-              <thead>
-                <tr>
-                  <th>Order</th>
-                  <th>Customer</th>
-                  <th>Product</th>
-                  <th>Delivery</th>
-                  <th>Total</th>
-                  <th>Status</th>
-                  <th>Payment</th>
-                </tr>
-              </thead>
-              <tbody>
-                {recentOrders.map((order) => {
-                  const firstItem = order.items?.[0];
-                  const createdAt = order.createdAt ? new Date(order.createdAt).getTime() : 0;
-                  const isNew = createdAt > 0 && (Date.now() - createdAt) < 60 * 60 * 1000;
-                  const customerName = order.user?.name || order.guestInfo?.name || order.shippingAddress?.fullName || '-';
-                  return (
-                    <tr key={order._id}>
+        {recentOrdersView.length > 0 ? (
+          <>
+            {/* Desktop / tablet: full table */}
+            <div className="admin-table-wrap admin-orders-scroll">
+              <table className="admin-table admin-orders-table">
+                <thead>
+                  <tr>
+                    <th>Order</th>
+                    <th>Customer</th>
+                    <th>Product</th>
+                    <th>Delivery</th>
+                    <th className="admin-num">Total</th>
+                    <th>Status</th>
+                    <th>Payment</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {recentOrdersView.map((o) => (
+                    <tr key={o.id}>
                       <td>
                         <div style={{ display: 'flex', alignItems: 'center', gap: '0.4rem', flexWrap: 'wrap' }}>
-                          <Link href={`/admin/orders/${order._id}`} className="admin-table-action-link">
-                            #{order.orderNumber}
-                          </Link>
-                          {isNew && <span className="admin-pill admin-pill-success">New</span>}
-                          {order.source === 'inquiry' && <span className="admin-pill admin-pill-guest">From Inquiry</span>}
+                          <Link href={o.href} className="admin-table-action-link">#{o.orderNumber}</Link>
+                          {o.isNew && <span className="admin-pill admin-pill-success">New</span>}
+                          {o.fromInquiry && <span className="admin-pill admin-pill-guest">From Inquiry</span>}
                         </div>
                       </td>
                       <td>
-                        <div style={{ display: 'flex', alignItems: 'center', gap: '0.4rem', flexWrap: 'wrap' }}>
-                          <span style={{ fontWeight: 600, fontSize: '0.875rem' }}>{customerName}</span>
-                          {!order.user && <span className="admin-pill admin-pill-guest">Guest</span>}
+                        <div className="admin-cust">
+                          <span className="admin-cust-avatar" aria-hidden>{o.initial}</span>
+                          <div className="admin-cust-info">
+                            <div className="admin-cust-name">
+                              {o.customerName}
+                              {o.isGuest && <span className="admin-pill admin-pill-guest">Guest</span>}
+                            </div>
+                            <div className="admin-row-meta">{o.createdAtLabel}</div>
+                          </div>
                         </div>
-                        <div className="admin-row-meta">{formatDateTime(order.createdAt)}</div>
                       </td>
                       <td style={{ maxWidth: 180 }}>
-                        {firstItem ? (
+                        {o.productName ? (
                           <div>
-                            <div className="admin-row-title">{firstItem.name}</div>
-                            <div className="admin-row-meta">
-                              {firstItem.weight}{order.items?.length > 1 ? ` +${order.items.length - 1}` : ''}
-                            </div>
+                            <div className="admin-row-title">{o.productName}</div>
+                            <div className="admin-row-meta">{o.productMeta}</div>
                           </div>
                         ) : '-'}
                       </td>
-                      <td style={{ whiteSpace: 'nowrap', color: 'var(--admin-text-secondary)' }}>
-                        {order.deliveryDate ? new Date(order.deliveryDate).toLocaleDateString('en-IN', { day: '2-digit', month: 'short' }) : '-'}
-                      </td>
-                      <td className="admin-row-value">{formatPrice(order.total || 0)}</td>
-                      <td><StatusBadge status={order.status} /></td>
+                      <td style={{ whiteSpace: 'nowrap', color: 'var(--admin-text-secondary)' }}>{o.deliveryLabel}</td>
+                      <td className="admin-num admin-row-value">{o.total}</td>
+                      <td><StatusBadge status={o.status} /></td>
                       <td>
                         <div style={{ display: 'flex', flexDirection: 'column', gap: '0.3rem', alignItems: 'flex-start' }}>
-                          <span className={`admin-payment-chip ${order.paymentMethod === 'cod' ? 'admin-payment-chip-cod' : 'admin-payment-chip-online'}`}>
-                            {order.paymentMethod === 'cod' ? 'COD' : 'Online'}
+                          <span className={`admin-payment-chip ${o.isCod ? 'admin-payment-chip-cod' : 'admin-payment-chip-online'}`}>
+                            {o.isCod ? 'COD' : 'Online'}
                           </span>
-                          <StatusBadge status={order.paymentStatus} />
+                          <StatusBadge status={o.paymentStatus} />
                         </div>
                       </td>
                     </tr>
-                  );
-                })}
-              </tbody>
-            </table>
-          </div>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+
+            {/* Mobile: stacked order cards */}
+            <div className="admin-orders-cards">
+              {recentOrdersView.map((o) => (
+                <Link href={o.href} key={o.id} className="admin-order-card">
+                  <div className="admin-order-card-row">
+                    <span className="admin-order-card-num">#{o.orderNumber}</span>
+                    <span className="admin-order-card-total">{o.total}</span>
+                  </div>
+                  <div className="admin-cust">
+                    <span className="admin-cust-avatar" aria-hidden>{o.initial}</span>
+                    <div className="admin-cust-info">
+                      <div className="admin-cust-name">
+                        {o.customerName}
+                        {o.isGuest && <span className="admin-pill admin-pill-guest">Guest</span>}
+                      </div>
+                      <div className="admin-row-meta">{o.createdAtLabel}</div>
+                    </div>
+                  </div>
+                  {o.productName && (
+                    <div className="admin-order-card-product">
+                      <span className="admin-row-title">{o.productName}</span>
+                      <span className="admin-row-meta">{o.productMeta}</span>
+                    </div>
+                  )}
+                  <div className="admin-order-card-foot">
+                    <StatusBadge status={o.status} />
+                    <span className={`admin-payment-chip ${o.isCod ? 'admin-payment-chip-cod' : 'admin-payment-chip-online'}`}>
+                      {o.isCod ? 'COD' : 'Online'}
+                    </span>
+                    <StatusBadge status={o.paymentStatus} />
+                    {o.isNew && <span className="admin-pill admin-pill-success">New</span>}
+                    <span className="admin-order-card-delivery">Delivery {o.deliveryLabel}</span>
+                  </div>
+                </Link>
+              ))}
+            </div>
+          </>
         ) : (
           <EmptyPanel message="No orders yet" />
         )}

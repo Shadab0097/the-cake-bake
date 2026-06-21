@@ -23,13 +23,17 @@ const tick = async () => {
     const today = ymd(now);
     if (settings.reports.lastSentYmd === today) return;
 
-    const result = await reportService.sendDailyReport(new Date(now.getTime() - 24 * 60 * 60 * 1000));
+    const forDate = new Date(now.getTime() - 24 * 60 * 60 * 1000);
+    const result = await reportService.sendDailyReport(forDate);
+    // Per-location digests to each zone's own recipients (in addition to the
+    // global super-admin digest above).
+    const locationResults = await reportService.sendLocationReports(forDate);
 
     // Mark sent regardless of email transport success so we don't loop retrying
     // a misconfigured SMTP every hour; failures are logged by the email service.
     const Settings = require('../models/Settings');
     await Settings.updateOne({ key: 'global' }, { $set: { 'reports.lastSentYmd': today } });
-    logger.info(`[DailyReport] Daily report processed for ${today} (success=${!!result.success})`);
+    logger.info(`[DailyReport] Daily report processed for ${today} (success=${!!result.success}, locations=${locationResults.length})`);
   } catch (error) {
     logger.error('[DailyReport] tick failed:', error.message);
   } finally {
